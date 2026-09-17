@@ -182,4 +182,24 @@ venv.bak/
 
 # OCI & Secrets
 *.pem
+*.key
 oci_api_key.pem
+backend/secrets/*
+!backend/secrets/.gitkeep
+
+# Bases de datos locales (SQLite - auditoria)
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+
+# Backend Python
+.pytest_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# n8n
+.n8n/
+n8n_data/

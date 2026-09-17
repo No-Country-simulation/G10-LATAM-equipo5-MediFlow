@@ -1,0 +1,102 @@
+{
+  "name": "MediFlow - Triage Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "triage",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7f1b1e2a-1a11-4a2a-9a1a-1a1a1a1a1a01",
+      "name": "Webhook - Recepcion Triaje",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "mediflow-triage-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1a1a1a1-2b2b-4c3c-8d4d-5e5e5e5e5e01",
+              "leftValue": "={{$json[\"nivel_prioridad\"]}}",
+              "rightValue": "CRITICO",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8a2b2b2b-2b22-4b3b-9b2b-2b2b2b2b2b02",
+      "name": "IF - Es Prioridad Critica",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"recibido\": true, \"documento_id\": $json[\"documento_id\"], \"destino\": $json[\"destino_enrutamiento\"] } }}",
+        "options": {}
+      },
+      "id": "9c3c3c3c-3c33-4c4c-8c3c-3c3c3c3c3c03",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [720, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Recepcion Triaje": {
+      "main": [
+        [
+          {
+            "node": "IF - Es Prioridad Critica",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Es Prioridad Critica": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "versionId": "b3f2a6e0-0000-4000-8000-000000000001",
+  "id": "mediflow-triage-flow",
+  "tags": []
+}
