@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.core.config import settings
 from app.features.auth.router import router as auth_router
+from app.features.documents.router import router as documents_router
 from app.features.health.router import router as health_router
 
 logging.basicConfig(level=logging.INFO)
@@ -40,3 +41,4 @@ app.add_middleware(
 
 app.include_router(health_router, prefix=settings.API_V1_PREFIX)
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
+app.include_router(documents_router, prefix=f"{settings.API_V1_PREFIX}/documents")

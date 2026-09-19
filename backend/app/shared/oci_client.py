@@ -17,11 +17,13 @@ class OCIStorageClient:
 
     _instance: ClassVar[Optional["OCIStorageClient"]] = None
     _client: Optional[oci.object_storage.ObjectStorageClient]
+    _namespace: Optional[str]
 
     def __new__(cls) -> "OCIStorageClient":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._client = None
+            cls._instance._namespace = None
         return cls._instance
 
     def _build_config(self) -> dict:
@@ -70,6 +72,51 @@ class OCIStorageClient:
         except Exception:
             logger.exception("Error inesperado al verificar el acceso al bucket de OCI")
             return False
+
+    def _get_namespace_sync(self) -> str:
+        """Obtiene (cacheando) el namespace de Object Storage del tenancy configurado."""
+        if self._namespace is None:
+            self._namespace = self.client.get_namespace(
+                compartment_id=settings.OCI_COMPARTMENT_OCID
+            ).data
+        return self._namespace
+
+    def _upload_object_sync(
+        self, object_name: str, content: bytes, content_type: Optional[str]
+    ) -> None:
+        self.client.put_object(
+            namespace_name=self._get_namespace_sync(),
+            bucket_name=settings.OCI_BUCKET_NAME,
+            object_name=object_name,
+            put_object_body=content,
+            content_type=content_type,
+        )
+
+    async def upload_object(
+        self, object_name: str, content: bytes, content_type: Optional[str] = None
+    ) -> None:
+        """Sube `content` al bucket configurado bajo la ruta `object_name`.
+
+        El SDK de OCI es síncrono, por lo que la llamada se delega a un hilo aparte
+        para no bloquear el event loop.
+        """
+        await asyncio.to_thread(self._upload_object_sync, object_name, content, content_type)
+
+    def _delete_object_sync(self, object_name: str) -> None:
+        self.client.delete_object(
+            namespace_name=self._get_namespace_sync(),
+            bucket_name=settings.OCI_BUCKET_NAME,
+            object_name=object_name,
+        )
+
+    async def delete_object(self, object_name: str) -> None:
+        """Elimina `object_name` del bucket configurado. Es un no-op si el objeto no existe."""
+        try:
+            await asyncio.to_thread(self._delete_object_sync, object_name)
+        except ServiceError as exc:
+            if exc.status == 404:
+                return
+            raise
 
 
 oci_storage_client = OCIStorageClient()
