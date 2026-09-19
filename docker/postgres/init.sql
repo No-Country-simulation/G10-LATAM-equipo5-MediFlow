@@ -72,7 +72,7 @@ INSERT INTO users (username, email, hashed_password, full_name, role)
 VALUES (
     'auditor_demo',
     'auditor@mediflow.cl',
-    '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW',
+    '$2b$12$5ga92VwMZ957OBX9lcuZ6.yl2OQ5LZl5eeMMMNJ8JUT.Eg1JoFzdW',
     'Dr. Auditor Demo',
     'AUDITOR_CLINICO'
 ) ON CONFLICT (username) DO NOTHING;
