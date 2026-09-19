@@ -21,7 +21,12 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # Base de datos
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/mediflow"
+    DATABASE_URL: str = ""
+
+    # Autenticación (JWT)
+    JWT_SECRET_KEY: str = ""
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # Oracle Cloud Infrastructure (OCI) Object Storage
     OCI_USER_OCID: str = ""

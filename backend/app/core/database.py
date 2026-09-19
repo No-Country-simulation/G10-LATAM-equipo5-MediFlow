@@ -5,10 +5,16 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class Base(DeclarativeBase):
+    """Clase base declarativa para todos los modelos ORM de MediFlow."""
+
 
 engine: AsyncEngine = create_async_engine(
     settings.DATABASE_URL,
