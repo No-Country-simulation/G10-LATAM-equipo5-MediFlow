@@ -2,7 +2,9 @@
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import ClassVar, Optional
+from uuid import uuid4
 
 import oci
 from oci.exceptions import ConfigFileNotFound, InvalidConfig, ServiceError
@@ -117,6 +119,26 @@ class OCIStorageClient:
             if exc.status == 404:
                 return
             raise
+
+    def _create_par_sync(self, object_name: str, expire_minutes: int) -> str:
+        details = oci.object_storage.models.CreatePreauthenticatedRequestDetails(
+            name=f"par-{uuid4().hex}",
+            object_name=object_name,
+            access_type="ObjectRead",
+            time_expires=datetime.now(timezone.utc) + timedelta(minutes=expire_minutes),
+        )
+        response = self.client.create_preauthenticated_request(
+            namespace_name=self._get_namespace_sync(),
+            bucket_name=settings.OCI_BUCKET_NAME,
+            create_preauthenticated_request_details=details,
+        )
+        return f"{self.client.base_client.endpoint}{response.data.access_uri}"
+
+    async def create_preauthenticated_request(
+        self, object_name: str, expire_minutes: int = 15
+    ) -> str:
+        """Genera una URL pre-firmada (PAR) de solo lectura para `object_name`, válida por `expire_minutes`."""
+        return await asyncio.to_thread(self._create_par_sync, object_name, expire_minutes)
 
 
 oci_storage_client = OCIStorageClient()
