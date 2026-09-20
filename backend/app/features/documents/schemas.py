@@ -1,7 +1,6 @@
 """Esquemas Pydantic para la feature de ingesta y consulta de documentos clínicos."""
 
 from datetime import datetime
-from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -69,7 +68,7 @@ class IngestResponse(BaseModel):
 
 
 class DocumentListItemResponse(BaseModel):
-    """DTO resumido de un documento clínico, usado en resultados de búsqueda."""
+    """DTO resumido de un documento clínico, usado en resultados de búsqueda y listados paginados."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -79,6 +78,18 @@ class DocumentListItemResponse(BaseModel):
     nombre_paciente: str | None
     tipo_documento: str
     nivel_prioridad: str
-    score_confianza: Decimal
+    score_confianza: float
     destino_enrutamiento: str | None
+    oci_json_path: str
     created_at: datetime
+
+
+class PaginatedDocumentResponse(BaseModel):
+    """Página de resultados de la bandeja documental, con metadatos de paginación."""
+
+    items: list[DocumentListItemResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    message: str | None = None

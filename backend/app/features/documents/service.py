@@ -4,9 +4,11 @@ import base64
 import binascii
 import json
 import logging
+import math
+from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -165,3 +167,54 @@ async def search_documents_by_rut(rut: str, db: AsyncSession) -> list[ClinicalDo
         .order_by(ClinicalDocument.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def get_paginated_documents(
+    db: AsyncSession,
+    page: int = 1,
+    page_size: int = 20,
+    estado: str | None = None,
+    destino: str | None = None,
+    rut: str | None = None,
+    prioridad: str | None = None,
+    fecha_desde: datetime | None = None,
+    fecha_hasta: datetime | None = None,
+) -> dict:
+    """Lista la bandeja documental con filtros dinámicos y paginación."""
+    conditions = []
+    if estado is not None:
+        conditions.append(ClinicalDocument.estado == estado)
+    if destino is not None:
+        conditions.append(ClinicalDocument.destino_enrutamiento == destino)
+    if rut is not None:
+        conditions.append(ClinicalDocument.rut_paciente == rut)
+    if prioridad is not None:
+        conditions.append(ClinicalDocument.nivel_prioridad == prioridad)
+    if fecha_desde is not None:
+        conditions.append(ClinicalDocument.created_at >= fecha_desde)
+    if fecha_hasta is not None:
+        conditions.append(ClinicalDocument.created_at <= fecha_hasta)
+
+    total_result = await db.execute(
+        select(func.count(ClinicalDocument.id)).where(*conditions)
+    )
+    total = total_result.scalar_one()
+
+    items_result = await db.execute(
+        select(ClinicalDocument)
+        .where(*conditions)
+        .order_by(ClinicalDocument.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    items = items_result.scalars().all()
+
+    total_pages = math.ceil(total / page_size) if total > 0 else 0
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
