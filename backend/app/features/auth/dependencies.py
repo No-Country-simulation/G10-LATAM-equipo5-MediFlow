@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -33,7 +33,7 @@ async def get_current_user(
         username: str | None = payload.get("sub")
         if username is None:
             raise _CREDENTIALS_ERROR
-    except JWTError as exc:
+    except jwt.PyJWTError as exc:
         raise _CREDENTIALS_ERROR from exc
 
     jti: str | None = payload.get("jti")
