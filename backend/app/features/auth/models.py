@@ -4,9 +4,11 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.features.auth.enums import UserRole
 
 
 class User(Base):
@@ -19,7 +21,11 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(150), nullable=False)
-    role: Mapped[str] = mapped_column(String(30), nullable=False, default="AUDITOR_CLINICO")
+    role: Mapped[UserRole] = mapped_column(
+        SQLEnum(UserRole, name="user_role_enum", native_enum=False, length=30, validate_strings=True),
+        nullable=False,
+        default=UserRole.AUDITOR_CLINICO,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()

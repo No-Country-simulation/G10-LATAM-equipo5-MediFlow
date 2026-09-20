@@ -11,6 +11,7 @@ from app import __version__
 from app.core.config import settings
 from app.features.audit.router import router as audit_router
 from app.features.auth.router import router as auth_router
+from app.features.auth.router import users_router
 from app.features.documents.router import router as documents_router
 from app.features.health.router import router as health_router
 
@@ -42,5 +43,6 @@ app.add_middleware(
 
 app.include_router(health_router, prefix=settings.API_V1_PREFIX)
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
+app.include_router(users_router, prefix=settings.API_V1_PREFIX)
 app.include_router(documents_router, prefix=f"{settings.API_V1_PREFIX}/documents")
 app.include_router(audit_router, prefix=f"{settings.API_V1_PREFIX}/audit")

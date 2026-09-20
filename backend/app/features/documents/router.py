@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.features.auth.dependencies import get_current_user
+from app.features.auth.dependencies import require_roles
+from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.documents.schemas import (
     DocumentListItemResponse,
@@ -23,16 +24,19 @@ from app.features.documents.service import (
 
 router = APIRouter(tags=["Documents"])
 
+_DOCUMENT_ACCESS_ROLES = [UserRole.ADMIN, UserRole.AUDITOR_CLINICO]
+
 
 @router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_201_CREATED)
 async def ingest(
     payload: IngestPayload,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(_DOCUMENT_ACCESS_ROLES)),
 ) -> IngestResponse:
     """Recibe un documento clínico procesado por n8n, lo respalda en OCI y lo registra en la base de datos.
 
-    Requiere sesión autenticada (n8n debe enviar un token Bearer obtenido vía `/auth/login`).
+    Requiere rol ADMIN o AUDITOR_CLINICO (n8n debe autenticarse con una cuenta de servicio con uno
+    de esos roles y enviar el token Bearer obtenido vía `/auth/login`).
     """
     try:
         document = await ingest_document(payload, db)
@@ -55,7 +59,7 @@ async def ingest(
 @router.get("", response_model=PaginatedDocumentResponse)
 async def list_documents(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(_DOCUMENT_ACCESS_ROLES)),
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(20, ge=1, le=100, description="Elementos por página"),
     estado: str | None = Query(
@@ -69,7 +73,7 @@ async def list_documents(
     fecha_desde: datetime | None = Query(None),
     fecha_hasta: datetime | None = Query(None),
 ) -> PaginatedDocumentResponse:
-    """Lista la bandeja documental con filtros dinámicos y paginación. Requiere sesión autenticada."""
+    """Lista la bandeja documental con filtros dinámicos y paginación. Requiere rol ADMIN o AUDITOR_CLINICO."""
     result = await get_paginated_documents(
         db,
         page=page,

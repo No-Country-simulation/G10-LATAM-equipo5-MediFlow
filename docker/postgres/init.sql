@@ -70,9 +70,9 @@ WHERE estado = 'PENDIENTE_AUDITORIA';
 -- Hash bcrypt correspondiente a "admin123"
 INSERT INTO users (username, email, hashed_password, full_name, role)
 VALUES (
-    'auditor_demo',
-    'auditor@mediflow.cl',
+    'admin_user',
+    'administrador@mediflow.cl',
     '$2b$12$5ga92VwMZ957OBX9lcuZ6.yl2OQ5LZl5eeMMMNJ8JUT.Eg1JoFzdW',
-    'Dr. Auditor Demo',
-    'AUDITOR_CLINICO'
+    'Administrador MediFlow',
+    'ADMIN'
 ) ON CONFLICT (username) DO NOTHING;
