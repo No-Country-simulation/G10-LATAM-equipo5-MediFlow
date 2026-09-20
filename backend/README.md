@@ -243,12 +243,26 @@ El esquema lo crea `docker/postgres/init.sql` (solo la primera vez que arranca e
 
 ## Pruebas y calidad de código
 
-Las herramientas están en `requirements.txt`:
+Desde `backend/`, con el entorno virtual activado:
 
 ```bash
-pytest          # pruebas
+pytest          # ejecuta todas las pruebas
+pytest -v       # con el detalle de cada prueba
 ruff check .    # linter
 ```
+
+Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión de base de datos y un cliente OCI simulados (ver `tests/conftest.py`), y fijan sus propias variables de entorno, así que tampoco dependen de tu `.env`.
+
+| Archivo | Qué verifica |
+|---|---|
+| `test_security.py` | Hash de contraseñas y tokens JWT (`exp`, `jti` único) |
+| `test_ingest_service.py` | Regla de triaje (umbral 0.85), subida a OCI, compensación ante fallos de OCI o base de datos, médico por RUT |
+| `test_documents_api.py` | Ingesta (401/403/400/500), JSON completo de respuesta para React, listado paginado y filtros |
+| `test_auth_api.py` | Login, token inválido, usuario inactivo, logout, token revocado, restricción por rol |
+| `test_audit_api.py` | Detalle del caso, resolución, validaciones y errores (404/400/422/500) |
+| `test_health_api.py` | `200` si todo funciona, `503` si falla alguna dependencia |
+
+> Las pruebas usan datos simulados, así que no detectan errores de SQL real (por ejemplo, un nombre de columna incorrecto). Para eso hace falta probar contra el Postgres de `docker compose`.
 
 ## Problemas comunes
 
