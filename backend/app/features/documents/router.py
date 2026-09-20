@@ -10,6 +10,7 @@ from app.features.auth.dependencies import require_roles
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.documents.schemas import (
+    AlmacenamientoOci,
     DocumentListItemResponse,
     IngestPayload,
     IngestResponse,
@@ -48,11 +49,16 @@ async def ingest(
         ) from exc
 
     return IngestResponse(
+        status="pendiente_auditoria" if document.requiere_auditoria else "procesado",
         documento_id=document.documento_id,
-        estado=document.estado,
-        oci_binary_path=document.oci_binary_path,
-        oci_json_path=document.oci_json_path,
-        requiere_auditoria=document.requiere_auditoria,
+        clasificacion=payload.clasificacion,
+        datos_extraidos=payload.datos_extraidos,
+        decision_enrutamiento=payload.decision_enrutamiento,
+        almacenamiento_oci=AlmacenamientoOci(
+            bucket=document.oci_bucket_name,
+            ruta_objeto=document.oci_json_path,
+            status_backup="exito",
+        ),
     )
 
 

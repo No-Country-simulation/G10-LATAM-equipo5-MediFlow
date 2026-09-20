@@ -26,7 +26,7 @@ class ClinicalDocument(Base):
     edad_paciente: Mapped[int | None] = mapped_column(Integer)
 
     medico_nombre: Mapped[str | None] = mapped_column(String(150))
-    medico_matricula: Mapped[str | None] = mapped_column(String(50))
+    medico_rut: Mapped[str | None] = mapped_column(String(20))
 
     tipo_documento: Mapped[str] = mapped_column(String(80), nullable=False)
     especialidad: Mapped[str | None] = mapped_column(String(100))

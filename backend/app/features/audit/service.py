@@ -49,7 +49,7 @@ async def get_audit_case(documento_id: str, db: AsyncSession) -> AuditDetailResp
         nombre_paciente=document.nombre_paciente,
         edad_paciente=document.edad_paciente,
         medico_nombre=document.medico_nombre,
-        medico_matricula=document.medico_matricula,
+        medico_rut=document.medico_rut,
         tipo_documento=document.tipo_documento,
         especialidad=document.especialidad,
         nivel_prioridad=document.nivel_prioridad,
@@ -110,7 +110,7 @@ async def resolve_audit_case(
     document.nombre_paciente = payload.nombre_paciente
     document.edad_paciente = payload.edad_paciente
     document.medico_nombre = payload.medico_nombre
-    document.medico_matricula = payload.medico_matricula
+    document.medico_rut = payload.medico_rut
     document.tipo_documento = payload.tipo_documento
     document.nivel_prioridad = payload.nivel_prioridad
     document.diagnostico_principal = payload.diagnostico_principal

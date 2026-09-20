@@ -112,7 +112,7 @@ async def ingest_document(payload: IngestPayload, db: AsyncSession) -> ClinicalD
         "nombre_paciente": payload.datos_extraidos.paciente.nombre,
         "edad_paciente": payload.datos_extraidos.paciente.edad,
         "medico_nombre": payload.datos_extraidos.medico_solicitante.nombre,
-        "medico_matricula": payload.datos_extraidos.medico_solicitante.matricula,
+        "medico_rut": payload.datos_extraidos.medico_solicitante.rut,
         "tipo_documento": payload.clasificacion.tipo_documento,
         "especialidad": payload.clasificacion.especialidad,
         "nivel_prioridad": payload.clasificacion.nivel_prioridad,

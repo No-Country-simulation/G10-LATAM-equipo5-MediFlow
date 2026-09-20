@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS clinical_documents (
     
     -- Datos del Profesional
     medico_nombre VARCHAR(150),
-    medico_matricula VARCHAR(50),
+    medico_rut VARCHAR(20),
     
     -- Clasificación y Triaje Clínico
     tipo_documento VARCHAR(80) NOT NULL,

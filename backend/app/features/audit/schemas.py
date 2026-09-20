@@ -18,7 +18,7 @@ class AuditDetailResponse(BaseModel):
     nombre_paciente: str | None
     edad_paciente: int | None
     medico_nombre: str | None
-    medico_matricula: str | None
+    medico_rut: str | None
     tipo_documento: str
     especialidad: str | None
     nivel_prioridad: str
@@ -37,7 +37,7 @@ class AuditResolveRequest(BaseModel):
     nombre_paciente: str
     edad_paciente: int | None = None
     medico_nombre: str | None = None
-    medico_matricula: str | None = None
+    medico_rut: str | None = None
     tipo_documento: str
     nivel_prioridad: NivelPrioridad
     diagnostico_principal: str
