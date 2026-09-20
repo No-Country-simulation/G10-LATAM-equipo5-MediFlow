@@ -59,6 +59,14 @@ CREATE TABLE IF NOT EXISTS clinical_documents (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- Tokens JWT invalidados por logout
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+    jti VARCHAR(64) PRIMARY KEY,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    revoked_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires_at ON revoked_tokens(expires_at);
+
 -- 3. Índices de Alto Rendimiento
 CREATE INDEX IF NOT EXISTS idx_clinical_docs_rut ON clinical_documents(rut_paciente);
 CREATE INDEX IF NOT EXISTS idx_clinical_docs_estado ON clinical_documents(estado);

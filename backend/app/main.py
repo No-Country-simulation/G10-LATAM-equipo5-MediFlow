@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.core.config import settings
+from app.core.database import engine
 from app.features.audit.router import router as audit_router
 from app.features.auth.router import router as auth_router
+from app.features.auth.models import RevokedToken
 from app.features.auth.router import users_router
 from app.features.documents.router import router as documents_router
 from app.features.health.router import router as health_router
@@ -23,6 +25,12 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Ciclo de vida de la aplicación: se ejecuta al iniciar y al finalizar."""
     logger.info("Iniciando %s (%s)", settings.PROJECT_NAME, settings.ENVIRONMENT)
+    try:
+        # Bases de datos anteriores al logout no tienen esta tabla: se crea si falta.
+        async with engine.begin() as conn:
+            await conn.run_sync(RevokedToken.__table__.create, checkfirst=True)
+    except Exception:
+        logger.exception("No se pudo verificar la tabla revoked_tokens")
     yield
     logger.info("Deteniendo %s", settings.PROJECT_NAME)
 

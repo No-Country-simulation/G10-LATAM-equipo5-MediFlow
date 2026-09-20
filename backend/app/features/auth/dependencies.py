@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
-from app.features.auth.service import get_user_by_username
+from app.features.auth.service import get_user_by_username, is_token_revoked
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/login")
 
@@ -35,6 +35,10 @@ async def get_current_user(
             raise _CREDENTIALS_ERROR
     except JWTError as exc:
         raise _CREDENTIALS_ERROR from exc
+
+    jti: str | None = payload.get("jti")
+    if jti is not None and await is_token_revoked(db, jti):
+        raise _CREDENTIALS_ERROR
 
     user = await get_user_by_username(db, username)
     if user is None or not user.is_active:

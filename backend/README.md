@@ -133,6 +133,7 @@ Todos con prefijo `/api/v1`.
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
 | POST | `/auth/login` | Inicia sesión y devuelve el JWT | Público |
+| POST | `/auth/logout` | Cierra la sesión: invalida el token actual (queda en la tabla `revoked_tokens` hasta que expira). Responde `204`. El frontend debe además borrar el token guardado | Autenticado |
 | GET | `/auth/me` | Datos básicos del usuario autenticado | Autenticado |
 | GET | `/users/me` | Perfil completo propio | Autenticado |
 | PATCH | `/users/me` | Editar propio `full_name` y/o `email` | Autenticado |

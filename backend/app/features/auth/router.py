@@ -1,15 +1,16 @@
 """Router de la feature de autenticación: login, perfil propio y gestión administrativa de usuarios."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import create_access_token
-from app.features.auth.dependencies import get_current_user, require_roles
+from app.features.auth.dependencies import get_current_user, oauth2_scheme, require_roles
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.auth.schemas import (
@@ -29,6 +30,7 @@ from app.features.auth.service import (
     change_password,
     create_user,
     get_users_paginated,
+    revoke_token,
     update_profile,
 )
 
@@ -55,6 +57,20 @@ async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)) -
     )
 
     return TokenResponse(access_token=access_token, user=UserOut.model_validate(user))
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    token: str = Depends(oauth2_scheme),
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Cierra la sesión: invalida el token actual para que no pueda volver a usarse."""
+    payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    jti = payload.get("jti")
+    if jti is not None:
+        expires_at = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
+        await revoke_token(db, jti, expires_at)
 
 
 @router.get("/me", response_model=UserOut)

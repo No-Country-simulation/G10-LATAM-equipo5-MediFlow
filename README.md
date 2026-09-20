@@ -146,7 +146,7 @@ Prefijo: `/api/v1`. Salvo `health` y `login`, todos requieren `Authorization: Be
 | Área | Endpoints |
 |---|---|
 | Salud | `GET /health` |
-| Autenticación | `POST /auth/login`, `GET /auth/me` |
+| Autenticación | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` |
 | Perfil y usuarios | `/users/me`, `/users/me/change-password`, `/users` |
 | Documentos | `POST /documents/ingest`, `GET /documents` |
 | Auditoría | `GET /audit/{documento_id}`, `PUT /audit/{documento_id}/resolve` |

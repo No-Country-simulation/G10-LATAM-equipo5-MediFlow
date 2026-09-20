@@ -1,21 +1,35 @@
 """Lógica de negocio de autenticación y gestión de usuarios."""
 
 import math
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_password_hash, verify_password
 from app.features.auth.enums import UserRole
-from app.features.auth.models import User
+from app.features.auth.models import RevokedToken, User
 from app.features.auth.schemas import (
     PasswordChangeRequest,
     ProfileUpdateRequest,
     UserAdminUpdateRequest,
     UserCreateRequest,
 )
+
+
+async def revoke_token(db: AsyncSession, jti: str, expires_at: datetime) -> None:
+    """Registra el token como revocado y purga los ya expirados (ya no son válidos por `exp`)."""
+    await db.execute(delete(RevokedToken).where(RevokedToken.expires_at < datetime.now(timezone.utc)))
+    if await db.get(RevokedToken, jti) is None:
+        db.add(RevokedToken(jti=jti, expires_at=expires_at))
+    await db.commit()
+
+
+async def is_token_revoked(db: AsyncSession, jti: str) -> bool:
+    """Indica si el token con ese `jti` fue invalidado mediante logout."""
+    return await db.get(RevokedToken, jti) is not None
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
