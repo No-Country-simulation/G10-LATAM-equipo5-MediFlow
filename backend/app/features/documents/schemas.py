@@ -68,7 +68,7 @@ class IngestResponse(BaseModel):
 
 
 class DocumentListItemResponse(BaseModel):
-    """DTO resumido de un documento clínico, usado en resultados de búsqueda y listados paginados."""
+    """DTO resumido de un documento clínico, usado en el listado paginado y en resoluciones de auditoría."""
 
     model_config = ConfigDict(from_attributes=True)
 

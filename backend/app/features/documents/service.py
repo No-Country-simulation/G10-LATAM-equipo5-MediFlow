@@ -159,16 +159,6 @@ async def ingest_document(payload: IngestPayload, db: AsyncSession) -> ClinicalD
     return document
 
 
-async def search_documents_by_rut(rut: str, db: AsyncSession) -> list[ClinicalDocument]:
-    """Busca los documentos clínicos asociados a un paciente por su RUT, del más reciente al más antiguo."""
-    result = await db.execute(
-        select(ClinicalDocument)
-        .where(ClinicalDocument.rut_paciente == rut)
-        .order_by(ClinicalDocument.created_at.desc())
-    )
-    return list(result.scalars().all())
-
-
 async def get_paginated_documents(
     db: AsyncSession,
     page: int = 1,

@@ -19,7 +19,6 @@ from app.features.documents.service import (
     InvalidBase64Error,
     get_paginated_documents,
     ingest_document,
-    search_documents_by_rut,
 )
 
 router = APIRouter(tags=["Documents"])
@@ -90,19 +89,3 @@ async def list_documents(
         total_pages=result["total_pages"],
         message="No hay documentos con los filtros utilizados" if result["total"] == 0 else None,
     )
-
-
-@router.get("/search", response_model=list[DocumentListItemResponse])
-async def search(
-    rut: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> list[DocumentListItemResponse]:
-    """Busca los documentos clínicos asociados a un paciente por su RUT. Requiere sesión autenticada."""
-    documents = await search_documents_by_rut(rut, db)
-    if not documents:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontraron documentos para el RUT {rut}",
-        )
-    return [DocumentListItemResponse.model_validate(document) for document in documents]
