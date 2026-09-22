@@ -183,3 +183,5 @@ venv.bak/
 # OCI & Secrets
 *.pem
 oci_api_key.pem
+
+.antigravityrules
