@@ -1,0 +1,651 @@
+{
+  "name": "MediFlow versión 1 funcional",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "triage-documentos",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1056,
+        704
+      ],
+      "id": "4b722d64-42c8-4028-9fb6-0025dde12eb6",
+      "name": "Webhook",
+      "webhookId": "2f45b53b-5d2b-4259-a3e0-1547238ad84f"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -832,
+        704
+      ],
+      "id": "e7edfce9-596b-4798-a040-818bfb60bfaf",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      datos_extraidos: $json\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        704
+      ],
+      "id": "6879c859-417f-4f41-af2b-1d498823c4c2",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -384,
+        704
+      ],
+      "id": "896a3d4a-cb43-4a4c-aa59-ee4eb960c897",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "triaje-medico",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        -112
+      ],
+      "id": "7d0f7326-916a-409a-b971-86571eff64e8",
+      "name": "Ingesta Webhook",
+      "webhookId": "82e05479-b3ae-4e3c-9800-1489a3254a14"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1653adee-4086-4376-ab4f-051f5746f6da",
+                    "leftValue": "=={{ $binary.data ? $binary.data.mimeType : ($json.headers['content-type'] || '') }}",
+                    "rightValue": "pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -832,
+        -112
+      ],
+      "id": "d68146ea-2c85-458d-ba6e-99a79fae77e2",
+      "name": "Tipo de Archivo?"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -608,
+        -176
+      ],
+      "id": "b4a18677-bd49-42e5-8e37-b535286cb153",
+      "name": "Extract Text from PDF"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=IMPORTANTE: RESPONDE ÚNICAMENTE CON UN OBJETO JSON VÁLIDO. NO AGREGUES TEXTO EXPLICATIVO, NI INTRODUCCIONES, NI FORMATO MARKDOWN CÓDIGO (NO USES ```json).\n\nEstructura requerida:\n{\n  \"documento\": {\n    \"tipo\": \"Urgencias Médicas\" | \"Receta Médica\" | \"Orden de Solicitud de Procedimiento\" | \"Epicrisis / Informe de Alta\" | \"Certificado Médico\" | \"Desconocido\",\n    \"confianza_clasificacion\": 0.95\n  },\n  \"paciente\": {\n    \"nombre_completo\": \"\",\n    \"identificacion\": \"\",\n    \"edad\": null\n  },\n  \"profesional\": {\n    \"nombre_completo\": \"\",\n    \"especialidad\": \"\",\n    \"matricula\": \"\"\n  },\n  \"clinico\": {\n    \"hipotesis_diagnostica\": \"\",\n    \"codigo_cie10\": \"\",\n    \"urgencia\": true | false\n  },\n  \"metadata_control\": {\n    \"requiere_revision_humana\": false\n  }\n}\n\nALGORITMO DE CLASIFICACIÓN POR TÍTULOS Y TEXTO:\n1. Si el título, membrete o texto incluye \"URGENCIA\", \"SERVICIO DE URGENCIA\", \"ALTA PRIORIDAD\" o \"TRIAGE\":\n   -> documento.tipo = \"Urgencias Médicas\"\n   -> clinico.urgencia = true\n\n2. Si dice \"RECETA\", \"RECETA MÉDICA\" o \"PRESCRIPCIÓN\":\n   -> documento.tipo = \"Receta Médica\"\n   -> clinico.urgencia = false\n\n3. Si dice \"AUDITORÍA\", \"SOLICITUD DE AUTORIZACIÓN\" u \"ORDEN DE ESTUDIO\":\n   -> documento.tipo = \"Orden de Solicitud de Procedimiento\"\n   -> clinico.urgencia = false\n\n4. Si dice \"EPICRISIS\", \"INFORME DE ALTA\" o \"INFORME DE ESTUDIO\":\n   -> documento.tipo = \"Epicrisis / Informe de Alta\"\n   -> clinico.urgencia = false\n\n5. Si dice \"CERTIFICADO\" o \"LICENCIA\":\n   -> documento.tipo = \"Certificado Médico\"\n   -> clinico.urgencia = false\n\nTEXTO A ANALIZAR:\n{{ $json.text }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        -384,
+        -112
+      ],
+      "id": "fbdb649f-4458-4ee1-8f79-da4ad35e3d9f",
+      "name": "Triaje e Extracción IA"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"documento\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"tipo\": {\n          \"type\": \"string\",\n          \"enum\": [\"Receta Médica\", \"Informe de Estudio de Diagnóstico\", \"Orden de Solicitud de Procedimiento\", \"Epicrisis / Informe de Alta\", \"Certificado Médico\", \"Desconocido\"]\n        },\n        \"confianza_clasificacion\": { \"type\": \"number\" }\n      },\n      \"required\": [\"tipo\", \"confianza_clasificacion\"]\n    },\n    \"paciente\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"nombre_completo\": { \"type\": \"string\" },\n        \"identificacion\": { \"type\": \"string\" },\n        \"edad\": { \"type\": \"integer\" }\n      }\n    },\n    \"profesional\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"nombre_completo\": { \"type\": \"string\" },\n        \"especialidad\": { \"type\": \"string\" },\n        \"matricula\": { \"type\": \"string\" }\n      }\n    },\n    \"clinico\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"hipotesis_diagnostica\": { \"type\": \"string\" },\n        \"codigo_cie10\": { \"type\": \"string\" },\n        \"urgencia\": { \"type\": \"boolean\" },\n        \"estudios_solicitados\": {\n          \"type\": \"array\",\n          \"items\": { \"type\": \"string\" }\n        },\n        \"medicamentos\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n              \"nombre\": { \"type\": \"string\" },\n              \"dosis\": { \"type\": \"string\" },\n              \"frecuencia\": { \"type\": \"string\" }\n            }\n          }\n        }\n      },\n      \"required\": [\"urgencia\"]\n    }\n  },\n  \"required\": [\"documento\", \"paciente\", \"profesional\", \"clinico\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -1056,
+        512
+      ],
+      "id": "61d7a629-b214-4aef-b0c5-ea123d2cd0a9",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Obtener la salida del nodo anterior\nconst input = $input.first().json;\nlet rawText = input.text || input.output || input;\n\nif (typeof rawText === 'object') {\n  rawText = JSON.stringify(rawText);\n}\n\nlet rawData = {};\n\ntry {\n  const jsonMatch = rawText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    rawData = JSON.parse(jsonMatch[0]);\n  } else {\n    rawData = JSON.parse(rawText);\n  }\n} catch (e) {\n  rawData = {};\n}\n\n// 2. Extraer campos clave\nconst tipoDoc = rawData.documento?.tipo || rawData.tipo_documento || \"Desconocido\";\n\n// EVALUACIÓN ESTRICTA: Solo es urgente si el TIPO de documento es explícitamente \"Urgencias Médicas\"\n// o si la IA marcó clinico.urgencia como true de forma explícita.\nconst esUrgente = Boolean(\n  tipoDoc === \"Urgencias Médicas\" || \n  (rawData.clinico?.urgencia === true && tipoDoc !== \"Receta Médica\")\n);\n\nconst scoreConfianza = rawData.documento?.confianza_clasificacion ?? 0.95;\n\n// 3. Evaluar reglas de ambigüedad y revisión humana\nlet requiereRevision = false;\nlet motivos = [];\n\nif (esUrgente) {\n  requiereRevision = false;\n} else {\n  if (rawData.metadata_control?.requiere_revision_humana === true) {\n    requiereRevision = true;\n    motivos.push(\"Datos incompletos identificados por la IA\");\n  }\n  if (scoreConfianza < 0.60) {\n    requiereRevision = true;\n    motivos.push(\"Confianza de clasificación baja (<60%)\");\n  }\n  if (tipoDoc === \"Desconocido\") {\n    requiereRevision = true;\n    motivos.push(\"Tipo de documento no identificado por título\");\n  }\n}\n\n// 4. Salida limpia\nreturn {\n  documento: {\n    tipo: tipoDoc,\n    confianza_clasificacion: scoreConfianza\n  },\n  paciente: rawData.paciente || {},\n  profesional: rawData.profesional || {},\n  clinico: {\n    urgencia: esUrgente,\n    hipotesis_diagnostica: rawData.clinico?.hipotesis_diagnostica || \"\"\n  },\n  metadata_control: {\n    requiere_revision_humana: requiereRevision,\n    motivos_revision: motivos,\n    fecha_procesamiento: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        -112
+      ],
+      "id": "c2a70ea0-4450-4c28-8c85-0f9fc626628e",
+      "name": "Validación de Ambigüedad"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0ef6207b-aaaf-49b4-92b0-db590a20bb7e",
+                    "leftValue": "={{ $json.clinico.urgencia }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9c1eeaef-b05c-4013-a6e5-b5adf3f79eb7",
+                    "leftValue": "={{ $json.metadata_control.requiere_revision_humana }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "5bc249d8-4a4c-4925-bdf8-d9c36ab6dcd5",
+                    "leftValue": "={{ $json.documento.tipo.toLowerCase() }}",
+                    "rightValue": "receta",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "073402f0-c6d1-4f83-bc18-b3bedc2f8b2d",
+                    "leftValue": "={{ $json.documento.tipo.toLowerCase() }}",
+                    "rightValue": "procedimiento",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        112,
+        -144
+      ],
+      "id": "10def394-5f86-48c6-b026-9be8acc4a69e",
+      "name": "Router de Enrutamiento"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "urg-1",
+              "name": "cola_destino",
+              "value": "COLA_URGENCIAS_PRIORITARIA",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        -432
+      ],
+      "id": "15e03adf-9482-4778-99ee-864f7cc45d3f",
+      "name": "Cola: Urgencias"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "far-1",
+              "name": "cola_destino",
+              "value": "FARMACIA_DESPACHO",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        -112
+      ],
+      "id": "1e51aa1f-8b0c-4b34-a853-c4ec7d00363b",
+      "name": "Cola: Farmacia"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aud-1",
+              "name": "cola_destino",
+              "value": "AUDITORIA_AUTORIZACIONES",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        80
+      ],
+      "id": "c867f2ef-02a6-4198-b6b2-1506838ca8a2",
+      "name": "Cola: Auditoría"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "hce-1",
+              "name": "cola_destino",
+              "value": "HISTORIA_CLINICA_ELECTRONICA",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        272
+      ],
+      "id": "55f5f6ac-59d3-4d0c-b118-df5d4be4364f",
+      "name": "Cola: HCE"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "rev-1",
+              "name": "cola_destino",
+              "value": "REVISION_HUMANA_PENDIENTE",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        -272
+      ],
+      "id": "4a1f6f61-fb6f-43d3-ad06-fafa521a543f",
+      "name": "Cola: Revisión Humana"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        -112
+      ],
+      "id": "69d75c53-baed-40e6-808e-e4c0f8c7e98c",
+      "name": "Responder JSON"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        128
+      ],
+      "id": "3c7e093a-499c-448e-bb5f-f2812bfee797",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uoXc6pOzbUGOZEa9",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingesta Webhook": {
+      "main": [
+        [
+          {
+            "node": "Tipo de Archivo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipo de Archivo?": {
+      "main": [
+        [
+          {
+            "node": "Extract Text from PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Triaje e Extracción IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text from PDF": {
+      "main": [
+        [
+          {
+            "node": "Triaje e Extracción IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triaje e Extracción IA": {
+      "main": [
+        [
+          {
+            "node": "Validación de Ambigüedad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validación de Ambigüedad": {
+      "main": [
+        [
+          {
+            "node": "Router de Enrutamiento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router de Enrutamiento": {
+      "main": [
+        [
+          {
+            "node": "Cola: Urgencias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cola: Revisión Humana",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cola: Farmacia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cola: Auditoría",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cola: HCE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: Urgencias": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: Farmacia": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: Auditoría": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: HCE": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: Revisión Humana": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Triaje e Extracción IA",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "99d044cd-cd56-41d3-84aa-54318d88559d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fc3df8d3c2b57df898402cf602679d0f4fba0e0cdf902767ef5be934081519fb"
+  },
+  "nodeGroups": [],
+  "id": "EF4OrLdtuv2AqvAu",
+  "tags": []
+}
