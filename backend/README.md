@@ -152,25 +152,59 @@ Todos con prefijo `/api/v1`.
 | POST | `/documents/ingest` | Recibe un documento procesado por n8n, lo sube a OCI y lo registra. Responde `201` | `ADMIN`, `AUDITOR_CLINICO` |
 | GET | `/documents` | Bandeja central paginada con filtros | `ADMIN`, `AUDITOR_CLINICO` |
 
-**Ingesta.** n8n debe autenticarse con una cuenta de servicio (rol `ADMIN` o `AUDITOR_CLINICO`) y enviar:
+**Ingesta.** n8n debe autenticarse con una cuenta de servicio (rol `ADMIN` o `AUDITOR_CLINICO`) y enviar el payload siguiendo el patrón **Envelope**: `clasificacion` y `datos_generales` son comunes a cualquier documento, y `detalle_clinico` transporta un único bloque poblado según `clasificacion.tipo_documento`. El pipeline solo ingiere **resultados/informes ya emitidos** (no órdenes o derivaciones previas a un estudio):
+
+| `tipo_documento` | Bloque poblado en `detalle_clinico` |
+|---|---|
+| Receta | `medicamentos` (lista de `{ nombre, dosis, duracion_tratamiento }`) |
+| Informe de Laboratorio | `examenes_y_laboratorio` (`estudio_solicitado`, `conclusiones_o_hallazgos`, `paneles`) |
+| Informe de Imagenología (TC, RM, Rx, Ecotomografía) | `informe_imagenologico` (`tecnica`, `antecedentes`, `hallazgos`, `impresion_diagnostica`) |
+| Nota de Atención Ambulatoria (consulta médica) | `nota_atencion_ambulatoria` (`motivo_consulta`, `antecedentes`, `anamnesis`, `examen_fisico`, `diagnostico_referencia`, `diagnostico_atencion`, `indicaciones`) |
+| Epicrisis | `procedimientos_e_internacion` (`fecha_ingreso`, `fecha_alta`, `resumen_evolucion`, `antecedentes_relevantes`, `procedimientos_realizados`) |
+
+Un informe de laboratorio real suele traer **varios paneles** (ej. "Química en Sangre", "Hemograma", "Coagulación"), cada uno con su propia tabla de parámetros y unidades. Por eso `examenes_y_laboratorio.paneles` es una lista de `{ nombre_panel, parametros }`, y cada parámetro es `{ nombre, valor, unidad, rango_referencia, alterado }`.
+
+**`archivos` es una lista, no un archivo único**: un mismo documento puede traer más de un binario (ej. una orden de radiografía con varias placas AP/Lateral/Oblicua, o una ecotomografía con múltiples capturas más su informe). Cada elemento es `{ tipo_archivo, archivo_base64, rol }`; `rol` es libre (ej. `"documento_principal"`, `"imagen_estudio"`) y el primer elemento de la lista se usa como vista previa en la bandeja de auditoría.
+
+Ejemplo con un Informe de Laboratorio (dos paneles, un solo archivo):
 
 ```json
 {
   "documento_id": "DOC-001",
-  "tipo_archivo": "PDF",
-  "archivo_base64": "<contenido en base64>",
+  "archivos": [
+    { "tipo_archivo": "PDF", "archivo_base64": "<contenido en base64>", "rol": "documento_principal" }
+  ],
   "clasificacion": {
-    "tipo_documento": "Receta",
+    "tipo_documento": "Informe de Laboratorio",
     "especialidad": "Cardiología",
     "nivel_prioridad": "Urgente",
     "score_confianza_clasificacion": 0.93
   },
-  "datos_extraidos": {
+  "datos_generales": {
     "paciente": { "nombre": "Juan Pérez", "edad": 54, "rut": "12.345.678-9" },
-    "medico_solicitante": { "nombre": "Dra. Soto", "rut": "9.876.543-2" },
-    "estudio_realizado": "Electrocardiograma",
+    "medico_solicitante": { "nombre": "Dra. Soto", "rut": "9.876.543-2", "matricula": "MED-4321" },
     "diagnostico_principal": "Hipertensión arterial",
     "cie10_sugerido": "I10"
+  },
+  "detalle_clinico": {
+    "examenes_y_laboratorio": {
+      "estudio_solicitado": "Perfil lipídico, Hemograma",
+      "conclusiones_o_hallazgos": "Colesterol total elevado",
+      "paneles": [
+        {
+          "nombre_panel": "Química en Sangre",
+          "parametros": [
+            { "nombre": "Colesterol total", "valor": "240", "unidad": "mg/dL", "rango_referencia": "< 200", "alterado": true }
+          ]
+        },
+        {
+          "nombre_panel": "Hemograma",
+          "parametros": [
+            { "nombre": "Hemoglobina", "valor": "16.2", "unidad": "g/dl", "rango_referencia": "14.0 - 17.5", "alterado": false }
+          ]
+        }
+      ]
+    }
   },
   "decision_enrutamiento": {
     "destino_principal": "Farmacia_Hospitalaria",
@@ -181,24 +215,38 @@ Todos con prefijo `/api/v1`.
 }
 ```
 
-Campos opcionales: `estudio_realizado`, `notificacion_generada` y todo lo del médico/paciente salvo `nombre`. El médico se identifica por su **RUT** (ya no por matrícula).
+Campos opcionales: los cinco bloques de `detalle_clinico` (solo debe venir poblado el que corresponda al `tipo_documento`), `rol` en cada archivo, `notificacion_generada` y todo lo del médico/paciente salvo `nombre`. El médico admite tanto **RUT** como **matrícula**.
 
-**Respuesta (`201`)**: es el JSON completo que el frontend React debe usar al terminar el procesamiento. Repite `clasificacion`, `datos_extraidos` y `decision_enrutamiento` recibidos, y agrega `status` (`procesado` o `pendiente_auditoria`) y `almacenamiento_oci`, que calcula el backend:
+**Respuesta (`201`)**: es el JSON completo que el frontend React debe usar al terminar el procesamiento. Repite `clasificacion`, `datos_generales`, `detalle_clinico` y `decision_enrutamiento` recibidos, y agrega `status` (`procesado` o `pendiente_auditoria`) y `almacenamiento_oci`, que calcula el backend:
 
 ```json
 {
   "status": "procesado",
   "documento_id": "DOC-001",
   "clasificacion": { "...": "..." },
-  "datos_extraidos": { "...": "..." },
+  "datos_generales": { "...": "..." },
+  "detalle_clinico": { "...": "..." },
   "decision_enrutamiento": { "...": "..." },
   "almacenamiento_oci": {
     "bucket": "mediflow-documents",
     "ruta_objeto": "procesados/urgente/DOC-001.json",
+    "rutas_binarios": ["recibidos/DOC-001/0.pdf"],
     "status_backup": "exito"
   }
 }
 ```
+
+**Persistencia en PostgreSQL.** El payload completo (incluyendo el texto libre de `detalle_clinico`, ej. hallazgos de imagenología o evolución de una epicrisis) se guarda íntegro en `raw_extracted_json` como respaldo. Pero el detalle clínico que sí tiene forma de tabla se normaliza en columnas y tablas propias, para poder filtrarlo/agregarlo con SQL en vez de recorrer JSONB:
+
+| Tabla | Contenido | Cardinalidad |
+|---|---|---|
+| `clinical_documents` | Datos administrativos, clasificación, triaje y enrutamiento (igual que antes) | 1 por documento |
+| `clinical_document_attachments` | Un binario por fila (`oci_path`, `tipo_archivo`, `rol`, `orden`) | N por documento |
+| `clinical_document_medications` | Un medicamento por fila (Receta) | N por documento |
+| `lab_panels` + `lab_parameters` | Un panel por fila, con sus parámetros anidados (Laboratorio) | N paneles × N parámetros |
+| `clinical_document_procedures` | Un procedimiento por fila (Epicrisis) | N por documento |
+
+Cada reingreso del mismo `documento_id` reemplaza estas filas (no las acumula). El texto libre de `informe_imagenologico` (hallazgos/impresión) y de la epicrisis (resumen de evolución) se deja solo en `raw_extracted_json`: no hay tabla para eso porque nadie filtra por ese texto, normalizarlo no simplificaría nada.
 
 Errores: `400` si el base64 es inválido, `500` si falla OCI o la base de datos.
 

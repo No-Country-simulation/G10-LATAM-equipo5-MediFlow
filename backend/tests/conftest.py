@@ -155,23 +155,57 @@ def login_as(monkeypatch):
     return _login
 
 
-def ingest_body(score: float = 0.95, requiere_auditoria: bool = False, **overrides) -> dict:
+def ingest_body(
+    score: float = 0.95,
+    requiere_auditoria: bool = False,
+    archivo_base64: str | None = None,
+    tipo_archivo: str = "PDF",
+    **overrides,
+) -> dict:
     body = {
         "documento_id": "DOC-TEST-1",
-        "tipo_archivo": "PDF",
-        "archivo_base64": base64.b64encode(b"contenido").decode(),
+        "archivos": [
+            {
+                "tipo_archivo": tipo_archivo,
+                "archivo_base64": archivo_base64 or base64.b64encode(b"contenido").decode(),
+                "rol": "documento_principal",
+            }
+        ],
         "clasificacion": {
             "tipo_documento": "Informe de Estudio por Imagenes",
             "especialidad": "Radiologia",
             "nivel_prioridad": "Urgente",
             "score_confianza_clasificacion": score,
         },
-        "datos_extraidos": {
+        "datos_generales": {
             "paciente": {"nombre": "Carlos Mendes", "edad": 52, "rut": "12.345.678-9"},
-            "medico_solicitante": {"nombre": "Dra. Silveira", "rut": "9.876.543-2"},
-            "estudio_realizado": "Tomografia de Torax",
+            "medico_solicitante": {
+                "nombre": "Dra. Silveira",
+                "rut": "9.876.543-2",
+                "matricula": "MED-4321",
+            },
             "diagnostico_principal": "TEP Agudo",
             "cie10_sugerido": "I26.9",
+        },
+        "detalle_clinico": {
+            "examenes_y_laboratorio": {
+                "estudio_solicitado": "Tomografia de Torax",
+                "conclusiones_o_hallazgos": "Signos de tromboembolismo pulmonar agudo",
+                "paneles": [
+                    {
+                        "nombre_panel": "Coagulacion",
+                        "parametros": [
+                            {
+                                "nombre": "Dimero D",
+                                "valor": "1200",
+                                "unidad": "ng/mL",
+                                "rango_referencia": "< 500",
+                                "alterado": True,
+                            }
+                        ],
+                    }
+                ],
+            }
         },
         "decision_enrutamiento": {
             "destino_principal": "Cola_Emergencia_Medica",
