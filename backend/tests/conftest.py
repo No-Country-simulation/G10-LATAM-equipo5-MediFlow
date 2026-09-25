@@ -49,6 +49,8 @@ class FakeSession:
     def __init__(self):
         self.results: list[FakeResult] = []
         self.added: list = []
+        self.deleted: list = []
+        self.get_result = None
         self.commits = 0
         self.rollbacks = 0
         self.fail_commit: Exception | None = None
@@ -60,10 +62,13 @@ class FakeSession:
         return self.results.pop(0) if self.results else FakeResult(None)
 
     async def get(self, *_args, **_kwargs):
-        return None
+        return self.get_result
 
     def add(self, obj):
         self.added.append(obj)
+
+    async def delete(self, obj):
+        self.deleted.append(obj)
 
     async def commit(self):
         if self.fail_commit is not None:
@@ -77,6 +82,16 @@ class FakeSession:
         # Simula los valores que asigna la base de datos al insertar.
         if getattr(obj, "created_at", 0) is None:
             obj.created_at = datetime.now(timezone.utc)
+        # Aplica los `default=` escalares/callables de las columnas (id, is_active, ...).
+        table = getattr(obj, "__table__", None)
+        for column in table.columns if table is not None else []:
+            default = column.default
+            if default is None or getattr(obj, column.key, None) is not None:
+                continue
+            if default.is_scalar:
+                setattr(obj, column.key, default.arg)
+            elif default.is_callable:
+                setattr(obj, column.key, default.arg(None))
 
 
 class FakeOCI:
