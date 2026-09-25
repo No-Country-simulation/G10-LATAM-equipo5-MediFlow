@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from app.features.auth.enums import UserRole
-from app.features.documents.models import ClinicalDocument
+from app.features.documents.models import ClinicalDocument, ClinicalDocumentAttachment
 
 RESOLVE_BODY = {
     "rut_paciente": "12.345.678-9",
@@ -24,11 +24,13 @@ def _pending(**kwargs) -> ClinicalDocument:
         nivel_prioridad="Rutina",
         score_confianza=Decimal("0.600"),
         oci_bucket_name="test-bucket",
-        oci_binary_path="recibidos/DOC-A.pdf",
         oci_json_path="auditoria_humana/DOC-A.json",
         raw_extracted_json={"documento_id": "DOC-A"},
         requiere_auditoria=True,
         created_at=datetime.now(timezone.utc),
+        attachments=[
+            ClinicalDocumentAttachment(tipo_archivo="PDF", oci_path="recibidos/DOC-A/0.pdf", orden=0)
+        ],
     )
     fields.update(kwargs)
     return ClinicalDocument(**fields)
