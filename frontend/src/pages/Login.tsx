@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Activity, Shield } from 'lucide-react';
 import LoginForm from '../components/auth/LoginForm';
 import DemoAccounts from '../components/auth/DemoAccounts';
@@ -6,15 +7,23 @@ import { useAuth } from '../hooks/useAuth';
 import type { LoginRequest } from '../types/auth';
 
 const Login = () => {
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleLogin = async (credentials: LoginRequest) => {
     setError(null);
     setIsSubmitting(true);
     try {
       await login(credentials);
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error al procesar el acceso clínico';
       setError(message);

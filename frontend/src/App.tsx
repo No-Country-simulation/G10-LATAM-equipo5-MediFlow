@@ -1,30 +1,39 @@
-import { Activity } from 'lucide-react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import { useAuth } from './hooks/useAuth';
+import ProtectedRoute from './components/auth/ProtectedRoute';
+import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
 import DashboardPreview from './components/dashboard/DashboardPreview';
-
-const AppContent = () => {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-sm text-slate-400">
-          <Activity className="w-5 h-5 text-rose-500 animate-pulse" />
-          <span>Iniciando entorno clínico MediFlow...</span>
-        </div>
-      </main>
-    );
-  }
-
-  return isAuthenticated ? <DashboardPreview /> : <Login />;
-};
+import TriagePage from './pages/TriagePage';
+import DocumentsPage from './pages/DocumentsPage';
+import IngestionPage from './pages/IngestionPage';
+import AuditPage from './pages/AuditPage';
 
 const App = () => {
   return (
     <AuthProvider>
-      <AppContent />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+
+          <Route
+            element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/dashboard" element={<DashboardPreview />} />
+            <Route path="/triaje" element={<TriagePage />} />
+            <Route path="/documentos" element={<DocumentsPage />} />
+            <Route path="/ingesta" element={<IngestionPage />} />
+            <Route path="/auditoria" element={<AuditPage />} />
+          </Route>
+
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </BrowserRouter>
     </AuthProvider>
   );
 };
