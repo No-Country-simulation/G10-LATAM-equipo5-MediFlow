@@ -1,0 +1,154 @@
+{
+  "name": "MediFlow ingest IngestPayload",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "triaje-medico",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1056, -112],
+      "id": "7d0f7326-916a-409a-b971-86571eff64e8",
+      "name": "Ingesta Webhook"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1653adee-4086-4376-ab4f-051f5746f6da",
+                    "leftValue": "={{ $binary.data ? $binary.data.mimeType : ($json.headers && $json.headers['content-type'] || '') }}",
+                    "rightValue": "pdf",
+                    "operator": { "type": "string", "operation": "contains" }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [-832, -112],
+      "id": "d68146ea-2c85-458d-ba6e-99e29fae77e2",
+      "name": "Tipo de Archivo?"
+    },
+    {
+      "parameters": { "operation": "pdf", "options": {} },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-608, -176],
+      "id": "b4a18677-bd49-42e5-8e37-b535286cb153",
+      "name": "Extract Text from PDF"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=IMPORTANTE: RESPONDE ÚNICAMENTE CON UN OBJETO JSON VÁLIDO. SIN markdown ni ```.\n\nContrato (IngestPayload FastAPI, SIN documento_id ni archivos):\n{\n  \"clasificacion\": {\n    \"tipo_documento\": \"Receta Médica | Informe de Laboratorio | Informe de Estudio por Imágenes | Solicitud de Procedimiento | Epicrisis / Informe de Alta | Interconsulta / Derivación | Informe de Anatomía Patológica | Protocolo Operatorio | Otro / No clasificable\",\n    \"especialidad\": \"\",\n    \"nivel_prioridad\": \"Rutina | Prioritario | Urgente\",\n    \"score_confianza_clasificacion\": 0.95\n  },\n  \"datos_generales\": {\n    \"paciente\": { \"rut\": null, \"nombre\": \"\", \"edad\": null },\n    \"medico_solicitante\": { \"rut\": null, \"nombre\": \"\", \"matricula\": null },\n    \"diagnostico_principal\": \"\",\n    \"cie10_sugerido\": null\n  },\n  \"detalle_clinico\": {\n    \"medicamentos\": null,\n    \"examenes_y_laboratorio\": null,\n    \"procedimientos_e_internacion\": null,\n    \"informe_imagenologico\": null,\n    \"nota_atencion_ambulatoria\": null\n  },\n  \"decision_enrutamiento\": {\n    \"destino_principal\": \"Cola_Emergencia_Medica | Farmacia_Hospitalaria | Gestion_Procedimientos | Gestion_Interconsultas | Cola_Oncologia | Ficha_Clinica\",\n    \"requiere_auditoria_humana\": false,\n    \"justificacion_enrutamiento\": \"\",\n    \"notificacion_generada\": null\n  }\n}\n\nPobla UN solo bloque de detalle_clinico según el tipo. No inventes RUT ni CIE-10. Si falta paciente o el texto es ilegible: score < 0.70 y requiere_auditoria_humana true. TEP/IAM/hemorragia/disnea súbita grave → Urgente + Cola_Emergencia_Medica + notificacion_generada.\n\nTEXTO:\n{{ $json.text }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [-384, -112],
+      "id": "fbdb649f-4458-4ee1-8f79-da4ad35e3d9f",
+      "name": "Triaje e Extracción IA"
+    },
+    {
+      "parameters": { "options": {} },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [-320, 128],
+      "id": "3c7e093a-499c-448e-bb5f-f2812bfee797",
+      "name": "Google Gemini Chat Model"
+    },
+    {
+      "parameters": {
+        "jsCode": "const DESTINO_LEGACY = {\n  Historia_Clinica_Electronica: 'Ficha_Clinica',\n  Cola_Revision_Humana: 'Ficha_Clinica',\n  Auditoria_Autorizaciones: 'Gestion_Procedimientos',\n  COLA_URGENCIAS_PRIORITARIA: 'Cola_Emergencia_Medica',\n  FARMACIA_DESPACHO: 'Farmacia_Hospitalaria',\n  AUDITORIA_AUTORIZACIONES: 'Gestion_Procedimientos',\n  HISTORIA_CLINICA_ELECTRONICA: 'Ficha_Clinica',\n  REVISION_HUMANA_PENDIENTE: 'Ficha_Clinica'\n};\nconst TIPO_LEGACY = {\n  'Informe de Estudio por Imágenes/Laboratorio': 'Informe de Estudio por Imágenes',\n  'Informe de Estudio de Diagnóstico': 'Informe de Estudio por Imágenes',\n  'Orden de Solicitud de Procedimiento': 'Solicitud de Procedimiento',\n  'Urgencias Médicas': 'Otro / No clasificable',\n  Desconocido: 'Otro / No clasificable',\n  'Certificado Médico': 'Otro / No clasificable'\n};\nfunction parseGemini(raw) {\n  if (raw && raw.clasificacion) return raw;\n  const text = typeof raw === 'string' ? raw : raw?.text || raw?.output || JSON.stringify(raw || {});\n  const match = String(text).match(/\\{[\\s\\S]*\\}/);\n  if (!match) return {};\n  try { return JSON.parse(match[0]); } catch { return {}; }\n}\nconst item = $input.first();\nconst gemini = parseGemini(item.json);\nconst clasificacion = gemini.clasificacion || {};\nconst datos = gemini.datos_generales || gemini.datos_extraidos || {};\nconst paciente = datos.paciente || {};\nconst medico = datos.medico_solicitante || gemini.profesional || {};\nconst decision = gemini.decision_enrutamiento || {};\nconst score = Number(clasificacion.score_confianza_clasificacion ?? gemini.documento?.confianza_clasificacion ?? 0.5);\nconst tipo = TIPO_LEGACY[clasificacion.tipo_documento || gemini.documento?.tipo] || clasificacion.tipo_documento || gemini.documento?.tipo || 'Otro / No clasificable';\nlet prioridad = clasificacion.nivel_prioridad || 'Rutina';\nif (prioridad === 'Ambiguo') prioridad = 'Prioritario';\nconst urgente = prioridad === 'Urgente' || decision.destino_principal === 'Cola_Emergencia_Medica' || gemini.clinico?.urgencia === true;\nlet hitl = Boolean(decision.requiere_auditoria_humana);\nif (score < 0.7) hitl = true;\nif (tipo === 'Otro / No clasificable') hitl = true;\nif (decision.destino_principal === 'Cola_Revision_Humana') hitl = true;\nif (!paciente.nombre && !paciente.nombre_completo) hitl = true;\nconst destino = urgente ? 'Cola_Emergencia_Medica' : (DESTINO_LEGACY[decision.destino_principal] || decision.destino_principal || 'Ficha_Clinica');\nconst webhook = $('Ingesta Webhook').first();\nconst binary = webhook.binary?.data || item.binary?.data;\nlet archivoBase64 = '';\nlet tipoArchivo = 'PDF';\nif (binary) {\n  archivoBase64 = binary.data;\n  tipoArchivo = (binary.mimeType || '').includes('pdf') ? 'PDF' : 'IMAGEN';\n}\nconst documentoId = gemini.documento_id || webhook.json.documento_id || ('DOC-' + Date.now());\nreturn [{ json: {\n  documento_id: String(documentoId),\n  archivos: [{ tipo_archivo: tipoArchivo, archivo_base64: archivoBase64, rol: 'documento_principal' }],\n  clasificacion: { tipo_documento: tipo, especialidad: clasificacion.especialidad || null, nivel_prioridad: urgente ? 'Urgente' : prioridad, score_confianza_clasificacion: score },\n  datos_generales: {\n    paciente: { rut: paciente.rut || paciente.identificacion || null, nombre: paciente.nombre || paciente.nombre_completo || null, edad: paciente.edad ?? null },\n    medico_solicitante: { rut: medico.rut || null, nombre: medico.nombre || medico.nombre_completo || null, matricula: medico.matricula || null },\n    diagnostico_principal: datos.diagnostico_principal || gemini.clinico?.hipotesis_diagnostica || null,\n    cie10_sugerido: datos.cie10_sugerido || gemini.clinico?.codigo_cie10 || null\n  },\n  detalle_clinico: gemini.detalle_clinico || { medicamentos: null, examenes_y_laboratorio: null, procedimientos_e_internacion: null, informe_imagenologico: null, nota_atencion_ambulatoria: null },\n  decision_enrutamiento: {\n    destino_principal: destino,\n    requiere_auditoria_humana: hitl,\n    justificacion_enrutamiento: decision.justificacion_enrutamiento || (hitl ? 'Baja confianza o datos incompletos' : 'Enrutamiento automático'),\n    notificacion_generada: decision.notificacion_generada || null\n  }\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-32, -112],
+      "id": "c2a70ea0-4450-4c28-8c85-0f9fc626628e",
+      "name": "Armar IngestPayload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MEDIFLOW_API_BASE_URL }}/api/v1/documents/ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.MEDIFLOW_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [224, -112],
+      "id": "a11b22c3-d44e-4f55-8899-001122334455",
+      "name": "POST FastAPI Ingest"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [448, -112],
+      "id": "69d75c53-baed-40e6-808e-e4c0f8c7e98c",
+      "name": "Responder JSON"
+    }
+  ],
+  "connections": {
+    "Ingesta Webhook": {
+      "main": [[{ "node": "Tipo de Archivo?", "type": "main", "index": 0 }]]
+    },
+    "Tipo de Archivo?": {
+      "main": [
+        [{ "node": "Extract Text from PDF", "type": "main", "index": 0 }],
+        [{ "node": "Triaje e Extracción IA", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Text from PDF": {
+      "main": [[{ "node": "Triaje e Extracción IA", "type": "main", "index": 0 }]]
+    },
+    "Triaje e Extracción IA": {
+      "main": [[{ "node": "Armar IngestPayload", "type": "main", "index": 0 }]]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [[{ "node": "Triaje e Extracción IA", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Armar IngestPayload": {
+      "main": [[{ "node": "POST FastAPI Ingest", "type": "main", "index": 0 }]]
+    },
+    "POST FastAPI Ingest": {
+      "main": [[{ "node": "Responder JSON", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "binaryMode": "separate" },
+  "pinData": {},
+  "meta": { "templateCredsSetupCompleted": false }
+}
