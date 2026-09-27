@@ -27,12 +27,17 @@ async def test_ingest_returns_full_json_for_react(client, login_as, db, oci):
     assert data["status"] == "procesado"
     assert data["documento_id"] == "DOC-TEST-1"
     assert data["clasificacion"]["nivel_prioridad"] == "Urgente"
-    assert data["datos_extraidos"]["medico_solicitante"]["rut"] == "9.876.543-2"
-    assert data["datos_extraidos"]["estudio_realizado"] == "Tomografia de Torax"
+    assert data["datos_generales"]["medico_solicitante"]["rut"] == "9.876.543-2"
+    assert data["datos_generales"]["medico_solicitante"]["matricula"] == "MED-4321"
+    examenes = data["detalle_clinico"]["examenes_y_laboratorio"]
+    assert examenes["estudio_solicitado"] == "Tomografia de Torax"
+    assert examenes["paneles"][0]["nombre_panel"] == "Coagulacion"
+    assert examenes["paneles"][0]["parametros"][0]["nombre"] == "Dimero D"
     assert data["decision_enrutamiento"]["notificacion_generada"]["canal"] == "Alerta_Guardia_Medica"
     assert data["almacenamiento_oci"] == {
         "bucket": "test-bucket",
         "ruta_objeto": "procesados/urgente/DOC-TEST-1.json",
+        "rutas_binarios": ["recibidos/DOC-TEST-1/0.pdf"],
         "status_backup": "exito",
     }
 
@@ -44,6 +49,25 @@ async def test_ingest_low_confidence_reports_pendiente_auditoria(client, login_a
     assert r.status_code == 201
     assert r.json()["status"] == "pendiente_auditoria"
     assert r.json()["almacenamiento_oci"]["ruta_objeto"] == "auditoria_humana/DOC-TEST-1.json"
+
+
+async def test_ingest_multiples_archivos_se_suben_todos(client, login_as, db, oci):
+    db.queue(None)
+    headers = login_as(UserRole.ADMIN)
+    body = ingest_body(
+        archivos=[
+            {"tipo_archivo": "PDF", "archivo_base64": "Y29udGVuaWRv", "rol": "documento_principal"},
+            {"tipo_archivo": "IMAGEN", "archivo_base64": "Y29udGVuaWRv", "rol": "imagen_estudio"},
+            {"tipo_archivo": "IMAGEN", "archivo_base64": "Y29udGVuaWRv", "rol": "imagen_estudio"},
+        ]
+    )
+    r = await client.post("/api/v1/documents/ingest", json=body, headers=headers)
+    assert r.status_code == 201
+    assert r.json()["almacenamiento_oci"]["rutas_binarios"] == [
+        "recibidos/DOC-TEST-1/0.pdf",
+        "recibidos/DOC-TEST-1/1.png",
+        "recibidos/DOC-TEST-1/2.png",
+    ]
 
 
 async def test_ingest_invalid_base64_returns_400(client, login_as, oci):

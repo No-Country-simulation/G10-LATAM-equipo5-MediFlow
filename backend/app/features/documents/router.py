@@ -52,11 +52,13 @@ async def ingest(
         status="pendiente_auditoria" if document.requiere_auditoria else "procesado",
         documento_id=document.documento_id,
         clasificacion=payload.clasificacion,
-        datos_extraidos=payload.datos_extraidos,
+        datos_generales=payload.datos_generales,
+        detalle_clinico=payload.detalle_clinico,
         decision_enrutamiento=payload.decision_enrutamiento,
         almacenamiento_oci=AlmacenamientoOci(
             bucket=document.oci_bucket_name,
             ruta_objeto=document.oci_json_path,
+            rutas_binarios=[attachment.oci_path for attachment in document.attachments],
             status_backup="exito",
         ),
     )

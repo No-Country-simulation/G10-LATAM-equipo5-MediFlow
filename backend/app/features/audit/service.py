@@ -37,8 +37,16 @@ async def get_audit_case(documento_id: str, db: AsyncSession) -> AuditDetailResp
     """Obtiene el detalle de un caso de auditoría, con una URL pre-firmada para visualizar el binario en OCI."""
     document = await _get_document_or_404(documento_id, db)
 
+    if not document.attachments:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"El documento {documento_id} no tiene archivos binarios asociados",
+        )
+
+    # El adjunto de `orden` más bajo es el archivo principal (el informe/receta en sí);
+    # los siguientes son imágenes de respaldo del mismo estudio (ver ClinicalDocument.attachments).
     preview_url = await oci_storage_client.create_preauthenticated_request(
-        document.oci_binary_path, expire_minutes=PREVIEW_URL_EXPIRE_MINUTES
+        document.attachments[0].oci_path, expire_minutes=PREVIEW_URL_EXPIRE_MINUTES
     )
 
     return AuditDetailResponse(

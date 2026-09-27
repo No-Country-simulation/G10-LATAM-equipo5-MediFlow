@@ -37,10 +37,10 @@ def test_routing_explicit_audit_flag_wins():
     assert _resolve_routing(p.clasificacion, p.decision_enrutamiento, "D1")[0] == "PENDIENTE_AUDITORIA"
 
 
-def test_medico_uses_rut_not_matricula():
+def test_medico_admite_rut_y_matricula():
     p = _payload()
-    assert p.datos_extraidos.medico_solicitante.rut == "9.876.543-2"
-    assert not hasattr(p.datos_extraidos.medico_solicitante, "matricula")
+    assert p.datos_generales.medico_solicitante.rut == "9.876.543-2"
+    assert p.datos_generales.medico_solicitante.matricula == "MED-4321"
 
 
 async def test_invalid_base64_raises(db, oci):
@@ -54,18 +54,78 @@ async def test_ingest_uploads_binary_and_json_and_persists(db, oci):
     db.queue(None)  # no existe un documento previo
     doc = await ingest_document(_payload(), db)
 
-    assert set(oci.uploaded) == {"recibidos/DOC-TEST-1.pdf", "procesados/urgente/DOC-TEST-1.json"}
+    assert set(oci.uploaded) == {
+        "recibidos/DOC-TEST-1/0.pdf",
+        "procesados/urgente/DOC-TEST-1.json",
+    }
     assert doc.estado == "PROCESADO"
     assert doc.medico_rut == "9.876.543-2"
     assert doc.oci_bucket_name == "test-bucket"
     assert db.commits == 1
+
+    # El detalle clínico del payload por defecto (examenes_y_laboratorio con un panel
+    # "Coagulacion" y un parámetro "Dimero D") queda normalizado en las tablas hijas.
+    assert [a.oci_path for a in doc.attachments] == ["recibidos/DOC-TEST-1/0.pdf"]
+    assert doc.medications == []
+    assert [p.nombre_panel for p in doc.lab_panels] == ["Coagulacion"]
+    assert [p.nombre for p in doc.lab_panels[0].parametros] == ["Dimero D"]
+    assert doc.lab_panels[0].parametros[0].alterado is True
+    assert doc.procedures == []
+
+
+async def test_ingest_normaliza_medicamentos_y_procedimientos(db, oci):
+    db.queue(None)
+    payload = _payload(
+        detalle_clinico={
+            "medicamentos": [
+                {"nombre": "Paracetamol", "dosis": "500mg", "duracion_tratamiento": "5 dias"},
+                {"nombre": "Ibuprofeno", "dosis": "400mg"},
+            ],
+            "procedimientos_e_internacion": {
+                "fecha_ingreso": "2026-03-10",
+                "procedimientos_realizados": ["Drenaje pleural", "Toracocentesis"],
+            },
+        }
+    )
+    doc = await ingest_document(payload, db)
+
+    assert [m.nombre for m in doc.medications] == ["Paracetamol", "Ibuprofeno"]
+    assert doc.medications[0].dosis == "500mg"
+    assert doc.lab_panels == []
+    assert [p.descripcion for p in doc.procedures] == ["Drenaje pleural", "Toracocentesis"]
+
+
+async def test_ingest_acepta_nota_atencion_ambulatoria(db, oci):
+    db.queue(None)
+    payload = _payload(
+        detalle_clinico={
+            "nota_atencion_ambulatoria": {
+                "motivo_consulta": "Tumor de base de craneo y fosas nasales.",
+                "anamnesis": "Paciente con obstruccion nasal bilateral progresiva.",
+                "examen_fisico": "OD ok, OI tapon de cerumen se limpia, control ok.",
+                "diagnostico_referencia": "Tumor Maligno De La Fosa Nasal",
+                "diagnostico_atencion": "Tumor Maligno De La Fosa Nasal",
+                "indicaciones": "Espera de informe de RMN, control con ORL con biopsia.",
+            }
+        }
+    )
+    doc = await ingest_document(payload, db)
+
+    # No tiene tabla relacional propia (es texto libre 1:1): queda solo en raw_extracted_json.
+    assert doc.medications == []
+    assert doc.lab_panels == []
+    assert doc.procedures == []
+    assert (
+        doc.raw_extracted_json["detalle_clinico"]["nota_atencion_ambulatoria"]["diagnostico_atencion"]
+        == "Tumor Maligno De La Fosa Nasal"
+    )
 
 
 async def test_oci_failure_raises_and_compensates(db, oci):
     oci.fail_on = ".json"
     with pytest.raises(DocumentIngestionError):
         await ingest_document(_payload(), db)
-    assert oci.deleted == ["recibidos/DOC-TEST-1.pdf"]
+    assert oci.deleted == ["recibidos/DOC-TEST-1/0.pdf"]
 
 
 async def test_db_failure_rolls_back_and_removes_uploads(db, oci):

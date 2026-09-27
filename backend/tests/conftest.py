@@ -49,6 +49,8 @@ class FakeSession:
     def __init__(self):
         self.results: list[FakeResult] = []
         self.added: list = []
+        self.deleted: list = []
+        self.get_result = None
         self.commits = 0
         self.rollbacks = 0
         self.fail_commit: Exception | None = None
@@ -60,10 +62,13 @@ class FakeSession:
         return self.results.pop(0) if self.results else FakeResult(None)
 
     async def get(self, *_args, **_kwargs):
-        return None
+        return self.get_result
 
     def add(self, obj):
         self.added.append(obj)
+
+    async def delete(self, obj):
+        self.deleted.append(obj)
 
     async def commit(self):
         if self.fail_commit is not None:
@@ -77,6 +82,16 @@ class FakeSession:
         # Simula los valores que asigna la base de datos al insertar.
         if getattr(obj, "created_at", 0) is None:
             obj.created_at = datetime.now(timezone.utc)
+        # Aplica los `default=` escalares/callables de las columnas (id, is_active, ...).
+        table = getattr(obj, "__table__", None)
+        for column in table.columns if table is not None else []:
+            default = column.default
+            if default is None or getattr(obj, column.key, None) is not None:
+                continue
+            if default.is_scalar:
+                setattr(obj, column.key, default.arg)
+            elif default.is_callable:
+                setattr(obj, column.key, default.arg(None))
 
 
 class FakeOCI:
@@ -155,23 +170,57 @@ def login_as(monkeypatch):
     return _login
 
 
-def ingest_body(score: float = 0.95, requiere_auditoria: bool = False, **overrides) -> dict:
+def ingest_body(
+    score: float = 0.95,
+    requiere_auditoria: bool = False,
+    archivo_base64: str | None = None,
+    tipo_archivo: str = "PDF",
+    **overrides,
+) -> dict:
     body = {
         "documento_id": "DOC-TEST-1",
-        "tipo_archivo": "PDF",
-        "archivo_base64": base64.b64encode(b"contenido").decode(),
+        "archivos": [
+            {
+                "tipo_archivo": tipo_archivo,
+                "archivo_base64": archivo_base64 or base64.b64encode(b"contenido").decode(),
+                "rol": "documento_principal",
+            }
+        ],
         "clasificacion": {
             "tipo_documento": "Informe de Estudio por Imagenes",
             "especialidad": "Radiologia",
             "nivel_prioridad": "Urgente",
             "score_confianza_clasificacion": score,
         },
-        "datos_extraidos": {
+        "datos_generales": {
             "paciente": {"nombre": "Carlos Mendes", "edad": 52, "rut": "12.345.678-9"},
-            "medico_solicitante": {"nombre": "Dra. Silveira", "rut": "9.876.543-2"},
-            "estudio_realizado": "Tomografia de Torax",
+            "medico_solicitante": {
+                "nombre": "Dra. Silveira",
+                "rut": "9.876.543-2",
+                "matricula": "MED-4321",
+            },
             "diagnostico_principal": "TEP Agudo",
             "cie10_sugerido": "I26.9",
+        },
+        "detalle_clinico": {
+            "examenes_y_laboratorio": {
+                "estudio_solicitado": "Tomografia de Torax",
+                "conclusiones_o_hallazgos": "Signos de tromboembolismo pulmonar agudo",
+                "paneles": [
+                    {
+                        "nombre_panel": "Coagulacion",
+                        "parametros": [
+                            {
+                                "nombre": "Dimero D",
+                                "valor": "1200",
+                                "unidad": "ng/mL",
+                                "rango_referencia": "< 500",
+                                "alterado": True,
+                            }
+                        ],
+                    }
+                ],
+            }
         },
         "decision_enrutamiento": {
             "destino_principal": "Cola_Emergencia_Medica",

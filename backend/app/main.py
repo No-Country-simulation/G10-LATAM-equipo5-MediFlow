@@ -14,6 +14,8 @@ from app.features.audit.router import router as audit_router
 from app.features.auth.router import router as auth_router
 from app.features.auth.models import RevokedToken
 from app.features.auth.router import users_router
+from app.features.catalogs.models import DocumentType, RoutingQueue
+from app.features.catalogs.router import router as catalogs_router
 from app.features.documents.router import router as documents_router
 from app.features.health.router import router as health_router
 
@@ -26,11 +28,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Ciclo de vida de la aplicación: se ejecuta al iniciar y al finalizar."""
     logger.info("Iniciando %s (%s)", settings.PROJECT_NAME, settings.ENVIRONMENT)
     try:
-        # Bases de datos anteriores al logout no tienen esta tabla: se crea si falta.
+        # Bases de datos anteriores a estas features no tienen sus tablas: se crean si faltan.
         async with engine.begin() as conn:
-            await conn.run_sync(RevokedToken.__table__.create, checkfirst=True)
+            for model in (RevokedToken, RoutingQueue, DocumentType):
+                await conn.run_sync(model.__table__.create, checkfirst=True)
     except Exception:
-        logger.exception("No se pudo verificar la tabla revoked_tokens")
+        logger.exception("No se pudieron verificar las tablas revoked_tokens / catálogos")
     yield
     logger.info("Deteniendo %s", settings.PROJECT_NAME)
 
@@ -54,3 +57,8 @@ app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(users_router, prefix=settings.API_V1_PREFIX)
 app.include_router(documents_router, prefix=f"{settings.API_V1_PREFIX}/documents")
 app.include_router(audit_router, prefix=f"{settings.API_V1_PREFIX}/audit")
+app.include_router(
+    catalogs_router,
+    prefix=f"{settings.API_V1_PREFIX}/catalogs",
+    tags=["Catalogs & Master Data"],
+)

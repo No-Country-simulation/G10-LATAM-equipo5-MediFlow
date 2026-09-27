@@ -1,6 +1,6 @@
 # MediFlow API — Backend
 
-API REST de **MediFlow** construida con **FastAPI**. Recibe los documentos clínicos ya procesados por el workflow de IA (n8n), los respalda en Oracle Cloud (OCI Object Storage), los registra en PostgreSQL y ofrece endpoints para consultarlos y auditarlos.
+API REST de **MediFlow** construida con **FastAPI**. Recibe los documentos clínicos ya procesados por el workflow de IA (n8n), los respalda en Oracle Cloud (OCI Object Storage), los registra en PostgreSQL y ofrece endpoints para consultarlos y auditarlos. También expone las **tablas maestras** (tipos de documento y colas de enrutamiento) que n8n usa para armar el prompt del LLM.
 
 Sigue una **arquitectura por feature (Vertical Slice)**: cada funcionalidad agrupa su propio `router` (endpoints), `service` (lógica), `schemas` (formatos de entrada/salida) y `models` (tablas).
 
@@ -20,52 +20,91 @@ backend/
 │       ├── health/            # Estado de la API, la base de datos y OCI
 │       ├── auth/              # Login, perfil propio y gestión de usuarios (roles)
 │       ├── documents/         # Ingesta de documentos y bandeja con filtros
-│       └── audit/             # Revisión humana (Human-in-the-Loop)
+│       ├── audit/             # Revisión humana (Human-in-the-Loop)
+│       └── catalogs/          # Tablas maestras: tipos de documento y colas (CRUD + Smart Delete)
+├── tests/                     # Pruebas con pytest (no requieren Postgres ni OCI)
 ├── secrets/                   # Aquí va la clave privada de OCI (.pem, no se sube a git)
-├── .env.example
+├── .env.example               # Plantilla de backend/.env
+├── pytest.ini
 ├── requirements.txt
 └── README.md
 ```
 
 ## Requisitos previos
 
-- Python 3.11 o superior
-- PostgreSQL en ejecución. Lo más simple: `docker compose up -d` desde la **raíz** del repo (ver el README principal).
-- Credenciales de OCI con acceso a un bucket de Object Storage
+- **Python 3.11 o superior.**
+- **PostgreSQL en ejecución.** Lo más simple es levantarlo con Docker desde la **raíz** del repo (paso 1 del [README principal](../README.md#paso-1--levantar-la-base-de-datos-docker)):
+  ```bash
+  cp .env.example .env     # en la raíz del repo
+  docker compose up -d
+  ```
+- **Credenciales de OCI** con acceso a un bucket de Object Storage. *Opcional para empezar*: sin ellas la API arranca, pero la ingesta de documentos falla y `/health` responde `503`.
 
 ## Instalación local
 
-1. **Crear y activar un entorno virtual** (desde `backend/`):
+Todos los comandos de esta sección se ejecutan **dentro de la carpeta `backend/`**.
 
-   ```powershell
-   # Windows (PowerShell) — usa el lanzador "py"
-   py -3.12 -m venv .venv
-   .venv\Scripts\Activate.ps1
-   ```
+### 1. Crear y activar un entorno virtual
 
-   ```bash
-   # Linux / macOS
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
+```powershell
+# Windows (PowerShell) — usa el lanzador "py"
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+```
 
-   > En Windows, `python`/`pip` pueden no estar en el PATH. El [launcher `py`](https://docs.python.org/3/using/windows.html#launcher) siempre está disponible (`py -0p` lista las versiones). Con el entorno activado ya puedes usar `pip` y `python` directamente.
+```bash
+# Linux / macOS
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-2. **Instalar dependencias:**
+> - En Windows, `python`/`pip` pueden no estar en el PATH. El [launcher `py`](https://docs.python.org/3/using/windows.html#launcher) siempre está disponible (`py -0p` lista las versiones instaladas; usa la que tengas, 3.11 o superior).
+> - Si PowerShell bloquea `Activate.ps1` por la política de ejecución, ejecuta una vez `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+> - Con el entorno activado verás `(.venv)` al inicio de la línea y ya puedes usar `pip` y `python` directamente. Debes activarlo **cada vez** que abras una terminal nueva.
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 2. Instalar dependencias
 
-3. **Configurar variables de entorno:**
+```bash
+pip install -r requirements.txt
+```
 
-   ```bash
-   cp .env.example .env
-   ```
+### 3. Configurar variables de entorno
 
-   Completa `backend/.env` (ver tabla siguiente).
+```bash
+cp .env.example .env          # Linux / macOS / Git Bash
+```
+```powershell
+Copy-Item .env.example .env   # Windows PowerShell
+```
 
-4. **Colocar la clave de OCI:** guarda tu clave privada como `backend/secrets/oci_api_key.pem` (o ajusta `OCI_KEY_FILE_PATH`). Los `.pem` están ignorados por git.
+Para desarrollo local con el Postgres de Docker, **los valores del ejemplo ya funcionan** siempre que no hayas cambiado el `.env` de la raíz. Si lo cambiaste, ajusta `DATABASE_URL` para que use el mismo usuario, contraseña y base (ver tabla siguiente).
+
+### 4. Configurar OCI (opcional para empezar)
+
+1. Guarda tu clave privada de API Key como `backend/secrets/oci_api_key.pem` (o ajusta `OCI_KEY_FILE_PATH`). Los `.pem` están ignorados por git.
+2. Completa en `backend/.env` las variables `OCI_*` con los datos de tu API Key, bucket y compartimento.
+
+Puedes saltarte este paso para trabajar con login, usuarios y tablas maestras.
+
+### 5. Levantar la API
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+- API: <http://localhost:8000>
+- Swagger UI (probar endpoints desde el navegador): <http://localhost:8000/docs>
+- ReDoc: <http://localhost:8000/redoc>
+
+Al arrancar, la API crea las tablas `revoked_tokens`, `routing_queues` y `document_types` si no existen (útil si tu base es anterior a esas features). **No carga los datos semilla**: esos vienen de `init.sql` (ver [Base de datos](#base-de-datos)).
+
+### 6. Comprobar que funciona
+
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+Devuelve `200 OK` si la base de datos y OCI funcionan, o `503 Service Unavailable` si alguno falla; los campos `database_status` y `oci_status` indican cuál. Luego inicia sesión con `admin_user` / `admin123` en `/docs` (botón **Authorize**).
 
 ### Variables de entorno
 
@@ -83,26 +122,6 @@ backend/
 
 CORS permite por defecto `http://localhost:3000` y `http://localhost:5173` (`BACKEND_CORS_ORIGINS` en `core/config.py`).
 
-## Ejecución en desarrollo
-
-Desde `backend/`:
-
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-
-- API: <http://localhost:8000>
-- Swagger UI: <http://localhost:8000/docs>
-- ReDoc: <http://localhost:8000/redoc>
-
-Comprobación de estado:
-
-```bash
-curl http://localhost:8000/api/v1/health
-```
-
-Devuelve `200 OK` si la base de datos y OCI funcionan, o `503 Service Unavailable` si alguno falla.
-
 ## Autenticación y roles
 
 La API usa **JWT**. Flujo:
@@ -110,13 +129,21 @@ La API usa **JWT**. Flujo:
 1. Inicia sesión con `POST /api/v1/auth/login` (`{"username": "...", "password": "..."}`). Devuelve `access_token` y los datos del usuario.
 2. Envía el token en cada petición: `Authorization: Bearer <access_token>`.
 
-Usuario de desarrollo creado por `docker/postgres/init.sql`: `admin_user` / `admin123` (rol `ADMIN`). **Cámbialo fuera de desarrollo.**
+Usuarios de desarrollo creados por `docker/postgres/init.sql` (uno por rol). **Cámbialos o desactívalos fuera de desarrollo.**
+
+| Usuario | Contraseña | Rol |
+|---|---|---|
+| `admin_user` | `admin123` | `ADMIN` |
+| `gestor_user` | `gestor123` | `GESTOR_USUARIOS` |
+| `auditor_user` | `auditor123` | `AUDITOR_CLINICO` |
 
 | Rol | Acceso |
 |---|---|
-| `ADMIN` | Todos los endpoints |
+| `ADMIN` | Todos los endpoints, incluida la escritura de tablas maestras |
 | `GESTOR_USUARIOS` | Gestión de usuarios (`/users`) |
 | `AUDITOR_CLINICO` | Documentos y auditoría |
+
+Cualquier usuario autenticado puede **consultar** las tablas maestras.
 
 Sin token válido → `401`. Con token pero sin el rol requerido → `403`.
 
@@ -152,25 +179,61 @@ Todos con prefijo `/api/v1`.
 | POST | `/documents/ingest` | Recibe un documento procesado por n8n, lo sube a OCI y lo registra. Responde `201` | `ADMIN`, `AUDITOR_CLINICO` |
 | GET | `/documents` | Bandeja central paginada con filtros | `ADMIN`, `AUDITOR_CLINICO` |
 
-**Ingesta.** n8n debe autenticarse con una cuenta de servicio (rol `ADMIN` o `AUDITOR_CLINICO`) y enviar:
+**Ingesta.** n8n debe autenticarse con una cuenta de servicio (rol `ADMIN` o `AUDITOR_CLINICO`) y enviar el payload siguiendo el patrón **Envelope**: `clasificacion` y `datos_generales` son comunes a cualquier documento, y `detalle_clinico` transporta un único bloque poblado según `clasificacion.tipo_documento`. El pipeline solo ingiere **resultados/informes ya emitidos** (no órdenes o derivaciones previas a un estudio):
+
+| Tipo de documento | Bloque poblado en `detalle_clinico` |
+|---|---|
+| Receta Médica | `medicamentos` (lista de `{ nombre, dosis, duracion_tratamiento }`) |
+| Informe de Laboratorio | `examenes_y_laboratorio` (`estudio_solicitado`, `conclusiones_o_hallazgos`, `paneles`) |
+| Informe de Estudio por Imágenes (TC, RM, Rx, Ecografía) | `informe_imagenologico` (`tecnica`, `antecedentes`, `hallazgos`, `impresion_diagnostica`) |
+| Nota de Atención Ambulatoria (consulta médica) | `nota_atencion_ambulatoria` (`motivo_consulta`, `antecedentes`, `anamnesis`, `examen_fisico`, `diagnostico_referencia`, `diagnostico_atencion`, `indicaciones`) |
+| Epicrisis / Informe de Alta | `procedimientos_e_internacion` (`fecha_ingreso`, `fecha_alta`, `resumen_evolucion`, `antecedentes_relevantes`, `procedimientos_realizados`) |
+
+El valor de `clasificacion.tipo_documento` debe ser el `nombre` de un tipo activo de la [tabla maestra](#tablas-maestras-catálogos), y `decision_enrutamiento.destino_principal` el `codigo` de una cola activa. El backend no rechaza valores fuera del catálogo; esa coherencia depende del prompt de n8n.
+
+Un informe de laboratorio real suele traer **varios paneles** (ej. "Química en Sangre", "Hemograma", "Coagulación"), cada uno con su propia tabla de parámetros y unidades. Por eso `examenes_y_laboratorio.paneles` es una lista de `{ nombre_panel, parametros }`, y cada parámetro es `{ nombre, valor, unidad, rango_referencia, alterado }`.
+
+**`archivos` es una lista, no un archivo único**: un mismo documento puede traer más de un binario (ej. una orden de radiografía con varias placas AP/Lateral/Oblicua, o una ecotomografía con múltiples capturas más su informe). Cada elemento es `{ tipo_archivo, archivo_base64, rol }`; `rol` es libre (ej. `"documento_principal"`, `"imagen_estudio"`) y el primer elemento de la lista se usa como vista previa en la bandeja de auditoría.
+
+Ejemplo con un Informe de Laboratorio (dos paneles, un solo archivo):
 
 ```json
 {
   "documento_id": "DOC-001",
-  "tipo_archivo": "PDF",
-  "archivo_base64": "<contenido en base64>",
+  "archivos": [
+    { "tipo_archivo": "PDF", "archivo_base64": "<contenido en base64>", "rol": "documento_principal" }
+  ],
   "clasificacion": {
-    "tipo_documento": "Receta",
+    "tipo_documento": "Informe de Laboratorio",
     "especialidad": "Cardiología",
     "nivel_prioridad": "Urgente",
     "score_confianza_clasificacion": 0.93
   },
-  "datos_extraidos": {
+  "datos_generales": {
     "paciente": { "nombre": "Juan Pérez", "edad": 54, "rut": "12.345.678-9" },
-    "medico_solicitante": { "nombre": "Dra. Soto", "rut": "9.876.543-2" },
-    "estudio_realizado": "Electrocardiograma",
+    "medico_solicitante": { "nombre": "Dra. Soto", "rut": "9.876.543-2", "matricula": "MED-4321" },
     "diagnostico_principal": "Hipertensión arterial",
     "cie10_sugerido": "I10"
+  },
+  "detalle_clinico": {
+    "examenes_y_laboratorio": {
+      "estudio_solicitado": "Perfil lipídico, Hemograma",
+      "conclusiones_o_hallazgos": "Colesterol total elevado",
+      "paneles": [
+        {
+          "nombre_panel": "Química en Sangre",
+          "parametros": [
+            { "nombre": "Colesterol total", "valor": "240", "unidad": "mg/dL", "rango_referencia": "< 200", "alterado": true }
+          ]
+        },
+        {
+          "nombre_panel": "Hemograma",
+          "parametros": [
+            { "nombre": "Hemoglobina", "valor": "16.2", "unidad": "g/dl", "rango_referencia": "14.0 - 17.5", "alterado": false }
+          ]
+        }
+      ]
+    }
   },
   "decision_enrutamiento": {
     "destino_principal": "Farmacia_Hospitalaria",
@@ -181,24 +244,38 @@ Todos con prefijo `/api/v1`.
 }
 ```
 
-Campos opcionales: `estudio_realizado`, `notificacion_generada` y todo lo del médico/paciente salvo `nombre`. El médico se identifica por su **RUT** (ya no por matrícula).
+Campos opcionales: los cinco bloques de `detalle_clinico` (solo debe venir poblado el que corresponda al `tipo_documento`), `rol` en cada archivo, `notificacion_generada` y todo lo del médico/paciente salvo `nombre`. El médico admite tanto **RUT** como **matrícula**.
 
-**Respuesta (`201`)**: es el JSON completo que el frontend React debe usar al terminar el procesamiento. Repite `clasificacion`, `datos_extraidos` y `decision_enrutamiento` recibidos, y agrega `status` (`procesado` o `pendiente_auditoria`) y `almacenamiento_oci`, que calcula el backend:
+**Respuesta (`201`)**: es el JSON completo que el frontend React debe usar al terminar el procesamiento. Repite `clasificacion`, `datos_generales`, `detalle_clinico` y `decision_enrutamiento` recibidos, y agrega `status` (`procesado` o `pendiente_auditoria`) y `almacenamiento_oci`, que calcula el backend:
 
 ```json
 {
   "status": "procesado",
   "documento_id": "DOC-001",
   "clasificacion": { "...": "..." },
-  "datos_extraidos": { "...": "..." },
+  "datos_generales": { "...": "..." },
+  "detalle_clinico": { "...": "..." },
   "decision_enrutamiento": { "...": "..." },
   "almacenamiento_oci": {
     "bucket": "mediflow-documents",
     "ruta_objeto": "procesados/urgente/DOC-001.json",
+    "rutas_binarios": ["recibidos/DOC-001/0.pdf"],
     "status_backup": "exito"
   }
 }
 ```
+
+**Persistencia en PostgreSQL.** El payload completo (incluyendo el texto libre de `detalle_clinico`, ej. hallazgos de imagenología o evolución de una epicrisis) se guarda íntegro en `raw_extracted_json` como respaldo. Pero el detalle clínico que sí tiene forma de tabla se normaliza en columnas y tablas propias, para poder filtrarlo/agregarlo con SQL en vez de recorrer JSONB:
+
+| Tabla | Contenido | Cardinalidad |
+|---|---|---|
+| `clinical_documents` | Datos administrativos, clasificación, triaje y enrutamiento (igual que antes) | 1 por documento |
+| `clinical_document_attachments` | Un binario por fila (`oci_path`, `tipo_archivo`, `rol`, `orden`) | N por documento |
+| `clinical_document_medications` | Un medicamento por fila (Receta) | N por documento |
+| `lab_panels` + `lab_parameters` | Un panel por fila, con sus parámetros anidados (Laboratorio) | N paneles × N parámetros |
+| `clinical_document_procedures` | Un procedimiento por fila (Epicrisis) | N por documento |
+
+Cada reingreso del mismo `documento_id` reemplaza estas filas (no las acumula). El texto libre de `informe_imagenologico` (hallazgos/impresión) y de la epicrisis (resumen de evolución) se deja solo en `raw_extracted_json`: no hay tabla para eso porque nadie filtra por ese texto, normalizarlo no simplificaría nada.
 
 Errores: `400` si el base64 es inválido, `500` si falla OCI o la base de datos.
 
@@ -225,21 +302,72 @@ Si no hay resultados, la respuesta trae `items: []` y un `message` explicativo.
 
 Para resolver, el auditor envía los datos corregidos: `rut_paciente`, `nombre_paciente`, `tipo_documento`, `nivel_prioridad` (`Rutina` / `Prioritario` / `Urgente`), `diagnostico_principal`, `destino_enrutamiento` y `audit_notes` (obligatoria), más opcionales (`edad_paciente`, `medico_nombre`, `medico_rut`, `cie10_sugerido`). Solo se pueden resolver documentos en estado `PENDIENTE_AUDITORIA`. El JSON corregido se guarda en OCI en `procesados/auditados/<id>.json`, y queda registrado qué auditor lo revisó y cuándo.
 
+### Tablas maestras (catálogos)
+
+Dos maestras independientes, cada una con su CRUD:
+
+- **Tipos de documento** (`document_types`): qué clases de documento clínico acepta el pipeline.
+- **Colas de enrutamiento** (`routing_queues`): a qué área se puede derivar un documento. `descripcion_semantica` explica al LLM cuándo usar y cuándo no usar la cola; `notificar_inmediato` marca las colas que requieren aviso inmediato.
+
+| Método | Ruta | Descripción | Acceso |
+|---|---|---|---|
+| GET | `/catalogs/queues/active` | Colas activas en formato compacto (`codigo`, `nombre`, `descripcion_semantica`) para el prompt de n8n | Autenticado |
+| GET | `/catalogs/queues` | Todas las colas; filtro opcional `?is_active=true\|false` | Autenticado |
+| GET | `/catalogs/queues/{id}` | Detalle de una cola | Autenticado |
+| POST | `/catalogs/queues` | Crea una cola (`codigo`, `nombre`, `descripcion_semantica`, `notificar_inmediato`). Responde `201` | `ADMIN` |
+| PUT | `/catalogs/queues/{id}` | Modifica solo los campos enviados (`nombre`, `descripcion_semantica`, `notificar_inmediato`, `is_active`) | `ADMIN` |
+| DELETE | `/catalogs/queues/{id}` | Smart Delete (ver abajo) | `ADMIN` |
+| GET | `/catalogs/document-types/active` | Tipos activos en formato compacto (`codigo`, `nombre`, `descripcion`) para el prompt de n8n | Autenticado |
+| GET | `/catalogs/document-types` | Todos los tipos; filtro opcional `?is_active=true\|false` | Autenticado |
+| GET | `/catalogs/document-types/{id}` | Detalle de un tipo | Autenticado |
+| POST | `/catalogs/document-types` | Crea un tipo (`codigo`, `nombre`, `descripcion`). Responde `201` | `ADMIN` |
+| PUT | `/catalogs/document-types/{id}` | Modifica solo los campos enviados (`nombre`, `descripcion`, `is_active`) | `ADMIN` |
+| DELETE | `/catalogs/document-types/{id}` | Smart Delete (ver abajo) | `ADMIN` |
+
+**Reglas:**
+
+- El `codigo` es único (duplicado → `409`) y **no se puede modificar**, porque los documentos ya guardados lo referencian.
+- **Desactivar / reactivar:** `PUT` con `{"is_active": false}` o `{"is_active": true}`. Un registro inactivo deja de aparecer en `/active` y, por lo tanto, en el prompt de n8n.
+- **Smart Delete (`DELETE`):** el backend cuenta los documentos clínicos que usan el registro (`destino_enrutamiento = cola.codigo` o `tipo_documento = tipo.nombre`).
+  - Si no hay ninguno → **borrado físico**; responde `{"deletion_type": "HARD_DELETE", ...}`.
+  - Si hay alguno → **borrado lógico** (`is_active = false`) para no dejar documentos huérfanos; responde `{"deletion_type": "SOFT_DELETE", ...}`.
+- Id inexistente → `404`.
+
+**Uso desde n8n:** antes del nodo del LLM, el workflow llama a `GET /catalogs/document-types/active` y `GET /catalogs/queues/active` (con el token Bearer de su cuenta de servicio) e inyecta ambas listas en el prompt. El LLM debe devolver **exactamente** el `nombre` del tipo de documento y el `codigo` de la cola, ya que así se guardan en `clinical_documents` y así los busca el Smart Delete.
+
 ## Almacenamiento en OCI
 
 | Ruta en el bucket | Contenido |
 |---|---|
-| `recibidos/<id>.<ext>` | Archivo original |
+| `recibidos/<id>/<n>.<ext>` | Archivos originales (`n` = posición en la lista `archivos`: `0`, `1`, ...) |
 | `procesados/<prioridad>/<id>.json` | Resultado estructurado de casos automáticos |
 | `auditoria_humana/<id>.json` | Resultado de casos pendientes de revisión |
 | `procesados/auditados/<id>.json` | Resultado corregido por un auditor |
 
 ## Base de datos
 
-El esquema lo crea `docker/postgres/init.sql` (solo la primera vez que arranca el contenedor):
+El esquema y los datos semilla los crea `docker/postgres/init.sql`, que Docker ejecuta **solo la primera vez** que arranca el contenedor (con el volumen vacío).
 
-- **`users`**: usuarios, contraseña hasheada (bcrypt), rol y estado activo.
-- **`clinical_documents`**: datos del paciente y médico, clasificación, prioridad, score de confianza, diagnóstico/CIE-10, destino, rutas en OCI, JSON completo de la IA (`raw_extracted_json`) y campos de auditoría (`audited_by_id`, `audit_notes`, `audited_at`).
+| Tabla | Contenido |
+|---|---|
+| `users` | Usuarios, contraseña hasheada (bcrypt), rol y estado activo |
+| `revoked_tokens` | Tokens JWT invalidados por logout, hasta su expiración |
+| `clinical_documents` | Paciente y médico, clasificación, prioridad, score de confianza, diagnóstico/CIE-10, destino, rutas en OCI, JSON completo de la IA (`raw_extracted_json`) y campos de auditoría |
+| `clinical_document_attachments`, `clinical_document_medications`, `lab_panels`, `lab_parameters`, `clinical_document_procedures` | Detalle clínico normalizado (ver [Documentos](#documentos)) |
+| `document_types` | Tabla maestra de tipos de documento |
+| `routing_queues` | Tabla maestra de colas de enrutamiento |
+
+**Datos semilla:** un usuario por rol (`admin_user`, `gestor_user`, `auditor_user`; ver [Autenticación y roles](#autenticación-y-roles)), 9 tipos de documento y 6 colas de enrutamiento.
+
+**¿Tu base es anterior y le faltan tablas o datos?** `init.sql` se puede volver a ejecutar sin riesgo (solo crea lo que falta y no duplica registros). Desde la **raíz** del repo, con el contenedor levantado:
+
+```bash
+docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/init.sql
+```
+
+(En Git Bash, antepón `MSYS_NO_PATHCONV=1 `.) La alternativa `docker compose down -v` también funciona, pero **borra todos los datos**.
+
+> No hay herramienta de migraciones (Alembic). Si agregas o cambias una tabla, actualiza **a la vez** el modelo en `models.py` e `init.sql`, usando siempre `IF NOT EXISTS` / `ON CONFLICT DO NOTHING` para que el script siga siendo re-ejecutable.
 
 ## Pruebas y calidad de código
 
@@ -261,6 +389,7 @@ Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión de base de dato
 | `test_auth_api.py` | Login, token inválido, usuario inactivo, logout, token revocado, restricción por rol |
 | `test_audit_api.py` | Detalle del caso, resolución, validaciones y errores (404/400/422/500) |
 | `test_health_api.py` | `200` si todo funciona, `503` si falla alguna dependencia |
+| `test_catalogs_api.py` | CRUD de tablas maestras, permisos (401/403), `409` por código duplicado, `404`, Smart Delete físico y lógico, rutas `/active` |
 
 > Las pruebas usan datos simulados, así que no detectan errores de SQL real (por ejemplo, un nombre de columna incorrecto). Para eso hace falta probar contra el Postgres de `docker compose`.
 
@@ -268,7 +397,10 @@ Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión de base de dato
 
 | Síntoma | Causa probable |
 |---|---|
-| `/health` responde `503` | Postgres apagado (`docker compose up -d`), `DATABASE_URL` incorrecta o credenciales/clave OCI inválidas |
+| `/health` responde `503` | Mira `database_status` / `oci_status`. Base: Postgres apagado (`docker compose up -d`) o `DATABASE_URL` incorrecta. OCI: credenciales o clave `.pem` inválidas o sin configurar |
+| `ConnectionRefusedError` o `password authentication failed` al usar la API | Postgres no está levantado, o el usuario/contraseña/base de `DATABASE_URL` no coinciden con el `.env` de la raíz |
+| `ModuleNotFoundError` al ejecutar `uvicorn` | El entorno virtual no está activado, o `uvicorn` se ejecutó fuera de `backend/` |
 | `401` en un endpoint | Falta el header `Authorization: Bearer ...` o el token expiró |
 | `403` en un endpoint | Tu rol no tiene permiso para ese recurso |
-| El login del usuario semilla falla | El volumen de Postgres ya existía; ejecuta `docker compose down -v` y vuelve a levantar |
+| El login del usuario semilla falla, o `/catalogs/.../active` devuelve `[]` | El volumen de Postgres ya existía y `init.sql` no se ejecutó; vuelve a ejecutarlo (ver [Base de datos](#base-de-datos)) |
+| El puerto `5432` está ocupado al hacer `docker compose up` | Ya tienes otro PostgreSQL local corriendo; detenlo o cambia el puerto publicado en `docker-compose.yml` (y en `DATABASE_URL`) |
