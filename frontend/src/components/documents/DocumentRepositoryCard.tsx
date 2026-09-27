@@ -7,9 +7,9 @@ interface DocumentRepositoryCardProps {
 
 const DESTINATION_LABELS: Record<string, string> = {
   Cola_Emergencia_Medica: 'Urgencias',
-  Auditoria_Autorizaciones: 'Autorizaciones y Convenios',
-  Farmacia_Hospitalaria: 'Farmacia Hospitalaria',
-  Historia_Clinica_Electronica: 'Ficha Clínica Electrónica',
+  Auditoria_Autorizaciones: 'Autorizaciones',
+  Farmacia_Hospitalaria: 'Farmacia',
+  Historia_Clinica_Electronica: 'Ficha Clínica',
   Cola_Revision_Humana: 'Auditoría Clínica',
 };
 

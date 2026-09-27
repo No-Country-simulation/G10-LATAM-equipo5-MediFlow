@@ -19,8 +19,8 @@ const CATEGORY_OPTIONS: Array<{ id: DocumentCategoryFilter; label: string }> = [
 
 const DESTINATION_OPTIONS: Array<{ id: DocumentDestinationFilter; label: string }> = [
   { id: 'ALL', label: 'Todos' },
-  { id: 'FARMACIA', label: 'Farmacia Hospitalaria' },
   { id: 'URGENCIAS', label: 'Urgencias' },
+  { id: 'FARMACIA', label: 'Farmacia' },
   { id: 'AUTORIZACIONES', label: 'Autorizaciones' },
   { id: 'FICHA_CLINICA', label: 'Ficha Clínica' },
 ];
