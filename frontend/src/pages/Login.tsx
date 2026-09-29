@@ -2,9 +2,28 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, Shield } from 'lucide-react';
 import LoginForm from '../components/auth/LoginForm';
-import DemoAccounts from '../components/auth/DemoAccounts';
 import { useAuth } from '../hooks/useAuth';
+import { ApiError } from '../services/api';
 import type { LoginRequest } from '../types/auth';
+
+const getAuthErrorMessage = (err: unknown): string => {
+  if (err instanceof ApiError) {
+    if (err.status === 401) {
+      return 'Credenciales incorrectas. Verifique su usuario y contraseña.';
+    }
+    if (err.status === 0 || err.status === 408) {
+      return 'No se pudo conectar con el servidor. Verifique su conexión de red.';
+    }
+    if (err.status >= 500) {
+      return 'Error interno del servidor clínico. Intente nuevamente más tarde.';
+    }
+    return err.message;
+  }
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return 'Error al procesar el acceso clínico.';
+};
 
 const Login = () => {
   const { login, isAuthenticated } = useAuth();
@@ -25,15 +44,10 @@ const Login = () => {
       await login(credentials);
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Error al procesar el acceso clínico';
-      setError(message);
+      setError(getAuthErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleSelectDemo = (username: string, password: string) => {
-    handleLogin({ username, password });
   };
 
   return (
@@ -59,11 +73,6 @@ const Login = () => {
           onSubmit={handleLogin}
           isLoading={isSubmitting}
           error={error}
-        />
-
-        <DemoAccounts
-          onSelectDemo={handleSelectDemo}
-          disabled={isSubmitting}
         />
 
         <div className="pt-2 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">

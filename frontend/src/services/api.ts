@@ -65,6 +65,9 @@ export const request = async <T>(endpoint: string, options: RequestOptions = {})
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new ApiError(408, 'Tiempo de espera agotado al conectar con el servidor');
     }
+    if (error instanceof TypeError) {
+      throw new ApiError(0, 'No se pudo conectar con el servidor. Verifique su conexión de red');
+    }
     throw new ApiError(500, error instanceof Error ? error.message : 'Error de red inesperado');
   } finally {
     clearTimeout(timeoutId);
