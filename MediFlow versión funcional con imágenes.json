@@ -1,0 +1,824 @@
+{
+  "name": "MediFlow versión funcional con imágenes",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "9f865574-91a4-412b-88a3-155d427a6c87",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1056,
+        704
+      ],
+      "id": "7e4591ce-117c-480b-a065-0716eddf1fec",
+      "name": "Webhook",
+      "webhookId": "9f865574-91a4-412b-88a3-155d427a6c87"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -832,
+        704
+      ],
+      "id": "12b880a7-9b58-427b-8894-c2f1e0500e21",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      datos_extraidos: $json\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        704
+      ],
+      "id": "2c486dc0-82ba-475f-8c4f-b3401c17d533",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -384,
+        704
+      ],
+      "id": "8f7037bc-37d2-443d-84f4-2f058ebdfb81",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mediflow",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        -112
+      ],
+      "id": "f45c2882-7dd8-4ebc-b130-f1259b8c7749",
+      "name": "Ingesta Webhook",
+      "webhookId": "bbb4045d-5a8a-4a93-baa6-d349d94edbfd"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1653adee-4086-4376-ab4f-051f5746f6da",
+                    "leftValue": "=={{ ($binary.data?.fileName || $binary.data?.fileExtension || $json.headers?.[\"content-type\"] || \"\").toLowerCase() }}",
+                    "rightValue": "pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ae7f7730-7817-4a0b-8038-a1f07dc678b2",
+                    "leftValue": "=={{ ($binary.data?.fileName || $binary.data?.fileExtension || $binary.data?.mimeType || $json.headers?.[\"content-type\"] || \"\").toLowerCase() }}",
+                    "rightValue": "(image|jpg|jpeg|png|jfif|webp|bmp|bin)",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -880,
+        -160
+      ],
+      "id": "8d25e708-7dec-43ce-a432-693fb96d2baa",
+      "name": "Tipo de Archivo?"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -672,
+        -224
+      ],
+      "id": "6d8e7eff-4901-450d-8767-e87577b42d18",
+      "name": "Extract Text from PDF"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=IMPORTANTE: RESPONDE ÚNICAMENTE CON UN OBJETO JSON VÁLIDO. NO AGREGUES TEXTO EXPLICATIVO, NI INTRODUCCIONES, NI FORMATO MARKDOWN CÓDIGO (NO USES ```json).\n\nEstructura requerida:\n{\n  \"documento\": {\n    \"tipo\": \"Urgencias Médicas\" | \"Receta Médica\" | \"Orden de Solicitud de Procedimiento\" | \"Epicrisis / Informe de Alta\" | \"Certificado Médico\" | \"Desconocido\",\n    \"confianza_clasificacion\": 0.95\n  },\n  \"paciente\": {\n    \"nombre_completo\": \"\",\n    \"identificacion\": \"\",\n    \"edad\": null\n  },\n  \"profesional\": {\n    \"nombre_completo\": \"\",\n    \"especialidad\": \"\",\n    \"matricula\": \"\"\n  },\n  \"clinico\": {\n    \"hipotesis_diagnostica\": \"\",\n    \"codigo_cie10\": \"\",\n    \"urgencia\": true | false\n  },\n  \"metadata_control\": {\n    \"requiere_revision_humana\": false\n  }\n}\n\nALGORITMO DE CLASIFICACIÓN POR TÍTULOS Y TEXTO:\n1. Si el título, membrete o texto incluye \"URGENCIA\", \"SERVICIO DE URGENCIA\", \"ALTA PRIORIDAD\" o \"TRIAGE\":\n   -> documento.tipo = \"Urgencias Médicas\"\n   -> clinico.urgencia = true\n\n2. Si dice \"RECETA\", \"RECETA MÉDICA\" o \"PRESCRIPCIÓN\":\n   -> documento.tipo = \"Receta Médica\"\n   -> clinico.urgencia = false\n\n3. Si dice \"AUDITORÍA\", \"SOLICITUD DE AUTORIZACIÓN\" u \"ORDEN DE ESTUDIO\":\n   -> documento.tipo = \"Orden de Solicitud de Procedimiento\"\n   -> clinico.urgencia = false\n\n4. Si dice \"EPICRISIS\", \"INFORME DE ALTA\" o \"INFORME DE ESTUDIO\":\n   -> documento.tipo = \"Epicrisis / Informe de Alta\"\n   -> clinico.urgencia = false\n\n5. Si dice \"CERTIFICADO\" o \"LICENCIA\":\n   -> documento.tipo = \"Certificado Médico\"\n   -> clinico.urgencia = false\n\nTEXTO A ANALIZAR:\n{{ $json.text }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        -448,
+        -208
+      ],
+      "id": "bc90f067-476b-4a0d-b297-fa311961677b",
+      "name": "Triaje e Extracción IA"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"documento\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"tipo\": {\n          \"type\": \"string\",\n          \"enum\": [\"Receta Médica\", \"Informe de Estudio de Diagnóstico\", \"Orden de Solicitud de Procedimiento\", \"Epicrisis / Informe de Alta\", \"Certificado Médico\", \"Desconocido\"]\n        },\n        \"confianza_clasificacion\": { \"type\": \"number\" }\n      },\n      \"required\": [\"tipo\", \"confianza_clasificacion\"]\n    },\n    \"paciente\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"nombre_completo\": { \"type\": \"string\" },\n        \"identificacion\": { \"type\": \"string\" },\n        \"edad\": { \"type\": \"integer\" }\n      }\n    },\n    \"profesional\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"nombre_completo\": { \"type\": \"string\" },\n        \"especialidad\": { \"type\": \"string\" },\n        \"matricula\": { \"type\": \"string\" }\n      }\n    },\n    \"clinico\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"hipotesis_diagnostica\": { \"type\": \"string\" },\n        \"codigo_cie10\": { \"type\": \"string\" },\n        \"urgencia\": { \"type\": \"boolean\" },\n        \"estudios_solicitados\": {\n          \"type\": \"array\",\n          \"items\": { \"type\": \"string\" }\n        },\n        \"medicamentos\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n              \"nombre\": { \"type\": \"string\" },\n              \"dosis\": { \"type\": \"string\" },\n              \"frecuencia\": { \"type\": \"string\" }\n            }\n          }\n        }\n      },\n      \"required\": [\"urgencia\"]\n    }\n  },\n  \"required\": [\"documento\", \"paciente\", \"profesional\", \"clinico\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -1056,
+        512
+      ],
+      "id": "aef97680-ffb5-46ca-b3c3-c9ebcc37dce1",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Obtención y parseo de datos\nconst inputItem = $input.first().json;\nlet rawData = inputItem.output || inputItem.text || inputItem;\n\nif (typeof rawData === 'string') {\n  try {\n    const cleanJson = rawData.replace(/```json/gi, '').replace(/```/gi, '').trim();\n    rawData = JSON.parse(cleanJson);\n  } catch (e) {\n    rawData = { texto_bruto: rawData };\n  }\n}\n\n// 2. Extracción de sub-objetos\nconst docObj = rawData.documento || {};\nconst pacienteObj = rawData.paciente || {};\nconst profesionalObj = rawData.profesional || {};\nconst clinicoObj = rawData.clinico || {};\nconst metaObj = rawData.metadata_control || {};\n\nconst tipoDoc = String(docObj.tipo || rawData.tipo_documento || \"Desconocido\").trim();\nconst tipoLower = tipoDoc.toLowerCase();\n\n// 3. DETECCIÓN BLINDADA DE IMAGEN Y DETERMINISMO\n// Si la respuesta proviene de la rama de visión o contiene banderas de estudio de imagen\nconst esEstudioImagen = Boolean(\n  clinicoObj.es_estudio_imagen === true ||\n  tipoLower.includes(\"imagen\") ||\n  tipoLower.includes(\"radiograf\") ||\n  tipoLower.includes(\"ecograf\") ||\n  tipoLower.includes(\"tomograf\") ||\n  tipoLower.includes(\"laboratorio\") ||\n  tipoLower.includes(\"desconocido\") // Si es imagen y no la identificó bien, se clasifica como estudio\n);\n\nconst scoreConfianza = Number(docObj.confianza_clasificacion || rawData.confianza_clasificacion || 0.90);\n\n// 4. LÓGICA DE REVISIÓN HUMANA\nlet requiereRevision = false;\nlet motivos = [];\n\nif (metaObj.requiere_revision_humana === true || String(metaObj.requiere_revision_humana).toLowerCase() === \"true\") {\n  requiereRevision = true;\n  motivos.push(\"Declarado por IA: Documento o imagen ilegible / requiere revisión\");\n} else if (!esEstudioImagen) {\n  // Solo los PDFs aplican estas reglas estrictas de datos faltantes\n  if (tipoLower === \"desconocido\" || scoreConfianza < 0.60) {\n    requiereRevision = true;\n    motivos.push(\"Confianza baja o tipo de documento no identificado\");\n  }\n  if (!pacienteObj.nombre_completo || String(pacienteObj.nombre_completo).toLowerCase() === \"no claro\") {\n    requiereRevision = true;\n    motivos.push(\"Nombre de paciente no claro o ilegible\");\n  }\n}\n\n// 5. Salida unificada\nreturn {\n  documento: {\n    tipo: esEstudioImagen ? \"Informe de Imagenología / Laboratorio\" : tipoDoc,\n    confianza_clasificacion: scoreConfianza\n  },\n  paciente: {\n    nombre_completo: pacienteObj.nombre_completo || \"No claro\",\n    identificacion: pacienteObj.identificacion || \"Desconocido\",\n    edad: pacienteObj.edad || null\n  },\n  profesional: {\n    nombre_completo: profesionalObj.nombre_completo || \"No especificado\",\n    especialidad: profesionalObj.especialidad || \"\",\n    matricula: profesionalObj.matricula || \"\"\n  },\n  clinico: {\n    urgencia: Boolean(clinicoObj.urgencia === true || String(clinicoObj.urgencia).toLowerCase() === \"true\"),\n    hipotesis_diagnostica: clinicoObj.hipotesis_diagnostica || \"\",\n    medicamentos: clinicoObj.medicamentos || [],\n    es_estudio_imagen: esEstudioImagen\n  },\n  metadata_control: {\n    requiere_revision_humana: requiereRevision,\n    motivos_revision: motivos,\n    fecha_procesamiento: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        -48
+      ],
+      "id": "f7eb4e1e-f21d-4298-8d0a-e2121255c2b2",
+      "name": "Validación de Ambigüedad"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0ef6207b-aaaf-49b4-92b0-db590a20bb7e",
+                    "leftValue": "={{ $json.clinico.urgencia }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9c1eeaef-b05c-4013-a6e5-b5adf3f79eb7",
+                    "leftValue": "={{ $json.metadata_control.requiere_revision_humana }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "5bc249d8-4a4c-4925-bdf8-d9c36ab6dcd5",
+                    "leftValue": "={{ $json.clinico.es_estudio_imagen }}",
+                    "rightValue": "receta",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "073402f0-c6d1-4f83-bc18-b3bedc2f8b2d",
+                    "leftValue": "={{ $json.documento.tipo.toLowerCase() }}",
+                    "rightValue": "receta",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0aaf8da5-7d5c-478c-9fdf-1ecde32c4a2c",
+                    "leftValue": "={{ $json.documento.tipo.toLowerCase() }}",
+                    "rightValue": "procedimiento",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        64,
+        -160
+      ],
+      "id": "6dee0fd8-9f75-40f3-a0ee-7a8eae8dd321",
+      "name": "Router de Enrutamiento"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "urg-1",
+              "name": "cola_destino",
+              "value": "COLA_URGENCIAS_PRIORITARIA",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        -448
+      ],
+      "id": "abddceb5-1306-450d-ae66-8010ed36ba84",
+      "name": "Cola: Urgencias"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "far-1",
+              "name": "cola_destino",
+              "value": "FARMACIA_DESPACHO",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        0
+      ],
+      "id": "e1ec2c9f-bb00-4184-ae75-fff172bfec1c",
+      "name": "Cola: Farmacia"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aud-1",
+              "name": "cola_destino",
+              "value": "AUDITORIA_AUTORIZACIONES",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        144
+      ],
+      "id": "28ea8a99-71a2-403c-bef0-b4288d7899f4",
+      "name": "Cola: Auditoría"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "hce-1",
+              "name": "cola_destino",
+              "value": "HISTORIA_CLINICA_ELECTRONICA",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        432,
+        320
+      ],
+      "id": "7928edf2-51bd-4486-8e72-a28a6abee87f",
+      "name": "Cola: HCE"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "rev-1",
+              "name": "cola_destino",
+              "value": "REVISION_HUMANA_PENDIENTE",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        -288
+      ],
+      "id": "eef0bbf1-97b4-4b81-9db1-b6469cb2dd23",
+      "name": "Cola: Revisión Humana"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        -128
+      ],
+      "id": "489304a9-ab6b-4d33-a02a-6f4d971115fd",
+      "name": "Responder JSON"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -448,
+        -16
+      ],
+      "id": "e6f2103b-efb8-456c-8e8e-cdbabe2ca2f1",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uoXc6pOzbUGOZEa9",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obtener el elemento de entrada\nconst item = $input.first();\n\n// Buscar la propiedad binaria (habitualmente 'data')\nconst binaryKeys = Object.keys(item.binary || {});\nif (binaryKeys.length === 0) {\n  throw new Error(\"No se encontró ningún archivo binario en la entrada de imagen.\");\n}\n\nconst binaryPropertyName = binaryKeys[0];\nconst binaryData = item.binary[binaryPropertyName];\n\n// Normalizar MIME Type para extensiones conflictivas como jfif\nlet mimeType = binaryData.mimeType || 'image/jpeg';\nif (mimeType.includes('jfif') || binaryData.fileExtension === 'jfif') {\n  mimeType = 'image/jpeg';\n}\n\nreturn {\n  json: {\n    ...item.json,\n    es_imagen_normalizada: true,\n    mime_type_detectado: mimeType\n  },\n  binary: {\n    data: {\n      ...binaryData,\n      mimeType: mimeType,\n      fileExtension: mimeType.split('/')[1] || 'jpg'\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        32
+      ],
+      "id": "794f2df0-9920-4133-98f8-8a1368983378",
+      "name": "Normalizador de imágenes"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "Eres un asistente médico experto en la clasificación e inspección de imágenes de exámenes de laboratorio e imagenología médica.\n\nTu tarea principal es analizar la imagen recibida y generar UNICAMENTE un objeto JSON estructurado con la información leída.\n\nInstrucciones de clasificación:\n1. \"documento.tipo\": Si identificas una imagen médica, radiografía, ecografía, tomografía, informe de resonancia o examen de laboratorio, asigna SIEMPRE el tipo \"Informe de Imagenología / Laboratorio\". Solo asigna \"Desconocido\" si la imagen es completamente ajena a un contexto médico (ej. una foto aleatoria).\n2. \"clinico.es_estudio_imagen\": Debe ser siempre true cuando la entrada sea una imagen o examen clínico.\n3. \"metadata_control.requiere_revision_humana\": Debe ser false si logras ver los datos generales de la imagen médica. Solo asigna true si la imagen está completamente borracha, oscura o es ilegible.\n\nDebes responder EXCLUSIVAMENTE en formato JSON plano con esta estructura exacta (sin markdown ni bloques de código extra):\n\n{\n  \"documento\": {\n    \"tipo\": \"Informe de Imagenología / Laboratorio\",\n    \"confianza_clasificacion\": 0.95\n  },\n  \"paciente\": {\n    \"nombre_completo\": \"Nombre encontrado o 'No claro'\",\n    \"identificacion\": \"RUT/DNI encontrado o 'Desconocido'\",\n    \"edad\": null\n  },\n  \"profesional\": {\n    \"nombre_completo\": \"Nombre o 'No especificado'\",\n    \"especialidad\": \"\",\n    \"matricula\": \"\"\n  },\n  \"clinico\": {\n    \"urgencia\": false,\n    \"hipotesis_diagnostica\": \"Descripción breve del estudio o hallazgo principal\",\n    \"medicamentos\": [],\n    \"es_estudio_imagen\": true\n  },\n  \"metadata_control\": {\n    \"requiere_revision_humana\": false,\n    \"motivos_revision\": []\n  }\n}",
+        "options": {
+          "passthroughBinaryImages": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -448,
+        160
+      ],
+      "id": "c369511a-c00a-40cf-82ae-1a522a3521dc",
+      "name": "Agente IA Visión"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -448,
+        336
+      ],
+      "id": "742cbc44-da6a-4ba9-acea-9152030908ea",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uoXc6pOzbUGOZEa9",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "hce-1",
+              "name": "cola_destino",
+              "value": "Imagenología y Laboratorio",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        -128
+      ],
+      "id": "172ae801-89cf-4dc4-81c7-d61906b6e571",
+      "name": "cola: Laboratorio e Imágenes"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingesta Webhook": {
+      "main": [
+        [
+          {
+            "node": "Tipo de Archivo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipo de Archivo?": {
+      "main": [
+        [
+          {
+            "node": "Extract Text from PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizador de imágenes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Extract Text from PDF": {
+      "main": [
+        [
+          {
+            "node": "Triaje e Extracción IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triaje e Extracción IA": {
+      "main": [
+        [
+          {
+            "node": "Validación de Ambigüedad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validación de Ambigüedad": {
+      "main": [
+        [
+          {
+            "node": "Router de Enrutamiento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router de Enrutamiento": {
+      "main": [
+        [
+          {
+            "node": "Cola: Urgencias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cola: Revisión Humana",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "cola: Laboratorio e Imágenes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cola: Farmacia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cola: Auditoría",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cola: HCE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: Urgencias": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: Farmacia": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: Auditoría": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: HCE": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cola: Revisión Humana": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Triaje e Extracción IA",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizador de imágenes": {
+      "main": [
+        [
+          {
+            "node": "Agente IA Visión",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente IA Visión",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cola: Laboratorio e Imágenes": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente IA Visión": {
+      "main": [
+        [
+          {
+            "node": "Validación de Ambigüedad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "7b443246-8b25-4541-85fa-ea9a9d17b450",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fc3df8d3c2b57df898402cf602679d0f4fba0e0cdf902767ef5be934081519fb"
+  },
+  "nodeGroups": [],
+  "id": "8jNKn63hDfYr5e3b",
+  "tags": []
+}
