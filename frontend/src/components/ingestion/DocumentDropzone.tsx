@@ -8,6 +8,21 @@ interface DocumentDropzoneProps {
   disabled?: boolean;
 }
 
+function fileFormat(mimeType: string): 'PNG' | 'JPG' | 'PDF' {
+  if (mimeType === 'image/png') return 'PNG';
+  if (mimeType === 'image/jpeg') return 'JPG';
+  return 'PDF';
+}
+
+function fileToClinicalSample(file: File): ClinicalSample {
+  return {
+    name: file.name,
+    category: 'Documento clínico digital',
+    format: fileFormat(file.type),
+    size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+  };
+}
+
 const DocumentDropzone = ({
   selectedFile,
   onSelectFile,
@@ -16,46 +31,32 @@ const DocumentDropzone = ({
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleDrag = (e: DragEvent<HTMLDivElement>, status: boolean) => {
+  const handleDrag = (e: DragEvent<HTMLDivElement>, active: boolean) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!disabled) setIsDragging(status);
+    if (!disabled) setIsDragging(active);
   };
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    if (disabled) return;
-
-    const files = e.dataTransfer.files;
-    if (files && files[0]) {
-      const file = files[0];
-      const isPng = file.type === 'image/png';
-      const isJpg = file.type === 'image/jpeg';
-      onSelectFile({
-        name: file.name,
-        category: 'Documento clínico digital',
-        format: isPng ? 'PNG' : isJpg ? 'JPG' : 'PDF',
-        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      });
-    }
+    const file = e.dataTransfer.files[0];
+    if (!disabled && file) onSelectFile(fileToClinicalSample(file));
   };
 
   const handleFileInput = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files[0]) {
-      const file = files[0];
-      const isPng = file.type === 'image/png';
-      const isJpg = file.type === 'image/jpeg';
-      onSelectFile({
-        name: file.name,
-        category: 'Documento clínico digital',
-        format: isPng ? 'PNG' : isJpg ? 'JPG' : 'PDF',
-        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      });
-    }
+    const file = e.target.files?.[0];
+    if (file) onSelectFile(fileToClinicalSample(file));
   };
+
+  const dropzoneClass = `border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
+    disabled
+      ? 'opacity-60 cursor-not-allowed border-slate-800 bg-slate-900/30'
+      : isDragging
+        ? 'border-emerald-400 bg-emerald-500/10 cursor-pointer'
+        : 'border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60 cursor-pointer'
+  }`;
 
   return (
     <div className="space-y-4">
@@ -64,13 +65,7 @@ const DocumentDropzone = ({
         onDragLeave={(e) => handleDrag(e, false)}
         onDrop={handleDrop}
         onClick={() => !disabled && inputRef.current?.click()}
-        className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
-          disabled
-            ? 'opacity-60 cursor-not-allowed border-slate-800 bg-slate-900/30'
-            : isDragging
-              ? 'border-emerald-400 bg-emerald-500/10 cursor-pointer'
-              : 'border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60 cursor-pointer'
-        }`}
+        className={dropzoneClass}
       >
         <input
           ref={inputRef}
@@ -131,7 +126,7 @@ const DocumentDropzone = ({
               className={`text-left p-3 rounded-xl border transition-all text-xs cursor-pointer disabled:opacity-50 ${
                 selectedFile?.name === sample.name
                   ? 'bg-emerald-500/10 border-emerald-500/30'
-                  : 'bg-slate-900/50 hover:bg-slate-850 border-slate-800/80 hover:border-slate-700'
+                  : 'bg-slate-900/50 hover:bg-slate-800 border-slate-800/80 hover:border-slate-700'
               }`}
             >
               <div className="font-semibold text-slate-200 truncate">{sample.name}</div>

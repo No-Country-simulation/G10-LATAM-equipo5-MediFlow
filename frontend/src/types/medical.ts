@@ -1,23 +1,28 @@
 export const SCORE_CONFIANZA_THRESHOLD = 0.85;
 
 export type EstadoDocumento = 'PROCESADO' | 'PENDIENTE_AUDITORIA' | 'AUDITADO';
-export type NivelPrioridad = 'Rutina' | 'Prioritario' | 'Urgente';
+export type NivelPrioridad = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA' | 'Urgente' | 'Prioritario' | 'Rutina';
 export type TipoArchivo = 'PDF' | 'IMAGEN';
 
 export type DestinoEnrutamiento =
   | 'Cola_Emergencia_Medica'
-  | 'Auditoria_Autorizaciones'
   | 'Farmacia_Hospitalaria'
-  | 'Historia_Clinica_Electronica'
-  | 'Cola_Revision_Humana';
+  | 'Gestion_Procedimientos'
+  | 'Gestion_Interconsultas'
+  | 'Cola_Oncologia'
+  | 'Ficha_Clinica'
+  | 'OTRO';
 
 export type TipoDocumentoClinico =
-  | 'Receta Médica'
-  | 'Informe de Estudio por Imágenes'
-  | 'Laboratorio'
-  | 'Orden de Solicitud de Procedimiento'
-  | 'Epicrisis / Informe de Alta'
-  | 'Certificado Médico';
+  | 'RECETA'
+  | 'LABORATORIO'
+  | 'IMAGENES'
+  | 'SOLICITUD_PROCEDIMIENTO'
+  | 'EPICRISIS'
+  | 'INTERCONSULTA'
+  | 'ANATOMIA_PATOLOGICA'
+  | 'PROTOCOLO_OPERATORIO'
+  | 'OTRO';
 
 export interface Paciente {
   nombre: string | null;
@@ -63,6 +68,8 @@ export interface DocumentListItemResponse {
   destino_enrutamiento: string | null;
   oci_json_path: string;
   created_at: string;
+  diagnostico_principal?: string | null;
+  requiere_auditoria?: boolean | null;
 }
 
 export interface PaginatedDocumentResponse {
@@ -119,7 +126,7 @@ export interface AuditResolveRequest {
   audit_notes: string;
 }
 
-// Regla de negocio: Umbral de confianza < 0.85 o flag de auditoría humana explícito
+// Regla de negocio: Umbral dee confianza < 0.85 o flag de auditoría humana explícito
 export const requiresHumanAudit = (score: number, requiereAuditoria = false): boolean => {
   return score < SCORE_CONFIANZA_THRESHOLD || requiereAuditoria;
 };

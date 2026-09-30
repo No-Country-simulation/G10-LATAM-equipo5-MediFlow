@@ -1,34 +1,52 @@
 export type DocumentCategoryFilter =
   | 'ALL'
-  | 'RECETAS'
-  | 'IMAGENES'
+  | 'RECETA'
   | 'LABORATORIO'
-  | 'PROCEDIMIENTOS'
+  | 'IMAGENES'
+  | 'SOLICITUD_PROCEDIMIENTO'
   | 'EPICRISIS'
-  | 'CERTIFICADOS';
+  | 'INTERCONSULTA'
+  | 'ANATOMIA_PATOLOGICA'
+  | 'PROTOCOLO_OPERATORIO'
+  | 'OTRO';
 
 export type DocumentDestinationFilter =
   | 'ALL'
-  | 'FARMACIA'
-  | 'URGENCIAS'
-  | 'AUTORIZACIONES'
-  | 'FICHA_CLINICA';
+  | 'Cola_Emergencia_Medica'
+  | 'Farmacia_Hospitalaria'
+  | 'Gestion_Procedimientos'
+  | 'Gestion_Interconsultas'
+  | 'Cola_Oncologia'
+  | 'Ficha_Clinica'
+  | 'OTROS';
 
-export const CATEGORY_MAP: Record<Exclude<DocumentCategoryFilter, 'ALL'>, string> = {
-  RECETAS: 'Receta Médica',
-  IMAGENES: 'Informe de Estudio por Imágenes',
-  LABORATORIO: 'Laboratorio',
-  PROCEDIMIENTOS: 'Orden de Solicitud de Procedimiento',
-  EPICRISIS: 'Epicrisis / Informe de Alta',
-  CERTIFICADOS: 'Certificado Médico',
+export const CANONICAL_QUEUES: ReadonlyArray<Exclude<DocumentDestinationFilter, 'ALL' | 'OTROS'>> = [
+  'Cola_Emergencia_Medica',
+  'Farmacia_Hospitalaria',
+  'Gestion_Procedimientos',
+  'Gestion_Interconsultas',
+  'Cola_Oncologia',
+  'Ficha_Clinica',
+];
+
+export const DESTINATION_LABELS: Record<Exclude<DocumentDestinationFilter, 'ALL'>, string> = {
+  Cola_Emergencia_Medica: 'Urgencias',
+  Farmacia_Hospitalaria: 'Farmacia Hospitalaria',
+  Gestion_Procedimientos: 'Procedimientos y Quirófano',
+  Gestion_Interconsultas: 'Interconsultas y Derivaciones',
+  Cola_Oncologia: 'Oncología',
+  Ficha_Clinica: 'Ficha Clínica',
+  OTROS: 'Otras Derivaciones',
 };
 
-export const DESTINATION_MAP: Record<
-  Exclude<DocumentDestinationFilter, 'ALL'>,
-  string
-> = {
-  FARMACIA: 'Farmacia_Hospitalaria',
-  URGENCIAS: 'Cola_Emergencia_Medica',
-  AUTORIZACIONES: 'Auditoria_Autorizaciones',
-  FICHA_CLINICA: 'Historia_Clinica_Electronica',
+export const CATEGORY_LABELS: Record<Exclude<DocumentCategoryFilter, 'ALL'>, string> = {
+  RECETA: 'Receta Médica',
+  LABORATORIO: 'Informe de Laboratorio',
+  IMAGENES: 'Informe de Estudio por Imágenes',
+  SOLICITUD_PROCEDIMIENTO: 'Solicitud de Procedimiento',
+  EPICRISIS: 'Epicrisis / Informe de Alta',
+  INTERCONSULTA: 'Interconsulta / Derivación',
+  ANATOMIA_PATOLOGICA: 'Informe de Anatomía Patológica',
+  PROTOCOLO_OPERATORIO: 'Protocolo Operatorio',
+  OTRO: 'Otro / No clasificable',
 };

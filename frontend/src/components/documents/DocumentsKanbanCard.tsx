@@ -1,25 +1,33 @@
 import { User, Stethoscope, ShieldCheck } from 'lucide-react';
-import type { TriageDocument } from '../../types/triage';
+import type { DocumentListItemResponse } from '../../types/medical';
+import { CATEGORY_LABELS } from '../../types/documents';
 
 interface DocumentsKanbanCardProps {
-  doc: TriageDocument;
+  doc: DocumentListItemResponse;
 }
 
 const PRIORITY_BADGES: Record<string, string> = {
-  Urgente: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
-  Alta: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-  Media: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-  Baja: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+  CRITICA: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+  ALTA: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+  MEDIA: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  BAJA: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
 };
+
+const categoryLookup: Record<string, string> = CATEGORY_LABELS;
+
+function formatConfidence(score: number | null | undefined): string {
+  if (typeof score !== 'number' || Number.isNaN(score)) return '—';
+  return `${(score * 100).toFixed(0)}%`;
+}
 
 const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
   const priorityClass =
-    PRIORITY_BADGES[doc.clasificacion.nivel_prioridad] ||
-    'bg-slate-800 text-slate-300 border-slate-700';
+    PRIORITY_BADGES[doc.nivel_prioridad] ?? 'bg-slate-800 text-slate-300 border-slate-700';
 
-  const confidencePercent = (
-    doc.clasificacion.score_confianza_clasificacion * 100
-  ).toFixed(0);
+  const confidencePercent = formatConfidence(doc.score_confianza);
+  const categoryLabel = categoryLookup[doc.tipo_documento] ?? doc.tipo_documento;
+  const clinicalDiagnosis = doc.diagnostico_principal || doc.estado || 'Sin diagnóstico registrado';
+  const requiresAudit = Boolean(doc.requiere_auditoria || doc.estado === 'PENDIENTE_AUDITORIA');
 
   return (
     <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 hover:border-slate-700 transition-all shadow-sm space-y-2.5">
@@ -27,22 +35,29 @@ const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
         <span className="font-mono text-[11px] font-bold text-slate-200 tracking-tight">
           {doc.documento_id}
         </span>
-        <span
-          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${priorityClass}`}
-        >
-          {doc.clasificacion.nivel_prioridad}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {requiresAudit && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+              Auditoría Requerida
+            </span>
+          )}
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${priorityClass}`}
+          >
+            {doc.nivel_prioridad}
+          </span>
+        </div>
       </div>
 
       <div className="space-y-1">
         <div className="flex items-center gap-1.5 text-xs">
           <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           <span className="font-semibold text-slate-100 truncate">
-            {doc.datos_extraidos.paciente.nome}
+            {doc.nombre_paciente ?? '—'}
           </span>
-          {doc.datos_extraidos.paciente.rut && (
+          {doc.rut_paciente && (
             <span className="text-[10px] font-mono text-slate-400 shrink-0">
-              ({doc.datos_extraidos.paciente.rut})
+              ({doc.rut_paciente})
             </span>
           )}
         </div>
@@ -50,23 +65,20 @@ const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
         <div className="flex items-start gap-1.5 text-xs text-slate-300">
           <Stethoscope className="w-3.5 h-3.5 text-rose-400/80 shrink-0 mt-0.5" />
           <p className="line-clamp-2 leading-relaxed">
-            {doc.datos_extraidos.diagnostico_principal}
+            {clinicalDiagnosis}
           </p>
         </div>
       </div>
 
       <div className="flex items-center justify-between pt-2 border-t border-slate-800/70 text-[11px]">
-        <div className="flex items-center gap-1 font-mono text-slate-400 bg-slate-950/70 px-2 py-0.5 rounded border border-slate-800/80 text-[10px]">
-          <span className="text-slate-500">CIE-10:</span>
-          <span className="font-semibold text-slate-300">
-            {doc.datos_extraidos.cie10_sugerido}
-          </span>
+        <div className="font-mono text-[10px] text-slate-400 truncate max-w-[50%]">
+          {categoryLabel}
         </div>
 
         <div className="flex items-center gap-1 text-slate-400">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
           <span className="font-mono font-bold text-slate-200">
-            {confidencePercent}%
+            {confidencePercent}
           </span>
         </div>
       </div>

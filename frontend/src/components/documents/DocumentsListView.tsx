@@ -1,9 +1,9 @@
 import { Inbox } from 'lucide-react';
-import type { TriageDocument } from '../../types/triage';
+import type { DocumentListItemResponse } from '../../types/medical';
 import DocumentRepositoryCard from './DocumentRepositoryCard';
 
 interface DocumentsListViewProps {
-  documents: TriageDocument[];
+  documents: DocumentListItemResponse[];
 }
 
 const DocumentsListView = ({ documents }: DocumentsListViewProps) => {

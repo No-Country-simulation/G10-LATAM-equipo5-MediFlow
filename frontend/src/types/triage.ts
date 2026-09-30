@@ -10,8 +10,12 @@ export type PriorityLevel = 'Baja' | 'Media' | 'Alta' | 'Urgente';
 
 export type RoutingDestination =
   | 'Cola_Emergencia_Medica'
-  | 'Auditoria_Autorizaciones'
   | 'Farmacia_Hospitalaria'
+  | 'Gestion_Procedimientos'
+  | 'Gestion_Interconsultas'
+  | 'Cola_Oncologia'
+  | 'Ficha_Clinica'
+  | 'Auditoria_Autorizaciones'
   | 'Historia_Clinica_Electronica'
   | 'Cola_Revision_Humana';
 
