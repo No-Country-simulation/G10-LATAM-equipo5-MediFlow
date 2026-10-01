@@ -1,8 +1,9 @@
 /**
  * Nodo Code de n8n: arma el IngestPayload de FastAPI.
- * Entrada: JSON de Gemini (clasificacion, datos_generales, detalle_clinico, decision_enrutamiento)
- * + binario del webhook (PDF/imagen).
- * Salida: body listo para POST /api/v1/documents/ingest
+ *
+ * documento_id sale SOLO de "Preparar corrida" (creado al inicio).
+ * Si el webhook reenvía el mismo ID, FastAPI actualiza el mismo registro (idempotencia).
+ * El Bearer sale de "Login FastAPI", no de una variable de entorno.
  */
 const DESTINO_LEGACY = {
   Historia_Clinica_Electronica: "Ficha_Clinica",
@@ -36,15 +37,24 @@ function parseGemini(raw) {
   }
 }
 
-function mapTipo(tipo) {
-  return TIPO_LEGACY[tipo] || tipo || "Otro / No clasificable";
+function listFrom(nodeName) {
+  try {
+    const items = $(nodeName).all();
+    if (items.length === 1 && Array.isArray(items[0].json)) {
+      return items[0].json;
+    }
+    return items.map((i) => i.json);
+  } catch {
+    return [];
+  }
 }
 
-function mapDestino(codigo, requiereHitl, urgente) {
-  if (urgente) return "Cola_Emergencia_Medica";
-  const mapped = DESTINO_LEGACY[codigo] || codigo;
-  if (mapped === "Cola_Revision_Humana") return "Ficha_Clinica";
-  return mapped || "Ficha_Clinica";
+function nombresTipo(catalogo) {
+  return new Set(catalogo.map((t) => t.nombre).filter(Boolean));
+}
+
+function codigosCola(catalogo) {
+  return new Set(catalogo.map((c) => c.codigo).filter(Boolean));
 }
 
 const item = $input.first();
@@ -54,13 +64,26 @@ const datos = gemini.datos_generales || gemini.datos_extraidos || {};
 const paciente = datos.paciente || {};
 const medico = datos.medico_solicitante || gemini.profesional || {};
 const decision = gemini.decision_enrutamiento || {};
+const prep = $("Preparar corrida").first();
+const tipos = listFrom("GET tipos activos");
+const colas = listFrom("GET colas activas");
+const tiposValidos = nombresTipo(tipos);
+const colasValidas = codigosCola(colas);
 
 const score = Number(
   clasificacion.score_confianza_clasificacion ??
     gemini.documento?.confianza_clasificacion ??
     0.5
 );
-const tipo = mapTipo(clasificacion.tipo_documento || gemini.documento?.tipo);
+
+let tipo = TIPO_LEGACY[clasificacion.tipo_documento || gemini.documento?.tipo]
+  || clasificacion.tipo_documento
+  || gemini.documento?.tipo
+  || "Otro / No clasificable";
+if (tiposValidos.size && !tiposValidos.has(tipo)) {
+  tipo = [...tiposValidos].find((n) => n.startsWith("Otro")) || "Otro / No clasificable";
+}
+
 let prioridad = clasificacion.nivel_prioridad || "Rutina";
 if (prioridad === "Ambiguo") prioridad = "Prioritario";
 
@@ -71,26 +94,28 @@ const urgente =
 
 let hitl = Boolean(decision.requiere_auditoria_humana);
 if (score < 0.7) hitl = true;
-if (tipo === "Otro / No clasificable") hitl = true;
+if (String(tipo).startsWith("Otro")) hitl = true;
 if (decision.destino_principal === "Cola_Revision_Humana") hitl = true;
-if (!paciente.nombre) hitl = true;
+if (!paciente.nombre && !paciente.nombre_completo) hitl = true;
 
-const destino = mapDestino(decision.destino_principal || gemini.cola_destino, hitl, urgente);
+let destino = urgente ? "Cola_Emergencia_Medica" : (DESTINO_LEGACY[decision.destino_principal] || decision.destino_principal);
+if (!destino || (colasValidas.size && !colasValidas.has(destino))) {
+  destino = colasValidas.has("Ficha_Clinica") ? "Ficha_Clinica" : [...colasValidas][0] || "Ficha_Clinica";
+  if (!urgente) hitl = true;
+}
 
-const webhook = $("Ingesta Webhook").first();
-const binary = webhook.binary?.data || item.binary?.data;
+const binary = prep.binary?.data || item.binary?.data;
 let archivoBase64 = "";
 let tipoArchivo = "PDF";
 if (binary) {
   archivoBase64 = binary.data;
-  const mime = binary.mimeType || "";
-  tipoArchivo = mime.includes("pdf") ? "PDF" : "IMAGEN";
+  tipoArchivo = (binary.mimeType || "").includes("pdf") ? "PDF" : "IMAGEN";
 }
 
-const documentoId =
-  gemini.documento_id ||
-  $("Ingesta Webhook").first().json.documento_id ||
-  `DOC-${Date.now()}`;
+const documentoId = prep.json.documento_id;
+if (!documentoId) {
+  throw new Error("Falta documento_id de Preparar corrida; no se puede ingresar sin idempotencia.");
+}
 
 return [
   {
