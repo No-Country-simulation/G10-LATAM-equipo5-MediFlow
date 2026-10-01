@@ -2,16 +2,23 @@ import type React from 'react';
 
 export interface HeartbeatBackgroundProps {
   mode?: 'full' | 'compact';
+  className?: string;
 }
 
-export const HeartbeatBackground: React.FC<HeartbeatBackgroundProps> = ({ mode = 'full' }) => {
+export const HeartbeatBackground: React.FC<HeartbeatBackgroundProps> = ({ mode = 'full', className }) => {
   const heightClass = mode === 'full' ? 'h-[32vh] md:h-[40vh]' : 'h-[14vh] md:h-[18vh]';
 
   const ecgPath =
     'M 0 130 L 120 130 C 130 130 135 120 145 120 C 155 120 160 130 170 130 L 210 130 L 220 142 L 235 30 L 250 175 L 260 130 L 290 130 C 305 130 315 105 330 105 C 345 105 355 130 370 130 L 490 130 C 500 130 505 120 515 120 C 525 120 530 130 540 130 L 580 130 L 590 142 L 605 25 L 620 180 L 630 130 L 660 130 C 675 130 685 105 700 105 C 715 105 725 130 740 130 L 860 130 C 870 130 875 120 885 120 C 895 120 900 130 910 130 L 950 130 L 960 142 L 975 35 L 990 175 L 1000 130 L 1030 130 C 1045 130 1055 108 1070 108 C 1085 108 1095 130 1110 130 L 1200 130';
 
   return (
-    <div className={`absolute bottom-0 left-0 w-full z-0 pointer-events-none overflow-hidden ${heightClass}`}>
+    <div
+      className={
+        className
+          ? `w-full h-full pointer-events-none overflow-hidden ${className}`
+          : `absolute bottom-0 left-0 w-full z-0 pointer-events-none overflow-hidden ${heightClass}`
+      }
+    >
       <style>
         {`
           @keyframes ecg-flow {
@@ -48,15 +55,6 @@ export const HeartbeatBackground: React.FC<HeartbeatBackgroundProps> = ({ mode =
         xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="none"
       >
-        <path
-          d={ecgPath}
-          stroke="#f43f5e"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="opacity-15"
-        />
-
         <g className="ecg-glow-container">
           <path
             d={ecgPath}
@@ -64,6 +62,7 @@ export const HeartbeatBackground: React.FC<HeartbeatBackgroundProps> = ({ mode =
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
             className="ecg-runner"
           />
         </g>

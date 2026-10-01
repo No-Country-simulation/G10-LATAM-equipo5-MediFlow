@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
-import { User, Lock, Eye, EyeOff, LogIn, Loader2, AlertCircle } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, LogIn, Loader2 } from 'lucide-react';
 import type { LoginRequest } from '../../types/auth';
 
 interface LoginFormProps {
@@ -27,19 +27,9 @@ const LoginForm = ({ onSubmit, isLoading, error }: LoginFormProps) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div
-          role="alert"
-          className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs"
-        >
-          <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      <div className="space-y-1.5">
-        <label htmlFor="username" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+    <form onSubmit={handleSubmit} className="space-y-3.5">
+      <div className="space-y-1">
+        <label htmlFor="username" className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
           Usuario
         </label>
         <div className="relative">
@@ -61,8 +51,8 @@ const LoginForm = ({ onSubmit, isLoading, error }: LoginFormProps) => {
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <label htmlFor="password" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+      <div className="space-y-1">
+        <label htmlFor="password" className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
           Contraseña
         </label>
         <div className="relative">
@@ -93,23 +83,24 @@ const LoginForm = ({ onSubmit, isLoading, error }: LoginFormProps) => {
         </div>
       </div>
 
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full mt-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-950/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isLoading ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Iniciando sesión...</span>
-          </>
-        ) : (
-          <>
-            <LogIn className="w-4 h-4" />
-            <span>Iniciar sesión</span>
-          </>
+      <div className="relative pt-1">
+        {error && (
+          <span
+            role="alert"
+            className="absolute -top-3 right-0 text-[11px] text-rose-400 font-medium animate-in fade-in duration-150 pointer-events-none"
+          >
+            {error}
+          </span>
         )}
-      </button>
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-950/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+          <span>{isLoading ? 'Iniciando sesión...' : 'Iniciar sesión'}</span>
+        </button>
+      </div>
     </form>
   );
 };

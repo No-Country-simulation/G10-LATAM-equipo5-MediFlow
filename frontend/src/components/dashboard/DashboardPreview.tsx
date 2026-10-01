@@ -62,7 +62,7 @@ const DashboardPreview = () => {
   }, [activeFilter]);
 
   return (
-    <div className="max-w-5xl w-full mx-auto p-4 sm:p-6 space-y-5">
+    <div className="max-w-5xl w-full mx-auto p-4 sm:p-6 space-y-5 animate-fade-in">
       <CriticalAlertBanner
         criticalCount={counts.urgent}
         onViewCritical={() => setActiveFilter('URGENT')}
