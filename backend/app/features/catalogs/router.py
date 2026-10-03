@@ -11,6 +11,7 @@ from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.catalogs import service
 from app.features.catalogs.schemas import (
+    CatalogHistoryResponse,
     DeleteResponse,
     DocumentTypeActiveForLLM,
     DocumentTypeCreate,
@@ -72,7 +73,7 @@ async def create_queue(
     current_user: User = Depends(_require_admin),
 ) -> QueueResponse:
     """Crea una cola de enrutamiento. Requiere rol ADMIN."""
-    return QueueResponse.model_validate(await service.create_queue(payload, db))
+    return QueueResponse.model_validate(await service.create_queue(payload, db, current_user))
 
 
 @router.put("/queues/{queue_id}", response_model=QueueResponse)
@@ -83,7 +84,7 @@ async def update_queue(
     current_user: User = Depends(_require_admin),
 ) -> QueueResponse:
     """Actualiza parcialmente una cola de enrutamiento. Requiere rol ADMIN."""
-    return QueueResponse.model_validate(await service.update_queue(queue_id, payload, db))
+    return QueueResponse.model_validate(await service.update_queue(queue_id, payload, db, current_user))
 
 
 @router.delete("/queues/{queue_id}", response_model=DeleteResponse)
@@ -93,8 +94,23 @@ async def delete_queue(
     current_user: User = Depends(_require_admin),
 ) -> DeleteResponse:
     """Smart Delete: borrado físico si ningún documento usa la cola; si no, la desactiva. Requiere rol ADMIN."""
-    deletion_type, message = await service.smart_delete_queue(queue_id, db)
+    deletion_type, message = await service.smart_delete_queue(queue_id, db, current_user)
     return DeleteResponse(message=message, deletion_type=deletion_type)
+
+
+@router.get("/queues/{queue_id}/history", response_model=list[CatalogHistoryResponse])
+async def get_queue_history(
+    queue_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_require_admin),
+) -> list[CatalogHistoryResponse]:
+    """Historial de cambios de una cola (más reciente primero), aunque ya haya sido eliminada.
+
+    Requiere rol ADMIN.
+    """
+    return [
+        CatalogHistoryResponse.model_validate(h) for h in await service.queue_history(queue_id, db)
+    ]
 
 
 # --- Tipos de documento ------------------------------------------------------
@@ -140,7 +156,7 @@ async def create_document_type(
     current_user: User = Depends(_require_admin),
 ) -> DocumentTypeResponse:
     """Crea un tipo de documento clínico. Requiere rol ADMIN."""
-    return DocumentTypeResponse.model_validate(await service.create_document_type(payload, db))
+    return DocumentTypeResponse.model_validate(await service.create_document_type(payload, db, current_user))
 
 
 @router.put("/document-types/{type_id}", response_model=DocumentTypeResponse)
@@ -152,7 +168,7 @@ async def update_document_type(
 ) -> DocumentTypeResponse:
     """Actualiza parcialmente un tipo de documento clínico. Requiere rol ADMIN."""
     return DocumentTypeResponse.model_validate(
-        await service.update_document_type(type_id, payload, db)
+        await service.update_document_type(type_id, payload, db, current_user)
     )
 
 
@@ -163,5 +179,18 @@ async def delete_document_type(
     current_user: User = Depends(_require_admin),
 ) -> DeleteResponse:
     """Smart Delete: borrado físico si ningún documento usa el tipo; si no, lo desactiva. Requiere rol ADMIN."""
-    deletion_type, message = await service.smart_delete_document_type(type_id, db)
+    deletion_type, message = await service.smart_delete_document_type(type_id, db, current_user)
     return DeleteResponse(message=message, deletion_type=deletion_type)
+
+
+@router.get("/document-types/{type_id}/history", response_model=list[CatalogHistoryResponse])
+async def get_document_type_history(
+    type_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_require_admin),
+) -> list[CatalogHistoryResponse]:
+    """Historial de cambios de un tipo de documento (más reciente primero). Requiere rol ADMIN."""
+    return [
+        CatalogHistoryResponse.model_validate(h)
+        for h in await service.document_type_history(type_id, db)
+    ]

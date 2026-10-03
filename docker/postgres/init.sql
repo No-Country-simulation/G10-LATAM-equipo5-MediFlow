@@ -49,15 +49,32 @@ CREATE TABLE IF NOT EXISTS clinical_documents (
     -- evolución de epicrisis, etc. que no tiene columna ni tabla relacional propia)
     raw_extracted_json JSONB NOT NULL,
 
+    -- Usuario que subió el documento desde el front (token reenviado por n8n a /ingest)
+    uploaded_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
     -- Control Human-in-the-Loop
     audited_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
     audit_notes TEXT,
     audited_at TIMESTAMP WITH TIME ZONE,
 
+    -- "Tomar caso": auditor que está revisando el documento (asignación con vencimiento)
+    asignado_a_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    asignado_a_username VARCHAR(50),
+    asignado_at TIMESTAMP WITH TIME ZONE,
+
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
+
+-- Migración para bases creadas antes de existir `uploaded_by_id` (no hace nada si ya existe)
+ALTER TABLE clinical_documents
+    ADD COLUMN IF NOT EXISTS uploaded_by_id UUID REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_clinical_docs_uploaded_by ON clinical_documents(uploaded_by_id);
+ALTER TABLE clinical_documents
+    ADD COLUMN IF NOT EXISTS asignado_a_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS asignado_a_username VARCHAR(50);
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS asignado_at TIMESTAMP WITH TIME ZONE;
 
 -- 2.1 Archivos binarios del documento (un documento puede traer más de uno: varias placas
 -- de una orden de Rx, o múltiples capturas de una ecotomografía más su informe)
@@ -134,6 +151,9 @@ CREATE TABLE IF NOT EXISTS routing_queues (
     descripcion_semantica TEXT NOT NULL,
     notificar_inmediato BOOLEAN DEFAULT FALSE NOT NULL,
     is_active BOOLEAN DEFAULT TRUE NOT NULL,
+    -- Registros de los que depende el pipeline: no se pueden eliminar ni desactivar
+    es_sistema BOOLEAN DEFAULT FALSE NOT NULL,
+    updated_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
@@ -143,11 +163,42 @@ CREATE TABLE IF NOT EXISTS document_types (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     codigo VARCHAR(50) UNIQUE NOT NULL,
     nombre VARCHAR(80) NOT NULL,
-    descripcion TEXT,
+    -- Lo que lee el LLM para elegir el tipo: obligatoria
+    descripcion TEXT NOT NULL,
+    -- JSON Schema opcional de campos adicionales a extraer (detalle_clinico.campos_adicionales)
+    campos_extraccion JSONB,
     is_active BOOLEAN DEFAULT TRUE NOT NULL,
+    es_sistema BOOLEAN DEFAULT FALSE NOT NULL,
+    updated_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
+
+-- Migración para bases creadas antes de estas columnas (no hace nada si ya existen)
+ALTER TABLE routing_queues ADD COLUMN IF NOT EXISTS es_sistema BOOLEAN DEFAULT FALSE NOT NULL;
+ALTER TABLE routing_queues
+    ADD COLUMN IF NOT EXISTS updated_by_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE document_types ADD COLUMN IF NOT EXISTS campos_extraccion JSONB;
+ALTER TABLE document_types ADD COLUMN IF NOT EXISTS es_sistema BOOLEAN DEFAULT FALSE NOT NULL;
+ALTER TABLE document_types
+    ADD COLUMN IF NOT EXISTS updated_by_id UUID REFERENCES users(id) ON DELETE SET NULL;
+UPDATE document_types SET descripcion = nombre WHERE descripcion IS NULL;
+ALTER TABLE document_types ALTER COLUMN descripcion SET NOT NULL;
+
+-- Bitácora de cambios de los catálogos. `registro_id` no es FK: el historial sobrevive al
+-- borrado físico. `cambios` = {campo: {"antes": ..., "despues": ...}}.
+CREATE TABLE IF NOT EXISTS catalog_history (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    catalogo VARCHAR(30) NOT NULL,           -- QUEUE | DOCUMENT_TYPE
+    registro_id UUID NOT NULL,
+    codigo VARCHAR(80) NOT NULL,
+    accion VARCHAR(20) NOT NULL,             -- CREATE | UPDATE | HARD_DELETE | SOFT_DELETE
+    cambios JSONB NOT NULL,
+    changed_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_history_registro
+ON catalog_history(catalogo, registro_id, changed_at DESC);
 
 -- 3. Índices de Alto Rendimiento
 -- Acelera el conteo del Smart Delete de colas (destino_enrutamiento = routing_queues.codigo)
@@ -159,7 +210,8 @@ ON clinical_documents(created_at DESC)
 WHERE estado = 'PENDIENTE_AUDITORIA';
 
 -- 4. Usuarios semilla para pruebas, uno por rol (SOLO desarrollo: cambiar antes de desplegar)
--- Contraseñas: admin_user / admin123, gestor_user / gestor123, auditor_user / auditor123
+-- Contraseñas: admin_user / admin123, gestor_user / gestor123, auditor_user / auditor123,
+-- operador_user / operador123
 -- (se guardan como hash bcrypt)
 INSERT INTO users (username, email, hashed_password, full_name, role) VALUES
 (
@@ -182,11 +234,19 @@ INSERT INTO users (username, email, hashed_password, full_name, role) VALUES
     '$2b$12$WaGpjNNMefR30Icr2MBKZOuLzlK.0UamsmizM4GnUJUwd4czYdoFm',
     'Auditor Clínico MediFlow',
     'AUDITOR_CLINICO'
+),
+(
+    'operador_user',
+    'operador@mediflow.cl',
+    '$2b$12$89UxgwqPngSpoTZYVTXM/emJFCSGrd.sfTgcQW46xBzPqjL2pGMEG',
+    'Operador de Admisión MediFlow',
+    'OPERADOR'
 )
 ON CONFLICT (username) DO NOTHING;
 -- 5. Maestras semilla. n8n las lee vía GET /api/v1/catalogs/document-types/active y
 -- GET /api/v1/catalogs/queues/active para armar el prompt,
--- por lo que `nombre` (tipos) y `codigo` (colas) son exactamente lo que el LLM debe devolver.
+-- por lo que el `codigo` (de tipos y de colas) es exactamente lo que el LLM debe devolver.
+-- Cada `codigo` de tipo tiene un bloque fijo en `detalle_clinico` (ver DetalleClinicoExtract).
 -- Las descripciones las lee el LLM: dicen cuándo SÍ y cuándo NO usar cada opción.
 INSERT INTO document_types (codigo, nombre, descripcion) VALUES
 (
@@ -228,6 +288,11 @@ INSERT INTO document_types (codigo, nombre, descripcion) VALUES
     'PROTOCOLO_OPERATORIO',
     'Protocolo Operatorio',
     'Informe del equipo quirúrgico sobre un procedimiento YA realizado: técnica, hallazgos intraoperatorios, complicaciones y muestras enviadas a estudio.'
+),
+(
+    'NOTA_ATENCION',
+    'Nota de Atención Ambulatoria',
+    'Registro de una consulta médica ambulatoria (policlínico o consulta de especialidad): motivo de consulta, anamnesis, examen físico, diagnóstico e indicaciones. NO incluye hospitalizaciones (ver Epicrisis) ni documentos cuyo fin principal es derivar (ver Interconsulta) o prescribir (ver Receta).'
 ),
 (
     'OTRO',
@@ -274,3 +339,7 @@ INSERT INTO routing_queues (codigo, nombre, descripcion_semantica, notificar_inm
     FALSE
 )
 ON CONFLICT (codigo) DO NOTHING;
+
+-- Registros de sistema: OTRO es el comodín de la IA y Ficha_Clinica el destino por defecto.
+UPDATE document_types SET es_sistema = TRUE WHERE codigo = 'OTRO';
+UPDATE routing_queues SET es_sistema = TRUE WHERE codigo = 'Ficha_Clinica';

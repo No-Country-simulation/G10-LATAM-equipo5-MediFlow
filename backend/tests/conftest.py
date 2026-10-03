@@ -170,6 +170,21 @@ def login_as(monkeypatch):
     return _login
 
 
+CATALOGO_TIPOS = [
+    "RECETA", "LABORATORIO", "IMAGENES", "SOLICITUD_PROCEDIMIENTO", "EPICRISIS",
+    "INTERCONSULTA", "ANATOMIA_PATOLOGICA", "PROTOCOLO_OPERATORIO", "NOTA_ATENCION", "OTRO",
+]
+CATALOGO_COLAS = [
+    "Cola_Emergencia_Medica", "Farmacia_Hospitalaria", "Gestion_Procedimientos",
+    "Gestion_Interconsultas", "Cola_Oncologia", "Ficha_Clinica",
+]
+
+
+def queue_ingest(db: "FakeSession", existing=None) -> None:
+    """Encola las 3 consultas que hace la ingesta: documento previo, tipos activos y colas activas."""
+    db.queue(existing, [(codigo, None) for codigo in CATALOGO_TIPOS], CATALOGO_COLAS)
+
+
 def ingest_body(
     score: float = 0.95,
     requiere_auditoria: bool = False,
@@ -187,7 +202,7 @@ def ingest_body(
             }
         ],
         "clasificacion": {
-            "tipo_documento": "Informe de Estudio por Imagenes",
+            "tipo_documento": "LABORATORIO",
             "especialidad": "Radiologia",
             "nivel_prioridad": "Urgente",
             "score_confianza_clasificacion": score,
