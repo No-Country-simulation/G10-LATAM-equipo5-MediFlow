@@ -1,65 +1,20 @@
-import { useState, useMemo } from 'react';
-import type { TriageFilter } from '../../types/triage';
-import { MOCK_TRIAGE_DOCUMENTS } from './triageData';
+import { useState } from 'react';
 import CriticalAlertBanner from './CriticalAlertBanner';
 import TriageKpiCards from './TriageKpiCards';
 import TriageFilterTabs from './TriageFilterTabs';
 import TriageDocumentList from './TriageDocumentList';
 import NewDocumentModal from './NewDocumentModal';
+import { useDashboardTriage } from '../../hooks/useDashboardTriage';
 
 const DashboardPreview = () => {
-  const [activeFilter, setActiveFilter] = useState<TriageFilter>('ALL');
+  const {
+    filteredDocuments,
+    counts,
+    activeFilter,
+    setActiveFilter,
+    loading,
+  } = useDashboardTriage();
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const counts = useMemo(() => {
-    const urgent = MOCK_TRIAGE_DOCUMENTS.filter(
-      (d) => d.clasificacion.nivel_prioridad === 'Urgente'
-    ).length;
-    const audit = MOCK_TRIAGE_DOCUMENTS.filter(
-      (d) =>
-        d.clasificacion.nivel_prioridad !== 'Urgente' &&
-        (d.clasificacion.score_confianza_clasificacion < 0.85 ||
-          d.decision_enrutamiento.requiere_auditoria_humana)
-    ).length;
-    const routine = MOCK_TRIAGE_DOCUMENTS.filter(
-      (d) =>
-        d.clasificacion.nivel_prioridad !== 'Urgente' &&
-        d.clasificacion.score_confianza_clasificacion >= 0.85 &&
-        !d.decision_enrutamiento.requiere_auditoria_humana
-    ).length;
-
-    return {
-      all: MOCK_TRIAGE_DOCUMENTS.length,
-      urgent,
-      audit,
-      routine,
-    };
-  }, []);
-
-  const filteredDocuments = useMemo(() => {
-    switch (activeFilter) {
-      case 'URGENT':
-        return MOCK_TRIAGE_DOCUMENTS.filter(
-          (d) => d.clasificacion.nivel_prioridad === 'Urgente'
-        );
-      case 'AUDIT':
-        return MOCK_TRIAGE_DOCUMENTS.filter(
-          (d) =>
-            d.clasificacion.nivel_prioridad !== 'Urgente' &&
-            (d.clasificacion.score_confianza_clasificacion < 0.85 ||
-              d.decision_enrutamiento.requiere_auditoria_humana)
-        );
-      case 'ROUTINE':
-        return MOCK_TRIAGE_DOCUMENTS.filter(
-          (d) =>
-            d.clasificacion.nivel_prioridad !== 'Urgente' &&
-            d.clasificacion.score_confianza_clasificacion >= 0.85 &&
-            !d.decision_enrutamiento.requiere_auditoria_humana
-        );
-      default:
-        return MOCK_TRIAGE_DOCUMENTS;
-    }
-  }, [activeFilter]);
 
   return (
     <div className="max-w-5xl w-full mx-auto p-4 sm:p-6 space-y-5 animate-fade-in">
@@ -70,9 +25,10 @@ const DashboardPreview = () => {
 
       <TriageKpiCards
         criticalCount={counts.urgent}
+        priorityCount={counts.priority}
         pendingAuditCount={counts.audit}
-        processedCount={48}
-        totalShiftCount={50}
+        processedCount={counts.routine}
+        totalShiftCount={counts.all}
         activeFilter={activeFilter}
         onSelectFilter={setActiveFilter}
       />
@@ -94,7 +50,18 @@ const DashboardPreview = () => {
         />
       </div>
 
-      <TriageDocumentList documents={filteredDocuments} />
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-24 rounded-2xl bg-slate-900/50 border border-slate-800 animate-pulse"
+            />
+          ))}
+        </div>
+      ) : (
+        <TriageDocumentList documents={filteredDocuments} />
+      )}
 
       <NewDocumentModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
@@ -102,3 +69,4 @@ const DashboardPreview = () => {
 };
 
 export default DashboardPreview;
+

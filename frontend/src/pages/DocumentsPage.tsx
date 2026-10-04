@@ -18,10 +18,19 @@ const DocumentsPage = () => {
   const [selectedCategory, setSelectedCategory] = useState<DocumentCategoryFilter>('ALL');
   const [selectedDestination, setSelectedDestination] = useState<DocumentDestinationFilter>('ALL');
 
-  const { documents, total, state, error, reload } = useDocumentList({ page_size: 100 });
+  const { documents, state, error, reload } = useDocumentList({
+    page_size: 100,
+    estado: 'PROCESADO',
+  });
+
+  const expedientesValidados = useMemo(() => {
+    return documents.filter(
+      (doc) => !doc.requiere_auditoria && doc.estado !== 'PENDIENTE_AUDITORIA'
+    );
+  }, [documents]);
 
   const filteredDocs = useMemo(() => {
-    return documents.filter((doc) => {
+    return expedientesValidados.filter((doc) => {
       if (selectedCategory !== 'ALL' && doc.tipo_documento !== selectedCategory) return false;
 
       if (selectedDestination !== 'ALL') {
@@ -37,7 +46,7 @@ const DocumentsPage = () => {
 
       return true;
     });
-  }, [documents, selectedCategory, selectedDestination]);
+  }, [expedientesValidados, selectedCategory, selectedDestination]);
 
   const viewButtonClass = (mode: 'kanban' | 'list') =>
     `flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-colors ${
@@ -72,8 +81,8 @@ const DocumentsPage = () => {
             <span className="font-mono font-bold text-white">
               {state === 'loading' ? '—' : filteredDocs.length}
             </span>
-            {total > 0 && state === 'success' && (
-              <span className="text-slate-600">/ {total}</span>
+            {expedientesValidados.length > 0 && state === 'success' && (
+              <span className="text-slate-600">/ {expedientesValidados.length}</span>
             )}
           </div>
 

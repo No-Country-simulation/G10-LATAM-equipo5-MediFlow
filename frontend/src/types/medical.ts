@@ -1,7 +1,7 @@
 export const SCORE_CONFIANZA_THRESHOLD = 0.85;
 
 export type EstadoDocumento = 'PROCESADO' | 'PENDIENTE_AUDITORIA' | 'AUDITADO';
-export type NivelPrioridad = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA' | 'Urgente' | 'Prioritario' | 'Rutina';
+export type NivelPrioridad = 'Urgente' | 'Prioritario' | 'Rutina';
 export type TipoArchivo = 'PDF' | 'IMAGEN';
 
 export type DestinoEnrutamiento =
@@ -126,7 +126,7 @@ export interface AuditResolveRequest {
   audit_notes: string;
 }
 
-// Regla de negocio: Umbral dee confianza < 0.85 o flag de auditoría humana explícito
+// Regla de negocio: Umbral de confianza < SCORE_CONFIANZA_THRESHOLD o flag de auditoría humana explícito
 export const requiresHumanAudit = (score: number, requiereAuditoria = false): boolean => {
   return score < SCORE_CONFIANZA_THRESHOLD || requiereAuditoria;
 };

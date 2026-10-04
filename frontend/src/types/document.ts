@@ -1,4 +1,4 @@
-﻿export type { 
+export type {
   DocumentListItemResponse,
   PaginatedDocumentResponse,
   DocumentFilterParams,
@@ -9,6 +9,8 @@
   DestinoEnrutamiento,
   TipoDocumentoClinico,
 } from './medical';
+
+import type { NivelPrioridad } from './medical';
 
 export interface PacienteExtract {
   rut: string | null;
@@ -32,7 +34,7 @@ export interface DatosGeneralesExtract {
 export interface ClasificacionExtract {
   tipo_documento: string;
   especialidad: string | null;
-  nivel_prioridad: string;
+  nivel_prioridad: NivelPrioridad;
   score_confianza_clasificacion: number;
 }
 

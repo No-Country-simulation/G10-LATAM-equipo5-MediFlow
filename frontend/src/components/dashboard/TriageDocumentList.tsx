@@ -1,5 +1,7 @@
-import { AlertCircle, FileText, CheckCircle2, Cloud, ArrowUpRight } from 'lucide-react';
+import { FileText, Cloud, ArrowUpRight } from 'lucide-react';
 import type { TriageDocument } from '../../types/triage';
+import PriorityBadge from '../common/PriorityBadge';
+import { SCORE_CONFIANZA_THRESHOLD } from '../../types/medical';
 
 interface TriageDocumentListProps {
   documents: TriageDocument[];
@@ -18,9 +20,8 @@ const TriageDocumentList = ({ documents, onSelectDocument }: TriageDocumentListP
   return (
     <div className="space-y-3">
       {documents.map((doc) => {
-        const isUrgent = doc.clasificacion.nivel_prioridad === 'Urgente';
         const requiresAudit =
-          doc.clasificacion.score_confianza_clasificacion < 0.85 ||
+          doc.clasificacion.score_confianza_clasificacion < SCORE_CONFIANZA_THRESHOLD ||
           doc.decision_enrutamiento.requiere_auditoria_humana;
         const confidencePct = Math.round(doc.clasificacion.score_confianza_clasificacion * 100);
 
@@ -41,23 +42,14 @@ const TriageDocumentList = ({ documents, onSelectDocument }: TriageDocumentListP
                 </span>
               </div>
 
-              <div>
-                {isUrgent ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Urgencia Crítica ({confidencePct}%)
-                  </span>
-                ) : requiresAudit ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                    <FileText className="w-3.5 h-3.5" />
-                    Requiere Auditoría ({confidencePct}%)
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Rutina Aprobada ({confidencePct}%)
+              <div className="flex items-center gap-1.5">
+                {requiresAudit && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                    <FileText className="w-3 h-3" />
+                    Auditoría ({confidencePct}%)
                   </span>
                 )}
+                <PriorityBadge prioridad={doc.clasificacion.nivel_prioridad} />
               </div>
             </div>
 
@@ -65,7 +57,7 @@ const TriageDocumentList = ({ documents, onSelectDocument }: TriageDocumentListP
               <div>
                 <div className="text-slate-400 font-medium">Paciente / Médico:</div>
                 <div className="text-slate-200 font-semibold mt-0.5">
-                  {doc.datos_extraidos.paciente.nome} ({doc.datos_extraidos.paciente.edad} años)
+                  {doc.datos_extraidos.paciente.nombre} ({doc.datos_extraidos.paciente.edad} años)
                 </div>
                 <div className="text-slate-400 text-[11px]">
                   RUT: {doc.datos_extraidos.paciente.rut || 'N/A'} • {doc.datos_extraidos.medico_solicitante?.nombre}
@@ -76,9 +68,11 @@ const TriageDocumentList = ({ documents, onSelectDocument }: TriageDocumentListP
                 <div className="text-slate-400 font-medium">Diagnóstico Principal:</div>
                 <div className="text-slate-200 font-semibold mt-0.5 flex items-center gap-1.5">
                   <span>{doc.datos_extraidos.diagnostico_principal}</span>
-                  <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">
-                    {doc.datos_extraidos.cie10_sugerido}
-                  </span>
+                  {doc.datos_extraidos.cie10_sugerido && (
+                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">
+                      {doc.datos_extraidos.cie10_sugerido}
+                    </span>
+                  )}
                 </div>
                 <div className="text-[11px] text-slate-400 line-clamp-1">
                   {doc.decision_enrutamiento.justificacion_enrutamiento}

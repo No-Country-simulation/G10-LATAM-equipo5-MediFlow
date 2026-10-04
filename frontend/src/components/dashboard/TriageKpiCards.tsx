@@ -1,8 +1,10 @@
-import { AlertCircle, Clock, CheckCircle2, Files } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Clock, CheckCircle2, Files } from 'lucide-react';
 import type { TriageFilter } from '../../types/triage';
+import { SCORE_CONFIANZA_THRESHOLD } from '../../types/medical';
 
 interface TriageKpiCardsProps {
   criticalCount?: number;
+  priorityCount?: number;
   pendingAuditCount?: number;
   processedCount?: number;
   totalShiftCount?: number;
@@ -11,18 +13,19 @@ interface TriageKpiCardsProps {
 }
 
 const TriageKpiCards = ({
-  criticalCount = 1,
-  pendingAuditCount = 1,
-  processedCount = 48,
-  totalShiftCount = 50,
+  criticalCount = 0,
+  priorityCount = 0,
+  pendingAuditCount = 0,
+  processedCount = 0,
+  totalShiftCount = 0,
   activeFilter,
   onSelectFilter,
 }: TriageKpiCardsProps) => {
   const cards = [
     {
       id: 'URGENT' as const,
-      label: 'Urgencias Críticas',
-      count: `${criticalCount} activa`,
+      label: 'Urgente',
+      count: `${criticalCount} ${criticalCount === 1 ? 'activa' : 'activas'}`,
       description: 'Compromiso vital / TEP agudo',
       icon: AlertCircle,
       accentText: 'text-rose-400',
@@ -31,20 +34,31 @@ const TriageKpiCards = ({
       activeRing: 'ring-2 ring-rose-500/80 border-rose-500/50 bg-rose-950/20',
     },
     {
-      id: 'AUDIT' as const,
-      label: 'Revisión Humana',
-      count: `${pendingAuditCount} pendiente`,
-      description: 'Score < 0.85 o texto ambiguo',
-      icon: Clock,
+      id: 'PRIORITY' as const,
+      label: 'Prioritario',
+      count: `${priorityCount} ${priorityCount === 1 ? 'activa' : 'activas'}`,
+      description: 'Atención preferente / Subagudo',
+      icon: AlertTriangle,
       accentText: 'text-amber-400',
       accentBg: 'bg-amber-500/10',
       accentBorder: 'border-amber-500/20',
       activeRing: 'ring-2 ring-amber-500/80 border-amber-500/50 bg-amber-950/20',
     },
     {
+      id: 'AUDIT' as const,
+      label: 'Revisión Humana',
+      count: `${pendingAuditCount} ${pendingAuditCount === 1 ? 'pendiente' : 'pendientes'}`,
+      description: `Score < ${SCORE_CONFIANZA_THRESHOLD} o texto ambiguo`,
+      icon: Clock,
+      accentText: 'text-orange-400',
+      accentBg: 'bg-orange-500/10',
+      accentBorder: 'border-orange-500/20',
+      activeRing: 'ring-2 ring-orange-500/80 border-orange-500/50 bg-orange-950/20',
+    },
+    {
       id: 'ROUTINE' as const,
-      label: 'Automatizados Directos',
-      count: `${processedCount} procesados`,
+      label: 'Rutina',
+      count: `${processedCount} ${processedCount === 1 ? 'procesado' : 'procesados'}`,
       description: '96% efectividad del agente',
       icon: CheckCircle2,
       accentText: 'text-emerald-400',
@@ -54,8 +68,8 @@ const TriageKpiCards = ({
     },
     {
       id: 'ALL' as const,
-      label: 'Total Ingesta Turno',
-      count: `${totalShiftCount} recibidos`,
+      label: 'Documentos Totales',
+      count: `${totalShiftCount} ${totalShiftCount === 1 ? 'recibido' : 'recibidos'}`,
       description: 'Flujo continuo hospitalario',
       icon: Files,
       accentText: 'text-sky-400',
@@ -66,7 +80,7 @@ const TriageKpiCards = ({
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
       {cards.map((card) => {
         const Icon = card.icon;
         const isActive = activeFilter === card.id;
@@ -76,9 +90,8 @@ const TriageKpiCards = ({
             key={card.id}
             type="button"
             onClick={() => onSelectFilter(card.id)}
-            className={`p-4 rounded-2xl bg-slate-900/70 border border-slate-800/80 text-left transition-all cursor-pointer hover:bg-slate-900/90 ${
-              isActive ? card.activeRing : 'hover:border-slate-700'
-            }`}
+            className={`p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/80 text-left transition-all cursor-pointer hover:bg-slate-900/90 ${isActive ? card.activeRing : 'hover:border-slate-700'
+              }`}
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-400">{card.label}</span>

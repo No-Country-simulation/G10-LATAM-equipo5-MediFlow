@@ -6,7 +6,8 @@ export type DocumentType =
   | 'Epicrisis / Informe de Alta'
   | 'Certificado Médico';
 
-export type PriorityLevel = 'Baja' | 'Media' | 'Alta' | 'Urgente';
+export type { NivelPrioridad } from './medical';
+export type PriorityLevel = import('./medical').NivelPrioridad;
 
 export type RoutingDestination =
   | 'Cola_Emergencia_Medica'
@@ -22,23 +23,23 @@ export type RoutingDestination =
 export type TriageStatus = 'procesado' | 'error' | 'en_revision';
 
 export interface PatientInfo {
-  nome: string;
-  edad?: number;
-  rut?: string;
+  nombre: string | null;
+  edad?: number | null;
+  rut?: string | null;
 }
 
 export interface DoctorInfo {
-  nombre: string;
-  matricula?: string;
+  nombre: string | null;
+  matricula?: string | null;
 }
 
 export interface ExtractedClinicalData {
   paciente: PatientInfo;
-  medico_solicitante?: DoctorInfo;
-  estudio_realizado?: string;
-  diagnostico_principal: string;
-  cie10_sugerido: string;
-  medicamentos?: Array<{ nombre: string; dosis: string }>;
+  medico_solicitante?: DoctorInfo | null;
+  estudio_realizado?: string | null;
+  diagnostico_principal: string | null;
+  cie10_sugerido: string | null;
+  medicamentos?: Array<{ nombre: string; dosis: string }> | null;
 }
 
 export interface OciStorageInfo {
@@ -50,7 +51,10 @@ export interface OciStorageInfo {
 export interface TriageDocument {
   documento_id: string;
   status: TriageStatus;
+  estado?: string;
   fecha_ingreso: string;
+  nivel_prioridad?: PriorityLevel;
+  requiere_auditoria?: boolean;
   clasificacion: {
     tipo_documento: DocumentType;
     especialidad: string;
@@ -68,4 +72,4 @@ export interface TriageDocument {
   almacenamiento_oci: OciStorageInfo;
 }
 
-export type TriageFilter = 'ALL' | 'URGENT' | 'AUDIT' | 'ROUTINE';
+export type TriageFilter = 'ALL' | 'URGENT' | 'PRIORITY' | 'AUDIT' | 'ROUTINE';

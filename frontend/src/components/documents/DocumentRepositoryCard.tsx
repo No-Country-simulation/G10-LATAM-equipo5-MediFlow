@@ -1,17 +1,11 @@
 import { FileText, User, Stethoscope, ArrowRight, ShieldCheck, AlertTriangle } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import { DESTINATION_LABELS, CATEGORY_LABELS } from '../../types/documents';
+import PriorityBadge from '../common/PriorityBadge';
 
 interface DocumentRepositoryCardProps {
   doc: DocumentListItemResponse;
 }
-
-const PRIORITY_BADGES: Record<string, string> = {
-  CRITICA: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
-  ALTA: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-  MEDIA: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-  BAJA: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-};
 
 const destinationLookup: Record<string, string> = DESTINATION_LABELS;
 const categoryLookup: Record<string, string> = CATEGORY_LABELS;
@@ -29,8 +23,6 @@ function formatConfidence(score: number | null | undefined): string {
 }
 
 const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
-  const priorityClass =
-    PRIORITY_BADGES[doc.nivel_prioridad] ?? 'bg-slate-800 text-slate-300 border-slate-700';
 
   const destinationLabel = doc.destino_enrutamiento
     ? (destinationLookup[doc.destino_enrutamiento] ?? doc.destino_enrutamiento)
@@ -64,9 +56,7 @@ const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
               Auditoría Requerida
             </span>
           )}
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${priorityClass}`}>
-            {doc.nivel_prioridad}
-          </span>
+          <PriorityBadge prioridad={doc.nivel_prioridad} />
           <span className="text-[10px] text-slate-500 font-mono">{formattedDate}</span>
         </div>
       </div>

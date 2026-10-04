@@ -1,17 +1,11 @@
 import { User, Stethoscope, ShieldCheck } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import { CATEGORY_LABELS } from '../../types/documents';
+import PriorityBadge from '../common/PriorityBadge';
 
 interface DocumentsKanbanCardProps {
   doc: DocumentListItemResponse;
 }
-
-const PRIORITY_BADGES: Record<string, string> = {
-  CRITICA: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
-  ALTA: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-  MEDIA: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-  BAJA: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-};
 
 const categoryLookup: Record<string, string> = CATEGORY_LABELS;
 
@@ -21,9 +15,6 @@ function formatConfidence(score: number | null | undefined): string {
 }
 
 const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
-  const priorityClass =
-    PRIORITY_BADGES[doc.nivel_prioridad] ?? 'bg-slate-800 text-slate-300 border-slate-700';
-
   const confidencePercent = formatConfidence(doc.score_confianza);
   const categoryLabel = categoryLookup[doc.tipo_documento] ?? doc.tipo_documento;
   const clinicalDiagnosis = doc.diagnostico_principal || doc.estado || 'Sin diagnóstico registrado';
@@ -41,11 +32,7 @@ const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
               Auditoría Requerida
             </span>
           )}
-          <span
-            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${priorityClass}`}
-          >
-            {doc.nivel_prioridad}
-          </span>
+          <PriorityBadge prioridad={doc.nivel_prioridad} />
         </div>
       </div>
 
