@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy.exc import IntegrityError
 
 from app.features.auth.enums import UserRole
-from app.features.catalogs.models import DocumentType, RoutingQueue
+from app.features.catalogs.models import CatalogHistory, DocumentType, RoutingQueue
 
 
 def make_queue(**overrides) -> RoutingQueue:
@@ -15,6 +15,7 @@ def make_queue(**overrides) -> RoutingQueue:
         "descripcion_semantica": "Hallazgos críticos que requieren atención inmediata",
         "notificar_inmediato": True,
         "is_active": True,
+        "es_sistema": False,
         "created_at": datetime.now(timezone.utc),
     }
     fields.update(overrides)
@@ -26,8 +27,10 @@ def make_doc_type(**overrides) -> DocumentType:
         "id": uuid4(),
         "codigo": "RECETA",
         "nombre": "Receta",
-        "descripcion": None,
+        "descripcion": "Prescripción de medicamentos",
+        "campos_extraccion": None,
         "is_active": True,
+        "es_sistema": False,
         "created_at": datetime.now(timezone.utc),
     }
     fields.update(overrides)
@@ -59,6 +62,7 @@ async def test_active_queues_returns_compact_dto(client, login_as, db):
             "codigo": "Cola_Emergencia_Medica",
             "nombre": "Emergencia Médica",
             "descripcion_semantica": "Hallazgos críticos que requieren atención inmediata",
+            "notificar_inmediato": True,
         }
     ]
 
@@ -71,7 +75,9 @@ async def test_write_endpoints_forbidden_for_non_admin(client, login_as):
         client.put(f"/api/v1/catalogs/queues/{some_id}", json={}, headers=headers),
         client.delete(f"/api/v1/catalogs/queues/{some_id}", headers=headers),
         client.post(
-            "/api/v1/catalogs/document-types", json={"codigo": "X", "nombre": "X"}, headers=headers
+            "/api/v1/catalogs/document-types",
+            json={"codigo": "X", "nombre": "X", "descripcion": "X"},
+            headers=headers,
         ),
         client.put(f"/api/v1/catalogs/document-types/{some_id}", json={}, headers=headers),
         client.delete(f"/api/v1/catalogs/document-types/{some_id}", headers=headers),
@@ -98,7 +104,11 @@ async def test_create_queue(client, login_as, db):
     assert r.status_code == 201
     assert r.json()["codigo"] == "Farmacia_Hospitalaria"
     assert r.json()["notificar_inmediato"] is False
-    assert len(db.added) == 1 and db.commits == 1
+    assert r.json()["es_sistema"] is False
+    queue, history = db.added
+    assert queue.updated_by_id is not None and db.commits == 1
+    assert isinstance(history, CatalogHistory) and history.accion == "CREATE"
+    assert history.cambios["codigo"] == {"antes": None, "despues": "Farmacia_Hospitalaria"}
 
 
 async def test_create_queue_duplicate_codigo_returns_409(client, login_as, db):
@@ -220,19 +230,34 @@ async def test_active_document_types_returns_compact_dto(client, login_as, db):
     r = await client.get("/api/v1/catalogs/document-types/active", headers=headers)
 
     assert r.status_code == 200
-    assert r.json() == [{"codigo": "RECETA", "nombre": "Receta", "descripcion": None}]
+    assert r.json() == [
+        {
+            "codigo": "RECETA",
+            "nombre": "Receta",
+            "descripcion": "Prescripción de medicamentos",
+            "campos_extraccion": None,
+        }
+    ]
 
 
 async def test_create_document_type(client, login_as, db):
     headers = login_as(UserRole.ADMIN)
     r = await client.post(
         "/api/v1/catalogs/document-types",
-        json={"codigo": "LICENCIA", "nombre": "Licencia Médica"},
+        json={
+            "codigo": "LICENCIA",
+            "nombre": "Licencia Médica",
+            "descripcion": "Licencia médica o certificado de reposo laboral",
+            "campos_extraccion": {
+                "type": "object",
+                "properties": {"dias_reposo": {"type": "integer"}},
+            },
+        },
         headers=headers,
     )
     assert r.status_code == 201
     assert r.json()["is_active"] is True
-    assert r.json()["descripcion"] is None
+    assert r.json()["campos_extraccion"]["properties"]["dias_reposo"]["type"] == "integer"
 
 
 async def test_update_document_type_can_reactivate(client, login_as, db):
@@ -247,3 +272,104 @@ async def test_update_document_type_can_reactivate(client, login_as, db):
     assert r.status_code == 200
     assert doc_type.is_active is True
     assert r.json()["descripcion"] == "Prescripción de medicamentos"
+
+
+
+# --- Validaciones, registros de sistema e historial --------------------------
+
+
+async def test_document_type_requires_descripcion_and_uppercase_codigo(client, login_as):
+    headers = login_as(UserRole.ADMIN)
+    sin_descripcion = {"codigo": "LICENCIA", "nombre": "Licencia"}
+    codigo_invalido = {"codigo": "Licencia médica", "nombre": "Licencia", "descripcion": "x"}
+    for body in (sin_descripcion, codigo_invalido):
+        r = await client.post("/api/v1/catalogs/document-types", json=body, headers=headers)
+        assert r.status_code == 422
+
+
+async def test_queue_codigo_rejects_spaces(client, login_as):
+    headers = login_as(UserRole.ADMIN)
+    body = {**QUEUE_BODY, "codigo": "Farmacia Hospitalaria"}
+    r = await client.post("/api/v1/catalogs/queues", json=body, headers=headers)
+    assert r.status_code == 422
+
+
+async def test_campos_extraccion_must_be_object_schema(client, login_as):
+    headers = login_as(UserRole.ADMIN)
+    body = {"codigo": "LICENCIA", "nombre": "L", "descripcion": "d", "campos_extraccion": {"type": "array"}}
+    r = await client.post("/api/v1/catalogs/document-types", json=body, headers=headers)
+    assert r.status_code == 422
+
+
+async def test_update_rejects_null_descripcion(client, login_as, db):
+    doc_type = make_doc_type()
+    db.get_result = doc_type
+    headers = login_as(UserRole.ADMIN)
+    r = await client.put(
+        f"/api/v1/catalogs/document-types/{doc_type.id}", json={"descripcion": None}, headers=headers
+    )
+    assert r.status_code == 422
+
+
+async def test_system_record_cannot_be_deleted_or_deactivated(client, login_as, db):
+    queue = make_queue(codigo="Ficha_Clinica", es_sistema=True)
+    db.get_result = queue
+    headers = login_as(UserRole.ADMIN)
+
+    r = await client.delete(f"/api/v1/catalogs/queues/{queue.id}", headers=headers)
+    assert r.status_code == 409
+    r = await client.put(
+        f"/api/v1/catalogs/queues/{queue.id}", json={"is_active": False}, headers=headers
+    )
+    assert r.status_code == 409
+    assert queue.is_active is True and db.deleted == []
+
+
+async def test_system_record_description_can_be_edited(client, login_as, db):
+    doc_type = make_doc_type(codigo="OTRO", es_sistema=True)
+    db.get_result = doc_type
+    headers = login_as(UserRole.ADMIN)
+    r = await client.put(
+        f"/api/v1/catalogs/document-types/{doc_type.id}",
+        json={"descripcion": "Documentos administrativos o ilegibles"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+
+
+async def test_update_records_only_changed_fields_in_history(client, login_as, db):
+    queue = make_queue()
+    db.get_result = queue
+    headers = login_as(UserRole.ADMIN)
+    await client.put(
+        f"/api/v1/catalogs/queues/{queue.id}",
+        json={"nombre": "Urgencias", "notificar_inmediato": True},
+        headers=headers,
+    )
+    (history,) = db.added
+    assert history.accion == "UPDATE"
+    assert history.cambios == {"nombre": {"antes": "Emergencia Médica", "despues": "Urgencias"}}
+
+
+async def test_history_endpoint_is_admin_only(client, login_as, db):
+    entry = CatalogHistory(
+        catalogo="QUEUE",
+        registro_id=uuid4(),
+        codigo="Gestion_GES",
+        accion="HARD_DELETE",
+        cambios={"is_active": {"antes": True, "despues": None}},
+        changed_by_id=uuid4(),
+        changed_at=datetime.now(timezone.utc),
+    )
+    db.queue([entry])
+    r = await client.get(
+        f"/api/v1/catalogs/queues/{entry.registro_id}/history", headers=login_as(UserRole.ADMIN)
+    )
+    assert r.status_code == 200
+    assert r.json()[0]["accion"] == "HARD_DELETE"
+
+    r = await client.get(
+        f"/api/v1/catalogs/queues/{entry.registro_id}/history",
+        headers=login_as(UserRole.AUDITOR_CLINICO),
+    )
+    assert r.status_code == 403

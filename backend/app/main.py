@@ -14,7 +14,7 @@ from app.features.audit.router import router as audit_router
 from app.features.auth.router import router as auth_router
 from app.features.auth.models import RevokedToken
 from app.features.auth.router import users_router
-from app.features.catalogs.models import DocumentType, RoutingQueue
+from app.features.catalogs.models import CatalogHistory, DocumentType, RoutingQueue
 from app.features.catalogs.router import router as catalogs_router
 from app.features.documents.router import router as documents_router
 from app.features.health.router import router as health_router
@@ -30,10 +30,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         # Bases de datos anteriores a estas features no tienen sus tablas: se crean si faltan.
         async with engine.begin() as conn:
-            for model in (RevokedToken, RoutingQueue, DocumentType):
+            for model in (RevokedToken, RoutingQueue, DocumentType, CatalogHistory):
                 await conn.run_sync(model.__table__.create, checkfirst=True)
     except Exception:
-        logger.exception("No se pudieron verificar las tablas revoked_tokens / catálogos")
+        logger.exception("No se pudieron verificar las tablas revoked_tokens / catálogos / historial")
     yield
     logger.info("Deteniendo %s", settings.PROJECT_NAME)
 

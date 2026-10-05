@@ -17,6 +17,7 @@ from app.features.documents.schemas import (
     PaginatedDocumentResponse,
 )
 from app.features.documents.service import (
+    DocumentAlreadyExistsError,
     DocumentIngestionError,
     InvalidBase64Error,
     get_paginated_documents,
@@ -25,7 +26,7 @@ from app.features.documents.service import (
 
 router = APIRouter(tags=["Documents"])
 
-_DOCUMENT_ACCESS_ROLES = [UserRole.ADMIN, UserRole.AUDITOR_CLINICO]
+_DOCUMENT_ACCESS_ROLES = [UserRole.ADMIN, UserRole.AUDITOR_CLINICO, UserRole.OPERADOR]
 
 
 @router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_201_CREATED)
@@ -36,21 +37,24 @@ async def ingest(
 ) -> IngestResponse:
     """Recibe un documento clínico procesado por n8n, lo respalda en OCI y lo registra en la base de datos.
 
-    Requiere rol ADMIN o AUDITOR_CLINICO (n8n debe autenticarse con una cuenta de servicio con uno
-    de esos roles y enviar el token Bearer obtenido vía `/auth/login`).
+    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR. n8n reenvía el token Bearer del usuario que
+    subió el documento desde el front, y ese usuario queda registrado en `uploaded_by_id`.
     """
     try:
-        document = await ingest_document(payload, db)
+        document = await ingest_document(payload, db, uploaded_by=current_user)
     except InvalidBase64Error as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except DocumentAlreadyExistsError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except DocumentIngestionError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
         ) from exc
 
     return IngestResponse(
-        status="pendiente_auditoria" if document.requiere_auditoria else "procesado",
+        status=document.estado,
         documento_id=document.documento_id,
+        motivos_auditoria=document.raw_extracted_json["triaje"]["motivos_auditoria"],
         clasificacion=payload.clasificacion,
         datos_generales=payload.datos_generales,
         detalle_clinico=payload.detalle_clinico,
@@ -71,7 +75,7 @@ async def list_documents(
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(20, ge=1, le=100, description="Elementos por página"),
     estado: str | None = Query(
-        None, description="Filtrar por estado: PENDIENTE_AUDITORIA, PROCESADO, AUDITADO"
+        None, description="Filtrar por estado: PENDIENTE_AUDITORIA, PROCESADO, AUDITADO, DESCARTADO"
     ),
     destino: str | None = Query(
         None, description="Filtrar por cola: Cola_Emergencia_Medica, Farmacia_Hospitalaria, etc."
@@ -81,9 +85,13 @@ async def list_documents(
     fecha_desde: datetime | None = Query(None),
     fecha_hasta: datetime | None = Query(None),
 ) -> PaginatedDocumentResponse:
-    """Lista la bandeja documental con filtros dinámicos y paginación. Requiere rol ADMIN o AUDITOR_CLINICO."""
+    """Lista la bandeja documental con filtros dinámicos y paginación.
+
+    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo ve los documentos que subió.
+    """
     result = await get_paginated_documents(
         db,
+        uploaded_by_id=current_user.id if current_user.role == UserRole.OPERADOR else None,
         page=page,
         page_size=page_size,
         estado=estado,
