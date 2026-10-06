@@ -12,9 +12,9 @@ export class ApiError extends Error {
   }
 }
 
-export const getStoredToken = (): string | null => localStorage.getItem(TOKEN_KEY);
-export const setStoredToken = (token: string): void => localStorage.setItem(TOKEN_KEY, token);
-export const removeStoredToken = (): void => localStorage.removeItem(TOKEN_KEY);
+export const getStoredToken = (): string | null => sessionStorage.getItem(TOKEN_KEY);
+export const setStoredToken = (token: string): void => sessionStorage.setItem(TOKEN_KEY, token);
+export const removeStoredToken = (): void => sessionStorage.removeItem(TOKEN_KEY);
 
 interface RequestOptions extends RequestInit {
   timeoutMs?: number;
@@ -52,7 +52,8 @@ export const request = async <T>(endpoint: string, options: RequestOptions = {})
 
     if (!response.ok) {
       const errorBody = await response.json().catch(() => null);
-      const detail = errorBody?.detail || `Error HTTP: ${response.status} ${response.statusText}`;
+      const detailStr = errorBody?.detalle ? `[${errorBody?.etapa || 'Error'}] ${errorBody.detalle}` : errorBody?.detail;
+      const detail = detailStr || `Error HTTP: ${response.status} ${response.statusText}`;
       throw new ApiError(response.status, detail);
     }
 
@@ -87,6 +88,12 @@ export const api = {
     request<T>(url, {
       ...options,
       method: 'PUT',
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
+  patch: <T>(url: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(url, {
+      ...options,
+      method: 'PATCH',
       body: body instanceof FormData ? body : JSON.stringify(body),
     }),
   delete: <T>(url: string, options?: RequestOptions) =>

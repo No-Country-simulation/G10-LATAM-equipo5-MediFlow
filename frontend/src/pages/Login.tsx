@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LoginForm from '../components/auth/LoginForm';
 import HospitalDoorsTransition from '../components/auth/HospitalDoorsTransition';
@@ -6,6 +6,7 @@ import ContinuousEcg from '../components/common/ContinuousEcg';
 import { useAuth } from '../hooks/useAuth';
 import { ApiError } from '../services/api';
 import type { LoginRequest } from '../types/auth';
+import { getHomeRoute } from '../utils/permissions';
 
 const getAuthErrorMessage = (err: unknown): string => {
   if (err instanceof ApiError) {
@@ -18,23 +19,25 @@ const getAuthErrorMessage = (err: unknown): string => {
 };
 
 const Login = () => {
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDoors, setShowDoors] = useState(false);
+  const destinationRef = useRef<string>('/dashboard');
 
   useEffect(() => {
     if (isAuthenticated && !showDoors) {
-      navigate('/dashboard', { replace: true });
+      navigate(getHomeRoute(user?.role), { replace: true });
     }
-  }, [isAuthenticated, showDoors, navigate]);
+  }, [isAuthenticated, showDoors, navigate, user?.role]);
 
   const handleLogin = async (credentials: LoginRequest) => {
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(credentials);
+      const loggedUser = await login(credentials);
+      destinationRef.current = getHomeRoute(loggedUser.role);
       setShowDoors(true);
     } catch (err) {
       setError(getAuthErrorMessage(err));
@@ -43,7 +46,7 @@ const Login = () => {
   };
 
   const handleDoorsComplete = useCallback(() => {
-    navigate('/dashboard', { replace: true });
+    navigate(destinationRef.current, { replace: true });
   }, [navigate]);
 
   return (

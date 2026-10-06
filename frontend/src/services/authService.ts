@@ -1,5 +1,13 @@
 import { api } from './api';
-import type { LoginRequest, TokenResponse, UserOut } from '../types/auth';
+import type {
+  LoginRequest,
+  PaginatedUsersResponse,
+  TokenResponse,
+  UserAdminUpdateRequest,
+  UserCreateRequest,
+  UserOut,
+  UserResponse,
+} from '../types/auth';
 
 export const authService = {
   login: (credentials: LoginRequest): Promise<TokenResponse> => {
@@ -13,5 +21,19 @@ export const authService = {
   getProfile: (): Promise<UserOut> => {
     return api.get<UserOut>('/auth/me');
   },
+
+  getUsers: (page = 1, pageSize = 50): Promise<PaginatedUsersResponse> => {
+    return api.get<PaginatedUsersResponse>(`/users?page=${page}&page_size=${pageSize}`);
+  },
+
+  createUser: (payload: UserCreateRequest): Promise<UserResponse> => {
+    return api.post<UserResponse>('/users', payload);
+  },
+
+  updateUser: (userId: string, payload: UserAdminUpdateRequest): Promise<UserResponse> => {
+    return api.patch<UserResponse>(`/users/${userId}`, payload);
+  },
 };
+
+
 

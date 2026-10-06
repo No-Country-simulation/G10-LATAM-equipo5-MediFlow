@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'GESTOR_USUARIOS' | 'AUDITOR_CLINICO';
+export type UserRole = 'ADMIN' | 'GESTOR_USUARIOS' | 'AUDITOR_CLINICO' | 'OPERADOR';
 
 export interface LoginRequest {
   username: string;
@@ -29,6 +29,29 @@ export interface UserResponse {
   created_at: string;
 }
 
+export interface PaginatedUsersResponse {
+  items: UserResponse[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface UserCreateRequest {
+  username: string;
+  email: string;
+  password: string;
+  full_name: string;
+  role: UserRole;
+}
+
+export interface UserAdminUpdateRequest {
+  full_name?: string;
+  email?: string;
+  role?: UserRole;
+  is_active?: boolean;
+}
+
 export interface ProfileUpdateRequest {
   full_name?: string;
   email?: string;
@@ -39,9 +62,3 @@ export interface PasswordChangeRequest {
   new_password: string;
 }
 
-export interface AuthState {
-  user: UserOut | null;
-  token: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-}
