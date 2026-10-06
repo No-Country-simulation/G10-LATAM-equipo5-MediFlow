@@ -4,10 +4,30 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
 import DashboardPreview from './components/dashboard/DashboardPreview';
-import TriagePage from './pages/TriagePage';
 import DocumentsPage from './pages/DocumentsPage';
 import IngestionPage from './pages/IngestionPage';
 import AuditPage from './pages/AuditPage';
+import UsersPage from './pages/UsersPage';
+import { RoleRoute } from './components/auth/RoleRoute';
+import { useAuth } from './hooks/useAuth';
+import {
+  AUDIT_ACCESS_ROLES,
+  DOCUMENT_ACCESS_ROLES,
+  INGEST_ACCESS_ROLES,
+  USER_MANAGEMENT_ROLES,
+  getHomeRoute,
+} from './utils/permissions';
+
+const HomeRedirect = () => {
+  const { user, isAuthenticated } = useAuth();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  if (user?.role === 'GESTOR_USUARIOS') {
+    return <Navigate to="/usuarios" replace />;
+  }
+  return <Navigate to={getHomeRoute(user?.role)} replace />;
+};
 
 const App = () => {
   return (
@@ -23,15 +43,51 @@ const App = () => {
               </ProtectedRoute>
             }
           >
-            <Route path="/dashboard" element={<DashboardPreview />} />
-            <Route path="/triaje" element={<TriagePage />} />
-            <Route path="/documentos" element={<DocumentsPage />} />
-            <Route path="/ingesta" element={<IngestionPage />} />
-            <Route path="/auditoria" element={<AuditPage />} />
+            <Route
+              path="/dashboard"
+              element={
+                <RoleRoute allowedRoles={DOCUMENT_ACCESS_ROLES} fallbackPath="/usuarios">
+                  <DashboardPreview />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/documentos"
+              element={
+                <RoleRoute allowedRoles={DOCUMENT_ACCESS_ROLES} fallbackPath="/usuarios">
+                  <DocumentsPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/ingesta"
+              element={
+                <RoleRoute allowedRoles={INGEST_ACCESS_ROLES}>
+                  <IngestionPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/auditoria"
+              element={
+                <RoleRoute allowedRoles={AUDIT_ACCESS_ROLES}>
+                  <AuditPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/usuarios"
+              element={
+                <RoleRoute allowedRoles={USER_MANAGEMENT_ROLES}>
+                  <UsersPage />
+                </RoleRoute>
+              }
+            />
+            <Route path="/triaje" element={<HomeRedirect />} />
           </Route>
 
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<HomeRedirect />} />
+          <Route path="*" element={<HomeRedirect />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
@@ -39,3 +95,4 @@ const App = () => {
 };
 
 export default App;
+

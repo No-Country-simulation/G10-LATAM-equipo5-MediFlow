@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import CriticalAlertBanner from './CriticalAlertBanner';
 import TriageKpiCards from './TriageKpiCards';
 import TriageFilterTabs from './TriageFilterTabs';
 import TriageDocumentList from './TriageDocumentList';
-import NewDocumentModal from './NewDocumentModal';
 import { useDashboardTriage } from '../../hooks/useDashboardTriage';
 
 const DashboardPreview = () => {
@@ -14,7 +12,6 @@ const DashboardPreview = () => {
     setActiveFilter,
     loading,
   } = useDashboardTriage();
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
     <div className="max-w-5xl w-full mx-auto p-4 sm:p-6 space-y-5 animate-fade-in">
@@ -62,8 +59,6 @@ const DashboardPreview = () => {
       ) : (
         <TriageDocumentList documents={filteredDocuments} />
       )}
-
-      <NewDocumentModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 };
