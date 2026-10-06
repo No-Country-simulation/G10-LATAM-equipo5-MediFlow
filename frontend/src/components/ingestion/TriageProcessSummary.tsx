@@ -1,12 +1,14 @@
-import { CheckCircle2, ShieldCheck, Stethoscope, ArrowRight } from 'lucide-react';
+import { CheckCircle2, ShieldCheck, Stethoscope } from 'lucide-react';
 import type { ClinicalSample } from '../../types/ingestion';
+import type { IngestResponse } from '../../types/document';
 
 interface TriageProcessSummaryProps {
   file: ClinicalSample;
+  response?: IngestResponse;
   onReset: () => void;
 }
 
-const TriageProcessSummary = ({ file, onReset }: TriageProcessSummaryProps) => {
+const TriageProcessSummary = ({ file, response, onReset }: TriageProcessSummaryProps) => {
   return (
     <div className="p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -42,7 +44,7 @@ const TriageProcessSummary = ({ file, onReset }: TriageProcessSummaryProps) => {
           <span className="text-[10px] text-slate-500 uppercase font-semibold">Estado de Triaje</span>
           <div className="font-semibold text-emerald-400 mt-1 flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4" />
-            <span>Clasificación Aprobada</span>
+            <span>{response?.clasificacion?.nivel_prioridad || 'Clasificación Aprobada'}</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-0.5">Prioridad Asignada</div>
         </div>
@@ -53,10 +55,9 @@ const TriageProcessSummary = ({ file, onReset }: TriageProcessSummaryProps) => {
           </span>
           <div className="font-semibold text-white mt-1 flex items-center gap-1">
             <Stethoscope className="w-3.5 h-3.5 text-rose-400" />
-            <span>Área Asistencial</span>
-            <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
+            <span>{response?.decision_enrutamiento?.destino_principal || 'Área Asistencial'}</span>
           </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Bandeja de atención médica</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Destino Principal</div>
         </div>
       </div>
     </div>

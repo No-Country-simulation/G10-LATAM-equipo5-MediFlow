@@ -3,6 +3,7 @@ export interface ClinicalSample {
   category: string;
   format: 'PDF' | 'PNG' | 'JPG';
   size: string;
+  file?: File;
 }
 
 export const CLINICAL_SAMPLES: ClinicalSample[] = [

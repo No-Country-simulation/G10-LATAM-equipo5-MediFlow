@@ -1,28 +1,43 @@
 import { useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, AlertCircle } from 'lucide-react';
 import DocumentDropzone from '../components/ingestion/DocumentDropzone';
 import TriageProcessSummary from '../components/ingestion/TriageProcessSummary';
+import { documentService } from '../services/documentService';
 import type { ClinicalSample } from '../types/ingestion';
+import type { IngestResponse } from '../types/document';
 
 const IngestionPage = () => {
   const [selectedFile, setSelectedFile] = useState<ClinicalSample | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [response, setResponse] = useState<IngestResponse | undefined>(undefined);
 
   const handleStartTriage = async () => {
     if (!selectedFile) return;
     setIsProcessing(true);
     setIsCompleted(false);
+    setError(null);
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    setIsProcessing(false);
-    setIsCompleted(true);
+    try {
+      const fileToUpload = selectedFile.file || new File(['dummy content'], selectedFile.name, { type: 'application/pdf' });
+      const result = await documentService.ingestDocument(fileToUpload);
+      setResponse(result);
+      setIsCompleted(true);
+    } catch (err) {
+      console.error('Ingestion error', err);
+      const errDetail = err instanceof Error ? err.message : 'Error al procesar el documento. Intente de nuevo.';
+      setError(errDetail);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleReset = () => {
     setSelectedFile(null);
     setIsCompleted(false);
+    setError(null);
+    setResponse(undefined);
   };
 
   return (
@@ -52,6 +67,16 @@ const IngestionPage = () => {
         </button>
       </div>
 
+      {error && (
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-start gap-3 text-rose-400">
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <span className="font-semibold block mb-1">Error durante la ingesta:</span>
+            {error}
+          </div>
+        </div>
+      )}
+
       {!isCompleted ? (
         <DocumentDropzone
           selectedFile={selectedFile}
@@ -59,7 +84,7 @@ const IngestionPage = () => {
           disabled={isProcessing}
         />
       ) : (
-        selectedFile && <TriageProcessSummary file={selectedFile} onReset={handleReset} />
+        selectedFile && <TriageProcessSummary file={selectedFile} response={response} onReset={handleReset} />
       )}
     </div>
   );
