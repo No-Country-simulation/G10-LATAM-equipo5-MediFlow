@@ -1,28 +1,8 @@
 import { NavLink, Link, useNavigate } from 'react-router-dom';
-import {
-  Activity,
-  LayoutDashboard,
-  Stethoscope,
-  FolderOpen,
-  UserCheck,
-  Sparkles,
-  ShieldCheck,
-  LogOut,
-} from 'lucide-react';
+import { Activity, Sparkles, ShieldCheck, LogOut } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-
-interface NavItem {
-  to: string;
-  label: string;
-  icon: typeof LayoutDashboard;
-}
-
-const navLinks: NavItem[] = [
-  { to: '/dashboard', label: 'Inicio', icon: LayoutDashboard },
-  { to: '/triaje', label: 'Triaje Clínico', icon: Stethoscope },
-  { to: '/documentos', label: 'Expedientes', icon: FolderOpen },
-  { to: '/auditoria', label: 'Auditoría', icon: UserCheck },
-];
+import { INGEST_ACCESS_ROLES, canAccessRoute } from '../../utils/permissions';
+import { getNavLinks } from './navbarConfig';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -33,10 +13,16 @@ const Navbar = () => {
     navigate('/login', { replace: true });
   };
 
+  const isGestor = user?.role === 'GESTOR_USUARIOS';
+
+  const navLinks = getNavLinks(user?.role);
+
+  const canIngest = !isGestor && canAccessRoute(user?.role, INGEST_ACCESS_ROLES);
+
   return (
     <header className="h-16 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
       <div className="flex items-center gap-3">
-        <Link to="/dashboard" className="flex items-center gap-3">
+        <Link to={isGestor ? '/usuarios' : '/dashboard'} className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20">
             <Activity className="w-5 h-5" />
           </div>
@@ -72,15 +58,17 @@ const Navbar = () => {
       </nav>
 
       <div className="flex items-center gap-3 sm:gap-4">
-        <button
-          type="button"
-          onClick={() => navigate('/ingesta')}
-          title="El documento será clasificado y enrutado automáticamente por el agente de IA"
-          className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3.5 py-1.5 rounded-lg text-xs shadow-md shadow-emerald-950/40 border border-emerald-400/30 flex items-center gap-2 transition-all cursor-pointer"
-        >
-          <Sparkles className="w-4 h-4 text-emerald-100" />
-          <span className="hidden md:inline">Procesar Documento IA</span>
-        </button>
+        {canIngest && (
+          <button
+            type="button"
+            onClick={() => navigate('/ingesta')}
+            title="El documento será clasificado y enrutado automáticamente por el agente de IA"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3.5 py-1.5 rounded-lg text-xs shadow-md shadow-emerald-950/40 border border-emerald-400/30 flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4 text-emerald-100" />
+            <span className="hidden md:inline">Procesar Documento IA</span>
+          </button>
+        )}
 
         <div className="hidden sm:flex items-center gap-2 text-right">
           <div>
@@ -109,3 +97,4 @@ const Navbar = () => {
 };
 
 export default Navbar;
+
