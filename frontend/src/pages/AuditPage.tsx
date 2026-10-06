@@ -1,24 +1,50 @@
 import { useMemo, useState } from 'react';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import { useDocumentList } from '../hooks/useDocumentList';
+import { documentService } from '../services/documentService';
 import type { DocumentListItemResponse } from '../types/medical';
 import AuditDocumentCard from '../components/audit/AuditDocumentCard';
+import AuditDetailPanel from '../components/audit/AuditDetailPanel';
 
 const AuditPage = () => {
-  const { documents, state, reload } = useDocumentList({ page_size: 100 });
-  const [reviewedIds, setReviewedIds] = useState<Set<string>>(() => new Set());
+  const { documents, state, reload, error: listError } = useDocumentList({ page_size: 100, estado: 'PENDIENTE_AUDITORIA' });
+  const [activeDocId, setActiveDocId] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [claiming, setClaiming] = useState<string | null>(null);
 
-  const pendientes = useMemo(() => {
-    return documents.filter(
-      (d) =>
-        (d.requiere_auditoria === true || d.estado === 'PENDIENTE_AUDITORIA') &&
-        !reviewedIds.has(d.documento_id)
-    );
-  }, [documents, reviewedIds]);
+  const pendientes = useMemo(() => documents, [documents]);
 
-  const handleReview = (doc: DocumentListItemResponse) => {
-    setReviewedIds((prev) => new Set(prev).add(doc.documento_id));
+  const handleReview = async (doc: DocumentListItemResponse) => {
+    setClaimError(null);
+    setClaiming(doc.documento_id);
+    try {
+      await documentService.claimAuditCase(doc.documento_id);
+      setActiveDocId(doc.documento_id);
+    } catch (err) {
+      const error = err as { status?: number; message?: string };
+      if (error?.status === 409) {
+        setClaimError(`El caso ${doc.documento_id} ya fue tomado por otro auditor o no está pendiente.`);
+      } else {
+        setClaimError(error.message || 'No se pudo tomar el caso.');
+      }
+      reload();
+    } finally {
+      setClaiming(null);
+    }
   };
+
+  const handleCloseDetail = () => {
+    setActiveDocId(null);
+    reload();
+  };
+
+  if (activeDocId) {
+    return (
+      <div className="max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-4 animate-fade-in">
+        <AuditDetailPanel documentId={activeDocId} onClose={handleCloseDetail} />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-6 animate-fade-in">
@@ -48,6 +74,21 @@ const AuditPage = () => {
         </button>
       </div>
 
+      {claimError && (
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm flex items-center justify-between">
+          <span>{claimError}</span>
+          <button onClick={() => setClaimError(null)} className="text-rose-400 hover:text-rose-300">
+            Cerrar
+          </button>
+        </div>
+      )}
+
+      {listError && !claimError && (
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
+          {listError}
+        </div>
+      )}
+
       {state === 'loading' && (
         <div className="space-y-3">
           {Array.from({ length: 2 }).map((_, i) => (
@@ -76,7 +117,12 @@ const AuditPage = () => {
       {state !== 'loading' && pendientes.length > 0 && (
         <div className="space-y-3.5">
           {pendientes.map((doc) => (
-            <AuditDocumentCard key={doc.documento_id} doc={doc} onReview={handleReview} />
+            <AuditDocumentCard
+              key={doc.documento_id}
+              doc={doc}
+              onReview={handleReview}
+              isClaiming={claiming === doc.documento_id}
+            />
           ))}
         </div>
       )}

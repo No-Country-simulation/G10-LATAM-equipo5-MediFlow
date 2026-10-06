@@ -92,10 +92,21 @@ export interface DocumentFilterParams {
   fecha_hasta?: string;
 }
 
+export interface ArchivoPreview {
+  orden: number;
+  tipo_archivo: string;
+  rol: string | null;
+  url: string;
+  visualizable: boolean;
+}
+
 export interface AuditDetailResponse {
   documento_id: string;
   estado: EstadoDocumento;
   oci_preview_url: string;
+  archivos: ArchivoPreview[];
+  preview_expira_en_minutos: number;
+  motivos_auditoria: string[];
   rut_paciente: string | null;
   nombre_paciente: string | null;
   edad_paciente: number | null;
@@ -109,6 +120,13 @@ export interface AuditDetailResponse {
   cie10_sugerido: string | null;
   destino_enrutamiento: string | null;
   raw_extracted_json: Record<string, unknown>;
+  uploaded_by_id: string | null;
+  asignado_a_id: string | null;
+  asignado_a_username: string | null;
+  asignado_at: string | null;
+  audited_by_id: string | null;
+  audited_at: string | null;
+  audit_notes: string | null;
   created_at: string;
 }
 
@@ -123,10 +141,35 @@ export interface AuditResolveRequest {
   diagnostico_principal: string;
   cie10_sugerido?: string | null;
   destino_enrutamiento: string;
+  especialidad?: string | null;
+  detalle_clinico?: Record<string, unknown> | null;
   audit_notes: string;
 }
 
-// Regla de negocio: Umbral de confianza < SCORE_CONFIANZA_THRESHOLD o flag de auditoría humana explícito
-export const requiresHumanAudit = (score: number, requiereAuditoria = false): boolean => {
-  return score < SCORE_CONFIANZA_THRESHOLD || requiereAuditoria;
+export interface AuditDiscardRequest {
+  motivo: string;
+}
+
+export interface AuditClaimResponse {
+  documento_id: string;
+  asignado_a_id: string;
+  asignado_a_username: string;
+  asignado_at: string;
+  expira_at: string;
+}
+
+// Score < SCORE_CONFIANZA_THRESHOLD or explicit human-audit flag
+export const requiresHumanAudit = (score: number, requiereAuditoria = false): boolean =>
+  score < SCORE_CONFIANZA_THRESHOLD || requiereAuditoria;
+
+export const normalizePriority = (val?: string | null): NivelPrioridad => {
+  if (!val) return 'Rutina';
+  const clean = val.trim().toLowerCase();
+  if (clean === 'urgente' || clean === 'critica' || clean === 'alta') {
+    return 'Urgente';
+  }
+  if (clean === 'prioritario' || clean === 'media') {
+    return 'Prioritario';
+  }
+  return 'Rutina';
 };

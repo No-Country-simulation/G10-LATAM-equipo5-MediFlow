@@ -1,115 +1,58 @@
-import { useState, useMemo, type ReactNode } from 'react';
-import {
-  Activity,
-  Pill,
-  Microscope,
-  Syringe,
-  ArrowLeftRight,
-  FileText,
-  FolderArchive,
-  ChevronLeft,
-  ChevronRight,
-  Inbox,
-} from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import type { DocumentDestinationFilter } from '../../types/documents';
+import { useCatalogs } from '../../hooks/useCatalogs';
 import DocumentsKanbanColumn from './DocumentsKanbanColumn';
+import {
+  type ColumnConfig,
+  QUEUE_VISUALS,
+  DEFAULT_QUEUE_VISUAL,
+  OTHER_COLUMN,
+} from './kanbanConfig';
 
 interface DocumentsKanbanBoardProps {
   documents: DocumentListItemResponse[];
   selectedDestination?: DocumentDestinationFilter;
 }
 
-interface ColumnConfig {
-  id: string;
-  title: string;
-  icon: ReactNode;
-  borderClass: string;
-  badgeClass: string;
-  code: string;
-}
-
-const CANONICAL_COLUMNS: ColumnConfig[] = [
-  {
-    id: 'urgencias',
-    title: 'Urgencias',
-    icon: <Activity className="w-4 h-4 text-rose-400" />,
-    borderClass: 'border-rose-500/30 bg-rose-950/10',
-    badgeClass: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
-    code: 'Cola_Emergencia_Medica',
-  },
-  {
-    id: 'farmacia',
-    title: 'Farmacia',
-    icon: <Pill className="w-4 h-4 text-emerald-400" />,
-    borderClass: 'border-emerald-500/30 bg-emerald-950/10',
-    badgeClass: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-    code: 'Farmacia_Hospitalaria',
-  },
-  {
-    id: 'oncologia',
-    title: 'Oncología',
-    icon: <Microscope className="w-4 h-4 text-pink-400" />,
-    borderClass: 'border-pink-500/30 bg-pink-950/10',
-    badgeClass: 'bg-pink-500/10 text-pink-400 border-pink-500/30',
-    code: 'Cola_Oncologia',
-  },
-  {
-    id: 'procedimientos',
-    title: 'Procedimientos',
-    icon: <Syringe className="w-4 h-4 text-amber-400" />,
-    borderClass: 'border-amber-500/30 bg-amber-950/10',
-    badgeClass: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-    code: 'Gestion_Procedimientos',
-  },
-  {
-    id: 'interconsultas',
-    title: 'Interconsultas',
-    icon: <ArrowLeftRight className="w-4 h-4 text-sky-400" />,
-    borderClass: 'border-sky-500/30 bg-sky-950/10',
-    badgeClass: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
-    code: 'Gestion_Interconsultas',
-  },
-  {
-    id: 'ficha',
-    title: 'Ficha Clínica',
-    icon: <FileText className="w-4 h-4 text-purple-400" />,
-    borderClass: 'border-purple-500/30 bg-purple-950/10',
-    badgeClass: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-    code: 'Ficha_Clinica',
-  },
-];
-
-const OTHER_COLUMN: ColumnConfig = {
-  id: 'otros',
-  title: 'Otras Derivaciones',
-  icon: <FolderArchive className="w-4 h-4 text-slate-400" />,
-  borderClass: 'border-slate-600/30 bg-slate-800/10',
-  badgeClass: 'bg-slate-700/30 text-slate-400 border-slate-600/30',
-  code: 'OTRO',
-};
-
 const PAGE_SIZE = 3;
-const KNOWN_CODES = new Set(CANONICAL_COLUMNS.map((col) => col.code));
 
 const DocumentsKanbanBoard = ({
   documents,
   selectedDestination = 'ALL',
 }: DocumentsKanbanBoardProps) => {
+  const { queues } = useCatalogs();
   const [currentPage, setCurrentPage] = useState(0);
 
+  const activeColumns = useMemo<ColumnConfig[]>(() => {
+    return queues.map((q) => {
+      const visual = QUEUE_VISUALS[q.codigo] ?? DEFAULT_QUEUE_VISUAL;
+      return {
+        id: q.codigo,
+        title: q.nombre,
+        icon: visual.icon,
+        borderClass: visual.borderClass,
+        badgeClass: visual.badgeClass,
+        code: q.codigo,
+      };
+    });
+  }, [queues]);
+
+  const knownCodes = useMemo(() => new Set(queues.map((q) => q.codigo)), [queues]);
+
   const groupedColumns = useMemo(() => {
-    const canonicalGroups = CANONICAL_COLUMNS.map((col) => ({
+    const queueGroups = activeColumns.map((col) => ({
       ...col,
       docs: documents.filter((doc) => doc.destino_enrutamiento === col.code),
     }));
 
     const otherDocs = documents.filter(
-      (doc) => !doc.destino_enrutamiento || !KNOWN_CODES.has(doc.destino_enrutamiento)
+      (doc) => !doc.destino_enrutamiento || !knownCodes.has(doc.destino_enrutamiento)
     );
 
     const allGroups = [
-      ...canonicalGroups,
+      ...queueGroups,
       { ...OTHER_COLUMN, docs: otherDocs },
     ];
 
@@ -117,11 +60,11 @@ const DocumentsKanbanBoard = ({
       if (selectedDestination === 'OTROS') {
         return [{ ...OTHER_COLUMN, docs: otherDocs }];
       }
-      return canonicalGroups.filter((col) => col.code === selectedDestination);
+      return queueGroups.filter((col) => col.code === selectedDestination);
     }
 
     return allGroups.filter((col) => col.docs.length > 0);
-  }, [documents, selectedDestination]);
+  }, [activeColumns, documents, knownCodes, selectedDestination]);
 
   if (groupedColumns.length === 0) {
     return (

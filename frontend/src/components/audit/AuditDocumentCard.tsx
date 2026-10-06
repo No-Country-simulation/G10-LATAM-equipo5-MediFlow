@@ -5,6 +5,7 @@ import PriorityBadge from '../common/PriorityBadge';
 interface AuditDocumentCardProps {
   doc: DocumentListItemResponse;
   onReview?: (doc: DocumentListItemResponse) => void;
+  isClaiming?: boolean;
 }
 
 function formatDate(dateStr: string | null | undefined): string {
@@ -20,7 +21,7 @@ function formatDate(dateStr: string | null | undefined): string {
   });
 }
 
-const AuditDocumentCard = ({ doc, onReview }: AuditDocumentCardProps) => {
+const AuditDocumentCard = ({ doc, onReview, isClaiming }: AuditDocumentCardProps) => {
   const formattedDate = formatDate(doc.created_at);
   const diagnosis = doc.diagnostico_principal || 'Diagnóstico preliminar en evaluación clínica';
 
@@ -82,10 +83,11 @@ const AuditDocumentCard = ({ doc, onReview }: AuditDocumentCardProps) => {
         <button
           type="button"
           onClick={() => onReview?.(doc)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer hover:border-amber-500/50"
+          disabled={isClaiming}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer hover:border-amber-500/50 disabled:opacity-50 disabled:cursor-wait"
         >
-          <span>Revisar</span>
-          <ArrowRight className="w-3.5 h-3.5" />
+          <span>{isClaiming ? 'Tomando caso...' : 'Revisar'}</span>
+          {isClaiming ? null : <ArrowRight className="w-3.5 h-3.5" />}
         </button>
       </div>
     </div>

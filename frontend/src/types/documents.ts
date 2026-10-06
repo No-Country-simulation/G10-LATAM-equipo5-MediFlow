@@ -8,7 +8,8 @@ export type DocumentCategoryFilter =
   | 'INTERCONSULTA'
   | 'ANATOMIA_PATOLOGICA'
   | 'PROTOCOLO_OPERATORIO'
-  | 'OTRO';
+  | 'OTRO'
+  | (string & {});
 
 export type DocumentDestinationFilter =
   | 'ALL'
@@ -18,7 +19,8 @@ export type DocumentDestinationFilter =
   | 'Gestion_Interconsultas'
   | 'Cola_Oncologia'
   | 'Ficha_Clinica'
-  | 'OTROS';
+  | 'OTROS'
+  | (string & {});
 
 export const CANONICAL_QUEUES: ReadonlyArray<Exclude<DocumentDestinationFilter, 'ALL' | 'OTROS'>> = [
   'Cola_Emergencia_Medica',

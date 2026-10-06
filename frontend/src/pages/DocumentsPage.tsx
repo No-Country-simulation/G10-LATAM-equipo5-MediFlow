@@ -1,59 +1,32 @@
 import { useState, useMemo } from 'react';
-import { Files, List, Columns3, RefreshCw, AlertCircle, Inbox } from 'lucide-react';
+import { AlertCircle, Inbox } from 'lucide-react';
 import { useDocumentList } from '../hooks/useDocumentList';
 import DocumentFilters from '../components/documents/DocumentFilters';
 import DocumentsListView from '../components/documents/DocumentsListView';
 import DocumentsKanbanBoard from '../components/documents/DocumentsKanbanBoard';
-import {
-  type DocumentCategoryFilter,
-  type DocumentDestinationFilter,
-  CANONICAL_QUEUES,
-} from '../types/documents';
+import { DocumentsPageHeader } from '../components/documents/DocumentsPageHeader';
+import type { DocumentDestinationFilter } from '../types/documents';
+import type { EstadoDocumento, NivelPrioridad } from '../types/medical';
 
-const CANONICAL_QUEUE_SET = new Set<string>(CANONICAL_QUEUES);
 const SKELETON_COUNT = 4;
 
 const DocumentsPage = () => {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
-  const [selectedCategory, setSelectedCategory] = useState<DocumentCategoryFilter>('ALL');
+  const [selectedEstado, setSelectedEstado] = useState<EstadoDocumento | 'ALL'>('ALL');
   const [selectedDestination, setSelectedDestination] = useState<DocumentDestinationFilter>('ALL');
+  const [selectedPrioridad, setSelectedPrioridad] = useState<NivelPrioridad | 'ALL'>('ALL');
+  const [rutSearch, setRutSearch] = useState('');
 
-  const { documents, state, error, reload } = useDocumentList({
-    page_size: 100,
-    estado: 'PROCESADO',
-  });
+  const queryParams = useMemo(() => {
+    const params: Record<string, string | number> = { page_size: 100 };
+    if (selectedEstado !== 'ALL') params.estado = selectedEstado;
+    if (selectedDestination !== 'ALL') params.destino = selectedDestination;
+    if (selectedPrioridad !== 'ALL') params.prioridad = selectedPrioridad;
+    if (rutSearch.trim()) params.rut = rutSearch.trim();
+    return params;
+  }, [selectedEstado, selectedDestination, selectedPrioridad, rutSearch]);
 
-  const expedientesValidados = useMemo(() => {
-    return documents.filter(
-      (doc) => !doc.requiere_auditoria && doc.estado !== 'PENDIENTE_AUDITORIA'
-    );
-  }, [documents]);
-
-  const filteredDocs = useMemo(() => {
-    return expedientesValidados.filter((doc) => {
-      if (selectedCategory !== 'ALL' && doc.tipo_documento !== selectedCategory) return false;
-
-      if (selectedDestination !== 'ALL') {
-        if (selectedDestination === 'OTROS') {
-          const isCanonical = Boolean(
-            doc.destino_enrutamiento && CANONICAL_QUEUE_SET.has(doc.destino_enrutamiento)
-          );
-          if (isCanonical) return false;
-        } else if (doc.destino_enrutamiento !== selectedDestination) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }, [expedientesValidados, selectedCategory, selectedDestination]);
-
-  const viewButtonClass = (mode: 'kanban' | 'list') =>
-    `flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-colors ${
-      viewMode === mode
-        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-        : 'text-slate-400 hover:text-slate-200'
-    }`;
+  const { documents, state, error, reload } = useDocumentList(queryParams);
 
   return (
     <div
@@ -61,71 +34,23 @@ const DocumentsPage = () => {
         viewMode === 'kanban' ? 'max-w-7xl' : 'max-w-5xl'
       }`}
     >
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-5">
-        <div>
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <span>Expedientes y Flujos Documentales</span>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
-              Repositorio Clínico
-            </span>
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Gestión centralizada del repositorio clínico, trazabilidad de derivaciones y archivo digital asistencial.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-center">
-          <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs flex items-center gap-1.5">
-            <Files className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-400">Total listados:</span>
-            <span className="font-mono font-bold text-white">
-              {state === 'loading' ? '—' : filteredDocs.length}
-            </span>
-            {expedientesValidados.length > 0 && state === 'success' && (
-              <span className="text-slate-600">/ {expedientesValidados.length}</span>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={reload}
-            disabled={state === 'loading'}
-            aria-label="Recargar documentos"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-40"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${state === 'loading' ? 'animate-spin' : ''}`} />
-          </button>
-
-          <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
-            <button
-              type="button"
-              aria-label="Vista de tablero"
-              aria-pressed={viewMode === 'kanban'}
-              onClick={() => setViewMode('kanban')}
-              className={viewButtonClass('kanban')}
-            >
-              <Columns3 className="w-3.5 h-3.5" />
-              <span>Tablero</span>
-            </button>
-            <button
-              type="button"
-              aria-label="Vista de lista"
-              aria-pressed={viewMode === 'list'}
-              onClick={() => setViewMode('list')}
-              className={viewButtonClass('list')}
-            >
-              <List className="w-3.5 h-3.5" />
-              <span>Lista</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <DocumentsPageHeader
+        totalCount={documents.length}
+        isLoading={state === 'loading'}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        onReload={reload}
+      />
 
       <DocumentFilters
-        selectedCategory={selectedCategory}
-        onSelectCategory={setSelectedCategory}
+        selectedEstado={selectedEstado}
+        onSelectEstado={setSelectedEstado}
         selectedDestination={selectedDestination}
         onSelectDestination={setSelectedDestination}
+        selectedPrioridad={selectedPrioridad}
+        onSelectPrioridad={setSelectedPrioridad}
+        rutSearch={rutSearch}
+        onRutSearchChange={setRutSearch}
       />
 
       {state === 'error' && (
@@ -149,7 +74,7 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      {state === 'success' && filteredDocs.length === 0 && (
+      {state === 'success' && documents.length === 0 && (
         <div className="p-10 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-2">
           <Inbox className="w-8 h-8 text-slate-600 mx-auto" />
           <h2 className="text-sm font-semibold text-white">Sin expedientes registrados</h2>
@@ -159,15 +84,15 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      {state === 'success' && filteredDocs.length > 0 &&
+      {state === 'success' && documents.length > 0 &&
         (viewMode === 'kanban' ? (
           <DocumentsKanbanBoard
-            key={`${selectedCategory}-${selectedDestination}`}
-            documents={filteredDocs}
+            key={`${selectedEstado}-${selectedDestination}-${selectedPrioridad}-${rutSearch}`}
+            documents={documents}
             selectedDestination={selectedDestination}
           />
         ) : (
-          <DocumentsListView documents={filteredDocs} />
+          <DocumentsListView documents={documents} />
         ))}
     </div>
   );

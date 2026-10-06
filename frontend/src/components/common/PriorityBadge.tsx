@@ -1,22 +1,10 @@
-import type { NivelPrioridad } from '../../types/medical';
+import { type NivelPrioridad, normalizePriority } from '../../types/medical';
 
 export interface PriorityBadgeProps {
   prioridad: NivelPrioridad | string;
   className?: string;
   showDot?: boolean;
 }
-
-export const normalizePriority = (val?: string | null): NivelPrioridad => {
-  if (!val) return 'Rutina';
-  const clean = val.trim().toLowerCase();
-  if (clean === 'urgente' || clean === 'critica' || clean === 'alta') {
-    return 'Urgente';
-  }
-  if (clean === 'prioritario' || clean === 'media') {
-    return 'Prioritario';
-  }
-  return 'Rutina';
-};
 
 const PRIORITY_STYLES: Record<NivelPrioridad, { badge: string; dot: string }> = {
   Urgente: {
