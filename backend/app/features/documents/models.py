@@ -54,9 +54,20 @@ class ClinicalDocument(Base):
     # evolución de epicrisis, etc. que no tiene columna relacional propia).
     raw_extracted_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
+    # Usuario cuyo token usó n8n para llamar a `/ingest` (quien subió el documento desde el front).
+    uploaded_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+
     audited_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     audit_notes: Mapped[str | None] = mapped_column(Text)
     audited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # "Tomar caso": auditor que está revisando el documento. El username se guarda
+    # desnormalizado para mostrar "En revisión por X" en la bandeja sin un JOIN a users.
+    asignado_a_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    asignado_a_username: Mapped[str | None] = mapped_column(String(50))
+    asignado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
@@ -96,6 +107,11 @@ class ClinicalDocument(Base):
         order_by="ClinicalDocumentProcedure.orden",
         lazy="selectin",
     )
+
+    @property
+    def motivos_auditoria(self) -> list[str]:
+        """Motivos del triaje de ingesta por los que el documento fue (o está) en auditoría."""
+        return ((self.raw_extracted_json or {}).get("triaje") or {}).get("motivos_auditoria", [])
 
 
 class ClinicalDocumentAttachment(Base):

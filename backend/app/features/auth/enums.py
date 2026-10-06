@@ -9,3 +9,4 @@ class UserRole(str, Enum):
     ADMIN = "ADMIN"
     GESTOR_USUARIOS = "GESTOR_USUARIOS"
     AUDITOR_CLINICO = "AUDITOR_CLINICO"
+    OPERADOR = "OPERADOR"  # Admisión/recepción: sube documentos y ve solo los que subió
