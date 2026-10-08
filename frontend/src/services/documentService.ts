@@ -8,7 +8,6 @@ import type {
   DocumentListItemResponse,
   PaginatedDocumentResponse,
 } from '../types/medical';
-import type { IngestResponse } from '../types/document';
 import type { DocumentTypeActiveForLLM, QueueActiveForLLM } from '../types/catalog';
 
 function buildDocumentQuery(params: DocumentFilterParams): string {
@@ -25,13 +24,6 @@ function buildDocumentQuery(params: DocumentFilterParams): string {
 export const documentService = {
   listDocuments: (params: DocumentFilterParams = {}): Promise<PaginatedDocumentResponse> =>
     api.get<PaginatedDocumentResponse>(`/documents${buildDocumentQuery(params)}`),
-
-  ingestDocument: (file: File): Promise<IngestResponse> => {
-    const n8nBaseUrl = import.meta.env.VITE_N8N_WEBHOOK_URL || 'http://localhost:5678';
-    const formData = new FormData();
-    formData.append('file', file);
-    return api.post<IngestResponse>(`${n8nBaseUrl}/webhook/mediflow/ingesta`, formData);
-  },
 
   getAuditDetail: (documentoId: string): Promise<AuditDetailResponse> =>
     api.get<AuditDetailResponse>(`/audit/${documentoId}`),
