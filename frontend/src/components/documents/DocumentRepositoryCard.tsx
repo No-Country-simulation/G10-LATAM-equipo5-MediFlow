@@ -1,4 +1,4 @@
-import { FileText, User, Stethoscope, ArrowRight, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { FileText, User, Stethoscope, ArrowRight, ShieldCheck, AlertTriangle, XCircle } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import { DESTINATION_LABELS, CATEGORY_LABELS } from '../../types/documents';
 import PriorityBadge from '../common/PriorityBadge';
@@ -32,7 +32,10 @@ const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
   const formattedDate = formatDate(doc.created_at);
   const confidencePercent = formatConfidence(doc.score_confianza);
   const requiresAudit = Boolean(doc.requiere_auditoria || doc.estado === 'PENDIENTE_AUDITORIA');
-  const clinicalDiagnosis = doc.diagnostico_principal || doc.estado || 'Sin diagnóstico registrado';
+  const clinicalDiagnosis =
+    doc.diagnostico_principal ||
+    (doc.estado === 'DESCARTADO' ? 'Expediente descartado en auditoría' : doc.estado) ||
+    'Sin diagnóstico registrado';
 
   return (
     <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition-all space-y-3">
@@ -50,7 +53,13 @@ const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-center">
-          {requiresAudit && (
+          {doc.estado === 'DESCARTADO' && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-500/15 text-slate-400 border border-slate-600/30 flex items-center gap-1">
+              <XCircle className="w-3 h-3" />
+              Descartado
+            </span>
+          )}
+          {requiresAudit && doc.estado !== 'DESCARTADO' && (
             <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
               Auditoría Requerida

@@ -1,6 +1,6 @@
 export const SCORE_CONFIANZA_THRESHOLD = 0.85;
 
-export type EstadoDocumento = 'PROCESADO' | 'PENDIENTE_AUDITORIA' | 'AUDITADO';
+export type EstadoDocumento = 'PROCESADO' | 'PENDIENTE_AUDITORIA' | 'AUDITADO' | 'DESCARTADO';
 export type NivelPrioridad = 'Urgente' | 'Prioritario' | 'Rutina';
 export type TipoArchivo = 'PDF' | 'IMAGEN';
 

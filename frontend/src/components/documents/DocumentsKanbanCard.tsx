@@ -1,4 +1,4 @@
-import { User, Stethoscope, ShieldCheck } from 'lucide-react';
+import { User, Stethoscope, ShieldCheck, XCircle } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import { CATEGORY_LABELS } from '../../types/documents';
 import PriorityBadge from '../common/PriorityBadge';
@@ -17,7 +17,10 @@ function formatConfidence(score: number | null | undefined): string {
 const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
   const confidencePercent = formatConfidence(doc.score_confianza);
   const categoryLabel = categoryLookup[doc.tipo_documento] ?? doc.tipo_documento;
-  const clinicalDiagnosis = doc.diagnostico_principal || doc.estado || 'Sin diagnóstico registrado';
+  const clinicalDiagnosis =
+    doc.diagnostico_principal ||
+    (doc.estado === 'DESCARTADO' ? 'Expediente descartado en auditoría' : doc.estado) ||
+    'Sin diagnóstico registrado';
   const requiresAudit = Boolean(doc.requiere_auditoria || doc.estado === 'PENDIENTE_AUDITORIA');
 
   return (
@@ -27,7 +30,13 @@ const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
           {doc.documento_id}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
-          {requiresAudit && (
+          {doc.estado === 'DESCARTADO' && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-500/15 text-slate-400 border border-slate-600/30 flex items-center gap-1">
+              <XCircle className="w-3 h-3" />
+              Descartado
+            </span>
+          )}
+          {requiresAudit && doc.estado !== 'DESCARTADO' && (
             <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
               Auditoría Requerida
             </span>

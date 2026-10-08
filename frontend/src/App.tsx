@@ -8,6 +8,7 @@ import DocumentsPage from './pages/DocumentsPage';
 import IngestionPage from './pages/IngestionPage';
 import AuditPage from './pages/AuditPage';
 import UsersPage from './pages/UsersPage';
+import TriagePage from './pages/TriagePage';
 import { RoleRoute } from './components/auth/RoleRoute';
 import { useAuth } from './hooks/useAuth';
 import {
@@ -83,7 +84,14 @@ const App = () => {
                 </RoleRoute>
               }
             />
-            <Route path="/triaje" element={<HomeRedirect />} />
+            <Route
+              path="/triaje"
+              element={
+                <RoleRoute allowedRoles={DOCUMENT_ACCESS_ROLES} fallbackPath="/usuarios">
+                  <TriagePage />
+                </RoleRoute>
+              }
+            />
           </Route>
 
           <Route path="/" element={<HomeRedirect />} />

@@ -15,7 +15,14 @@ const Navbar = () => {
 
   const isGestor = user?.role === 'GESTOR_USUARIOS';
 
-  const navLinks = getNavLinks(user?.role);
+  const baseNavLinks = getNavLinks(user?.role);
+  const navLinks = isGestor
+    ? baseNavLinks
+    : baseNavLinks.flatMap((item) =>
+        item.to === '/dashboard'
+          ? [item, { to: '/triaje', label: 'Triaje', icon: Activity }]
+          : [item]
+      );
 
   const canIngest = !isGestor && canAccessRoute(user?.role, INGEST_ACCESS_ROLES);
 

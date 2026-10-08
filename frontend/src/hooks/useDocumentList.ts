@@ -57,9 +57,14 @@ export const useDocumentList = (params: DocumentFilterParams = {}): DocumentList
       .listDocuments(snapshot)
       .then((res) => {
         if (cancelled) return;
+        const sorted = [...(res.items ?? [])].sort((a, b) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return timeB - timeA;
+        });
         dispatch({
           type: 'success',
-          items: res.items ?? [],
+          items: sorted,
           total: res.total ?? 0,
         });
       })
@@ -75,6 +80,20 @@ export const useDocumentList = (params: DocumentFilterParams = {}): DocumentList
       cancelled = true;
     };
   }, [tick, paramsKey]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        dispatchTick();
+      }
+    };
+    window.addEventListener('visibilitychange', handleFocus);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
 
   const reload = useCallback(() => dispatchTick(), []);
 

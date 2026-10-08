@@ -6,27 +6,35 @@ import DocumentsListView from '../components/documents/DocumentsListView';
 import DocumentsKanbanBoard from '../components/documents/DocumentsKanbanBoard';
 import { DocumentsPageHeader } from '../components/documents/DocumentsPageHeader';
 import type { DocumentDestinationFilter } from '../types/documents';
-import type { EstadoDocumento, NivelPrioridad } from '../types/medical';
+import type { NivelPrioridad } from '../types/medical';
 
 const SKELETON_COUNT = 4;
 
 const DocumentsPage = () => {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
-  const [selectedEstado, setSelectedEstado] = useState<EstadoDocumento | 'ALL'>('ALL');
   const [selectedDestination, setSelectedDestination] = useState<DocumentDestinationFilter>('ALL');
   const [selectedPrioridad, setSelectedPrioridad] = useState<NivelPrioridad | 'ALL'>('ALL');
   const [rutSearch, setRutSearch] = useState('');
 
   const queryParams = useMemo(() => {
     const params: Record<string, string | number> = { page_size: 100 };
-    if (selectedEstado !== 'ALL') params.estado = selectedEstado;
     if (selectedDestination !== 'ALL') params.destino = selectedDestination;
     if (selectedPrioridad !== 'ALL') params.prioridad = selectedPrioridad;
     if (rutSearch.trim()) params.rut = rutSearch.trim();
     return params;
-  }, [selectedEstado, selectedDestination, selectedPrioridad, rutSearch]);
+  }, [selectedDestination, selectedPrioridad, rutSearch]);
 
   const { documents, state, error, reload } = useDocumentList(queryParams);
+
+  const authorizedDocuments = useMemo(() => {
+    return documents.filter(
+      (doc) =>
+        !doc.requiere_auditoria &&
+        doc.estado !== 'PENDIENTE_AUDITORIA' &&
+        doc.estado !== 'DESCARTADO' &&
+        (doc.estado === 'PROCESADO' || doc.estado === 'AUDITADO')
+    );
+  }, [documents]);
 
   return (
     <div
@@ -35,7 +43,7 @@ const DocumentsPage = () => {
       }`}
     >
       <DocumentsPageHeader
-        totalCount={documents.length}
+        totalCount={authorizedDocuments.length}
         isLoading={state === 'loading'}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -43,8 +51,6 @@ const DocumentsPage = () => {
       />
 
       <DocumentFilters
-        selectedEstado={selectedEstado}
-        onSelectEstado={setSelectedEstado}
         selectedDestination={selectedDestination}
         onSelectDestination={setSelectedDestination}
         selectedPrioridad={selectedPrioridad}
@@ -74,7 +80,7 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      {state === 'success' && documents.length === 0 && (
+      {state === 'success' && authorizedDocuments.length === 0 && (
         <div className="p-10 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-2">
           <Inbox className="w-8 h-8 text-slate-600 mx-auto" />
           <h2 className="text-sm font-semibold text-white">Sin expedientes registrados</h2>
@@ -84,15 +90,15 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      {state === 'success' && documents.length > 0 &&
+      {state === 'success' && authorizedDocuments.length > 0 &&
         (viewMode === 'kanban' ? (
           <DocumentsKanbanBoard
-            key={`${selectedEstado}-${selectedDestination}-${selectedPrioridad}-${rutSearch}`}
-            documents={documents}
+            key={`${selectedDestination}-${selectedPrioridad}-${rutSearch}`}
+            documents={authorizedDocuments}
             selectedDestination={selectedDestination}
           />
         ) : (
-          <DocumentsListView documents={documents} />
+          <DocumentsListView documents={authorizedDocuments} />
         ))}
     </div>
   );
