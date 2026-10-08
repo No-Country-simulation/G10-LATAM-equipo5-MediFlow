@@ -119,8 +119,8 @@ Devuelve `200 OK` si la base de datos y OCI funcionan, o `503 Service Unavailabl
 | `OCI_USER_OCID`, `OCI_TENANCY_OCID`, `OCI_FINGERPRINT`, `OCI_REGION` | Datos de tu API Key de OCI |
 | `OCI_KEY_FILE_PATH` | Ruta a la clave privada `.pem` |
 | `OCI_BUCKET_NAME`, `OCI_COMPARTMENT_OCID` | Bucket y compartimento donde se guardan los documentos |
-
-CORS permite por defecto `http://localhost:3000` y `http://localhost:5173` (`BACKEND_CORS_ORIGINS` en `core/config.py`).
+| `BACKEND_CORS_ORIGINS` | Orígenes permitidos por CORS, separados por coma (también acepta lista JSON). Por defecto `http://localhost:3000,http://localhost:5173` |
+| `BACKEND_CORS_ORIGIN_REGEX` | Opcional. Regex para orígenes variables, ej. `https://mediflow-.*\.vercel\.app` |
 
 ## Autenticación y roles
 

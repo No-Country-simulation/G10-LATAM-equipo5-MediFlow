@@ -1,5 +1,6 @@
 """Configuración centralizada de la aplicación mediante Pydantic Settings."""
 
+import json
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,8 +38,17 @@ class Settings(BaseSettings):
     OCI_BUCKET_NAME: str = ""
     OCI_COMPARTMENT_OCID: str = ""
 
-    # CORS
-    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    # CORS: orígenes separados por coma (o lista JSON) y, opcional, una regex para orígenes
+    # variables, ej. previews `https://mediflow-.*\.vercel\.app`.
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+    BACKEND_CORS_ORIGIN_REGEX: str | None = None
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Orígenes de `BACKEND_CORS_ORIGINS` normalizados (sin espacios ni `/` final)."""
+        raw = self.BACKEND_CORS_ORIGINS.strip()
+        origins = json.loads(raw) if raw.startswith("[") else raw.split(",")
+        return [origin.strip().rstrip("/") for origin in origins if origin.strip()]
 
 
 @lru_cache
