@@ -183,3 +183,16 @@ venv.bak/
 # OCI & Secrets
 *.pem
 oci_api_key.pem
+
+# Antigravity & AI Governance 
+AGENTS.md
+.agents/
+.gemini/
+production_artifacts/
+*.temp.*
+manual_temp.html
+documentacion_temp.html
+
+# Ambientes locales y credenciales
+.env.local
+secrets/

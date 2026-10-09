@@ -1,29 +1,106 @@
-import { Stethoscope, CheckCircle2 } from "lucide-react";
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/auth/ProtectedRoute';
+import AppLayout from './components/layout/AppLayout';
+import Login from './pages/Login';
+import DashboardPreview from './components/dashboard/DashboardPreview';
+import DocumentsPage from './pages/DocumentsPage';
+import IngestionPage from './pages/IngestionPage';
+import AuditPage from './pages/AuditPage';
+import UsersPage from './pages/UsersPage';
+import TriagePage from './pages/TriagePage';
+import { RoleRoute } from './components/auth/RoleRoute';
+import { useAuth } from './hooks/useAuth';
+import {
+  AUDIT_ACCESS_ROLES,
+  DOCUMENT_ACCESS_ROLES,
+  INGEST_ACCESS_ROLES,
+  USER_MANAGEMENT_ROLES,
+  getHomeRoute,
+} from './utils/permissions';
+
+const HomeRedirect = () => {
+  const { user, isAuthenticated } = useAuth();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  if (user?.role === 'GESTOR_USUARIOS') {
+    return <Navigate to="/usuarios" replace />;
+  }
+  return <Navigate to={getHomeRoute(user?.role)} replace />;
+};
 
 const App = () => {
   return (
-    <main className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 shadow-xl space-y-4 text-center">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-          <Stethoscope className="w-6 h-6" />
-        </div>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-        <div>
-          <h1 className="text-xl font-bold text-slate-100 tracking-tight">
-            MediFlow
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Triaje Clínico y Derivación Hospitalaria
-          </p>
-        </div>
+          <Route
+            element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route
+              path="/dashboard"
+              element={
+                <RoleRoute allowedRoles={DOCUMENT_ACCESS_ROLES} fallbackPath="/usuarios">
+                  <DashboardPreview />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/documentos"
+              element={
+                <RoleRoute allowedRoles={DOCUMENT_ACCESS_ROLES} fallbackPath="/usuarios">
+                  <DocumentsPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/ingesta"
+              element={
+                <RoleRoute allowedRoles={INGEST_ACCESS_ROLES}>
+                  <IngestionPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/auditoria"
+              element={
+                <RoleRoute allowedRoles={AUDIT_ACCESS_ROLES}>
+                  <AuditPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/usuarios"
+              element={
+                <RoleRoute allowedRoles={USER_MANAGEMENT_ROLES}>
+                  <UsersPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/triaje"
+              element={
+                <RoleRoute allowedRoles={DOCUMENT_ACCESS_ROLES} fallbackPath="/usuarios">
+                  <TriagePage />
+                </RoleRoute>
+              }
+            />
+          </Route>
 
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          <span>Interfaz visual iniciada</span>
-        </div>
-      </div>
-    </main>
+          <Route path="/" element={<HomeRedirect />} />
+          <Route path="*" element={<HomeRedirect />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 };
 
 export default App;
+
