@@ -29,38 +29,43 @@ En hospitales y aseguradoras, cada día llegan cientos de documentos (informes d
 
 ## 🧩 Arquitectura general
 
-```
-                          1. GET /catalogs/document-types/active
-                          2. GET /catalogs/queues/active
- Documento (PDF/imagen)      (opciones válidas para el prompt)
-        │               ◀──────────────────────────────────────┐
-        ▼                                                      │
- ┌──────────────┐   3. POST /documents/ingest           ┌──────┴────────────┐
- │  n8n (IA /   │ ────────────────────────────────────▶ │  Backend FastAPI  │
- │  workflow)   │   payload JSON + archivos (base64)    │  (carpeta backend)│
- └──────────────┘                                       └─────────┬─────────┘
-                                                                  │
-                                        ┌─────────────────────────┴───────────────┐
-                                        ▼                                         ▼
-                              ┌───────────────────┐                 ┌──────────────────────────┐
-                              │    PostgreSQL     │                 │  OCI Object Storage      │
-                              │ usuarios, docs y  │                 │ (archivos + JSON)        │
-                              │ tablas maestras   │                 └──────────────────────────┘
-                              └───────────────────┘
-                                        ▲
-                                        │ consulta / audita / administra maestras
-                              ┌───────────────────┐
-                              │ Frontend (React)  │
-                              └───────────────────┘
+```mermaid
+flowchart LR
+    U(["👤 Usuario"]) --> FE["🖥️ Frontend<br/>React"]
+    FE -- "1 · login (JWT)<br/>bandeja · auditoría · catálogos" --> BE["⚙️ Backend<br/>FastAPI"]
+    FE -- "2 · sube archivo + token" --> N8N["🤖 n8n<br/>workflow"]
+    N8N -- "3 · GET catálogos activos" --> BE
+    N8N -- "4 · clasifica y extrae" --> LLM["🧠 LLM<br/>Gemini"]
+    N8N -- "5 · POST /documents/ingest" --> BE
+    BE --> DB[("🐘 PostgreSQL")]
+    BE --> OCI[("☁️ OCI<br/>Object Storage")]
+    N8N -. "6 · resultado" .-> FE
 ```
 
-**Regla de triaje:** un documento pasa a `PENDIENTE_AUDITORIA` si su score de confianza es **menor a 0.85** o si el workflow marca `requiere_auditoria_humana`. En caso contrario queda como `PROCESADO`.
+1. El usuario inicia sesión en el front, que obtiene un JWT del backend.
+2. El front sube el documento al **webhook de n8n** junto con su token.
+3. n8n consulta los **catálogos activos** (tipos de documento y colas) al backend.
+4. El LLM clasifica el documento y extrae los datos, eligiendo **solo** entre las opciones del catálogo.
+5. n8n envía el resultado a `POST /documents/ingest`. El backend aplica el triaje, guarda los archivos y el JSON en **OCI** y registra todo en **PostgreSQL**.
+6. n8n devuelve al front la respuesta del backend.
+
+**Regla de triaje:** el backend deja un documento en `PENDIENTE_AUDITORIA` si se cumple **cualquiera** de estas condiciones; si no se cumple ninguna, queda `PROCESADO`:
+
+- score de confianza **menor a 0.85**;
+- el workflow marca `requiere_auditoria_humana`;
+- el tipo es `OTRO` (no clasificable);
+- el tipo o la cola no existen (o están inactivos) en las tablas maestras;
+- `detalle_clinico` trae un bloque que no corresponde al tipo;
+- `campos_adicionales` no cumple el JSON Schema definido para el tipo en el catálogo.
+
+Los motivos se devuelven en `motivos_auditoria` y quedan guardados junto al documento.
 
 | Estado | Significado | Ruta del JSON en OCI |
 |---|---|---|
 | `PROCESADO` | Enrutado automáticamente | `procesados/<prioridad>/<id>.json` |
 | `PENDIENTE_AUDITORIA` | Espera revisión humana | `auditoria_humana/<id>.json` |
 | `AUDITADO` | Corregido por un auditor | `procesados/auditados/<id>.json` |
+| `DESCARTADO` | Descartado por un auditor (no clínico, duplicado, ilegible) | `descartados/<id>.json` |
 
 Los archivos originales se guardan en `recibidos/<id>/<n>.<extensión>` (un documento puede traer varios archivos; `n` es su posición: `0`, `1`, ...).
 
@@ -131,7 +136,7 @@ Todos los comandos se ejecutan desde la **raíz del repositorio**, salvo que se 
 
 - crea todas las tablas e índices (usuarios, documentos clínicos y sus tablas hijas, tokens revocados, tablas maestras);
 - crea **un usuario de prueba por rol** (ver [Usuarios de prueba](#usuarios-de-prueba));
-- carga las **tablas maestras semilla**: 9 tipos de documento y 6 colas de enrutamiento.
+- carga las **tablas maestras semilla**: 10 tipos de documento y 6 colas de enrutamiento.
 
 > ⚠️ `init.sql` se ejecuta **solo cuando el volumen está vacío** (primera vez). Si ya tenías la base creada de antes, no se vuelve a ejecutar solo: ver [Actualizar una base existente](#actualizar-una-base-existente).
 
@@ -191,6 +196,7 @@ Si no cambiaste las credenciales del `.env` de la raíz, el `backend/.env` de ej
 | `admin_user` | `admin123` | `ADMIN` |
 | `gestor_user` | `gestor123` | `GESTOR_USUARIOS` |
 | `auditor_user` | `auditor123` | `AUDITOR_CLINICO` |
+| `operador_user` | `operador123` | `OPERADOR` |
 
 > ⚠️ Son solo para desarrollo. Desactívalos o cambia sus contraseñas, y cambia el `JWT_SECRET_KEY`, antes de cualquier despliegue real.
 
@@ -236,7 +242,8 @@ Para conectarte con un cliente gráfico (DBeaver, TablePlus, pgAdmin): host `loc
 |---|---|
 | `ADMIN` | Todo: gestionar usuarios, ver documentos, ingestar, auditar y **administrar las tablas maestras** |
 | `GESTOR_USUARIOS` | Crear, listar y modificar usuarios |
-| `AUDITOR_CLINICO` | Ver la bandeja de documentos y resolver casos de auditoría |
+| `AUDITOR_CLINICO` | Subir documentos, ver la bandeja completa y tomar, resolver o descartar casos de auditoría |
+| `OPERADOR` | Subir documentos (admisión/recepción) y ver **solo los que subió** |
 
 Todos los usuarios autenticados pueden ver y editar su propio perfil, cambiar su contraseña y **consultar** las tablas maestras.
 
@@ -248,10 +255,10 @@ Definen las opciones que el workflow de IA puede elegir. n8n las lee desde la AP
 
 | Maestra | Registros semilla |
 |---|---|
-| **Tipos de documento** | Receta Médica · Informe de Laboratorio · Informe de Estudio por Imágenes · Solicitud de Procedimiento · Epicrisis / Informe de Alta · Interconsulta / Derivación · Informe de Anatomía Patológica · Protocolo Operatorio · Otro / No clasificable |
+| **Tipos de documento** | Receta Médica · Informe de Laboratorio · Informe de Estudio por Imágenes · Solicitud de Procedimiento · Epicrisis / Informe de Alta · Interconsulta / Derivación · Informe de Anatomía Patológica · Protocolo Operatorio · Nota de Atención Ambulatoria · Otro / No clasificable |
 | **Colas de enrutamiento** | Urgencias · Farmacia Hospitalaria · Procedimientos y Quirófano · Interconsultas y Derivaciones · Oncología · Ficha Clínica (destino por defecto) |
 
-Cada registro trae una descripción que el LLM usa para decidir. Al **eliminar**, el backend aplica *Smart Delete*: si ningún documento clínico usa el registro lo borra físicamente; si alguno lo usa, solo lo desactiva para no dejar documentos huérfanos. Detalle en [`backend/README.md`](backend/README.md#tablas-maestras-catálogos).
+Cada registro trae una descripción que el LLM usa para decidir; los tipos pueden definir además campos propios a extraer (`campos_extraccion`, un JSON Schema). Cada cambio queda en un historial, y `OTRO` y `Ficha_Clinica` están protegidos porque el sistema depende de ellos. Al **eliminar**, el backend aplica *Smart Delete*: si ningún documento clínico usa el registro lo borra físicamente; si alguno lo usa, solo lo desactiva para no dejar documentos huérfanos. Detalle en [`backend/README.md`](backend/README.md#tablas-maestras-catálogos).
 
 ---
 
@@ -265,8 +272,18 @@ Prefijo: `/api/v1`. Salvo `health` y `login`, todos requieren `Authorization: Be
 | Autenticación | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` |
 | Perfil y usuarios | `/users/me`, `/users/me/change-password`, `/users` |
 | Documentos | `POST /documents/ingest`, `GET /documents` |
-| Auditoría | `GET /audit/{documento_id}`, `PUT /audit/{documento_id}/resolve` |
-| Tablas maestras | CRUD en `/catalogs/queues` y `/catalogs/document-types`, más `/active` en cada una para n8n |
+| Auditoría | `GET /audit/{documento_id}`, `POST`/`DELETE /audit/{documento_id}/claim`, `PUT /audit/{documento_id}/resolve`, `PUT /audit/{documento_id}/discard` |
+| Tablas maestras | CRUD en `/catalogs/queues` y `/catalogs/document-types`, más `/active` (para n8n) y `/{id}/history` en cada una |
+
+---
+
+## 📚 Documentación
+
+| Documento | Para quién |
+|---|---|
+| [`backend/README.md`](backend/README.md) | Backend: instalación, endpoints, reglas, base de datos y pruebas |
+| [`frontend/README.md`](frontend/README.md) | Frontend: stack, scripts y qué endpoints usa cada pantalla |
+| Swagger (`/docs` con la API levantada) | Probar los endpoints y ver los esquemas exactos |
 
 ---
 
