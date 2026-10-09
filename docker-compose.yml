@@ -23,10 +23,37 @@ services:
       timeout: 5s
       retries: 5
 
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: mediflow-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Santiago}
+      TZ: ${GENERIC_TIMEZONE:-America/Santiago}
+      # Desarrollo local sin HTTPS: permite la cookie de sesión por http
+      N8N_SECURE_COOKIE: "false"
+      N8N_RUNNERS_ENABLED: "true"
+    extra_hosts:
+      # Permite que el workflow llame al backend FastAPI del host (http://host.docker.internal:8000)
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Persistencia de workflows, credenciales y usuario owner
+      - n8n_data:/home/node/.n8n
+    networks:
+      - mediflow-net
+
 networks:
   mediflow-net:
     driver: bridge
 
 volumes:
   postgres_data:
+    driver: local
+  n8n_data:
     driver: local
