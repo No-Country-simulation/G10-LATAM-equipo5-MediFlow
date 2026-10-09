@@ -17,3 +17,9 @@ async def health_check(response: Response) -> HealthCheckResponse:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
     return health
+
+
+@router.get("/health/live")
+async def liveness() -> dict[str, str]:
+    """Liveness para Docker / balanceador: no toca la base ni OCI (barato de llamar seguido)."""
+    return {"status": "alive"}

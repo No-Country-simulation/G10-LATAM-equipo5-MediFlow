@@ -1,3 +1,5 @@
+# Entorno de DESARROLLO: PostgreSQL + n8n. El backend y el front se levantan en local
+# (uvicorn / vite). Para el despliegue en OCI usar docker-compose.prod.yml.
 services:
   postgres:
     image: postgres:16-alpine
@@ -8,13 +10,14 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      # Expuesto solo para desarrollo local y clientes como DBeaver / TablePlus
-      - "5432:5432"
+      # Solo en localhost (DBeaver / TablePlus): no queda expuesto a la red.
+      - "127.0.0.1:5432:5432"
     volumes:
       # Persistencia de datos en disco (evita pérdida de datos al apagar el contenedor)
       - postgres_data:/var/lib/postgresql/data
-      # Script DDL ejecutado automáticamente SOLO en la primera inicialización
+      # Scripts ejecutados automáticamente SOLO en la primera inicialización (orden alfabético)
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./docker/postgres/seed_dev_users.sql:/docker-entrypoint-initdb.d/seed_dev_users.sql:ro
     networks:
       - mediflow-net
     healthcheck:
@@ -24,11 +27,12 @@ services:
       retries: 5
 
   n8n:
-    image: n8nio/n8n:latest
+    # Fija la versión con la que se probó el workflow (ej. N8N_VERSION=2.x.y en .env).
+    image: n8nio/n8n:${N8N_VERSION:-latest}
     container_name: mediflow-n8n
     restart: unless-stopped
     ports:
-      - "5678:5678"
+      - "127.0.0.1:5678:5678"
     environment:
       N8N_HOST: localhost
       N8N_PORT: 5678
@@ -39,6 +43,14 @@ services:
       # Desarrollo local sin HTTPS: permite la cookie de sesión por http
       N8N_SECURE_COOKIE: "false"
       N8N_RUNNERS_ENABLED: "true"
+      # URL del backend que usa el workflow (NO se acepta desde el request del navegador)
+      MEDIFLOW_API_BASE_URL: ${MEDIFLOW_API_BASE_URL:-http://host.docker.internal:8000}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # Cada ejecución guarda el archivo (base64), el token y datos del paciente: no se
+      # conservan las exitosas y las fallidas se purgan a las 72 h.
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: 72
     extra_hosts:
       # Permite que el workflow llame al backend FastAPI del host (http://host.docker.internal:8000)
       - "host.docker.internal:host-gateway"

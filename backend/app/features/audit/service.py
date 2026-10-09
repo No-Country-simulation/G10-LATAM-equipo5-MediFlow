@@ -8,6 +8,7 @@ Para que dos auditores no trabajen el mismo caso, un auditor puede "tomarlo": mi
 asignación esté vigente (`CLAIM_TTL_MINUTES`), nadie más puede resolverlo ni descartarlo.
 """
 
+import asyncio
 import copy
 import json
 import logging
@@ -200,18 +201,24 @@ async def get_audit_case(documento_id: str, db: AsyncSession) -> AuditDetailResp
         )
 
     # El adjunto de `orden` más bajo es el archivo principal (el informe/receta en sí);
-    # los siguientes son imágenes de respaldo del mismo estudio.
+    # los siguientes son imágenes de respaldo del mismo estudio. Las URLs se piden en paralelo.
+    urls = await asyncio.gather(
+        *(
+            oci_storage_client.create_preauthenticated_request(
+                attachment.oci_path, expire_minutes=PREVIEW_URL_EXPIRE_MINUTES
+            )
+            for attachment in document.attachments
+        )
+    )
     archivos = [
         ArchivoPreview(
             orden=attachment.orden,
             tipo_archivo=attachment.tipo_archivo,
             rol=attachment.rol,
-            url=await oci_storage_client.create_preauthenticated_request(
-                attachment.oci_path, expire_minutes=PREVIEW_URL_EXPIRE_MINUTES
-            ),
+            url=url,
             visualizable=attachment.tipo_archivo in TIPOS_ARCHIVO_PRINCIPAL,
         )
-        for attachment in document.attachments
+        for attachment, url in zip(document.attachments, urls, strict=True)
     ]
 
     return AuditDetailResponse(

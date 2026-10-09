@@ -11,8 +11,8 @@ from app.features.auth.enums import UserRole
 class LoginRequest(BaseModel):
     """Credenciales enviadas por el cliente para iniciar sesión."""
 
-    username: str
-    password: str
+    username: str = Field(max_length=50)
+    password: str = Field(max_length=128)
 
 
 class UserOut(BaseModel):
@@ -50,16 +50,17 @@ class PasswordChangeRequest(BaseModel):
     """Solicitud de cambio de contraseña del usuario autenticado."""
 
     current_password: str
-    new_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=8, max_length=72)
 
 
 class UserCreateRequest(BaseModel):
     """Datos para crear un nuevo usuario (uso administrativo)."""
 
-    username: str
+    username: str = Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_.-]+$")
     email: EmailStr
-    password: str
-    full_name: str
+    # bcrypt solo considera los primeros 72 bytes.
+    password: str = Field(min_length=8, max_length=72)
+    full_name: str = Field(min_length=1, max_length=150)
     role: UserRole = UserRole.AUDITOR_CLINICO
 
 

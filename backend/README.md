@@ -65,7 +65,7 @@ source .venv/bin/activate
 ### 2. Instalar dependencias
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 ### 3. Configurar variables de entorno
@@ -129,7 +129,7 @@ La API usa **JWT**. Flujo:
 1. Inicia sesión con `POST /api/v1/auth/login` (`{"username": "...", "password": "..."}`). Devuelve `access_token` y los datos del usuario.
 2. Envía el token en cada petición: `Authorization: Bearer <access_token>`.
 
-Usuarios de desarrollo creados por `docker/postgres/init.sql` (uno por rol). **Cámbialos o desactívalos fuera de desarrollo.**
+Usuarios de desarrollo creados por `docker/postgres/seed_dev_users.sql` (uno por rol). **Cámbialos o desactívalos fuera de desarrollo.**
 
 | Usuario | Contraseña | Rol |
 |---|---|---|
@@ -450,5 +450,5 @@ Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión de base de dato
 | `403` en un endpoint | Tu rol no tiene permiso para ese recurso |
 | El login del usuario semilla falla, o `/catalogs/.../active` devuelve `[]` | El volumen de Postgres ya existía y `init.sql` no se ejecutó; vuelve a ejecutarlo (ver [Base de datos](#base-de-datos)) |
 | `500` con `column ... does not exist` (ej. `es_sistema`, `uploaded_by_id`, `asignado_a_id`) | Tu base es de una versión anterior: vuelve a ejecutar `init.sql` para agregar las columnas nuevas |
-| `ModuleNotFoundError: No module named 'jsonschema'` | Falta reinstalar dependencias: `pip install -r requirements.txt` |
+| `ModuleNotFoundError: No module named 'jsonschema'` | Falta reinstalar dependencias: `pip install -r requirements-dev.txt` |
 | El puerto `5432` está ocupado al hacer `docker compose up` | Ya tienes otro PostgreSQL local corriendo; detenlo o cambia el puerto publicado en `docker-compose.yml` (y en `DATABASE_URL`) |

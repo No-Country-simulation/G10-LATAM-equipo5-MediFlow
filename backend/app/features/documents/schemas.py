@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
+from app.core.config import settings
+
 NivelPrioridad = Literal["Rutina", "Prioritario", "Urgente"]
 
 # Formatos admitidos: PDF y escaneos/fotos (PNG, JPG, TIFF) más DICOM (DCM) para imágenes
@@ -254,15 +256,17 @@ class ArchivoAdjunto(BaseModel):
     """
 
     tipo_archivo: TipoArchivo
-    archivo_base64: str
-    rol: str | None = None
+    # Tope en base64 (4 caracteres por cada 3 bytes): corta payloads gigantes antes de decodificarlos.
+    archivo_base64: str = Field(max_length=4 * -(-settings.INGEST_MAX_FILE_MB * 1024 * 1024 // 3))
+    rol: str | None = Field(None, max_length=50)
 
 
 class IngestPayload(BaseModel):
     """Payload enviado por el workflow de n8n tras procesar un documento clínico."""
 
-    documento_id: str
-    archivos: list[ArchivoAdjunto] = Field(min_length=1)
+    # Forma parte de las rutas en OCI: solo caracteres seguros (n8n genera `DOC-<uuid>`).
+    documento_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    archivos: list[ArchivoAdjunto] = Field(min_length=1, max_length=settings.INGEST_MAX_FILES)
     clasificacion: ClasificacionExtract
     datos_generales: DatosGeneralesExtract
     detalle_clinico: DetalleClinicoExtract

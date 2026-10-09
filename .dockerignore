@@ -1,0 +1,10 @@
+# Contexto de build de deploy/web.Dockerfile (raíz del repo): solo se necesita frontend/ y deploy/.
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+.git
+backend
+docs
+workflow
+docker

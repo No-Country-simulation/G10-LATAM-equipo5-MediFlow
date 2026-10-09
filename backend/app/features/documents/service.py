@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from app.core.config import settings
 from app.features.auth.models import User
@@ -426,8 +427,15 @@ async def get_paginated_documents(
     )
     total = total_result.scalar_one()
 
+    # La bandeja solo muestra columnas del documento: no se cargan las tablas hijas (selectin).
     items_result = await db.execute(
         select(ClinicalDocument)
+        .options(
+            noload(ClinicalDocument.attachments),
+            noload(ClinicalDocument.medications),
+            noload(ClinicalDocument.lab_panels),
+            noload(ClinicalDocument.procedures),
+        )
         .where(*conditions)
         .order_by(ClinicalDocument.created_at.desc())
         .offset((page - 1) * page_size)

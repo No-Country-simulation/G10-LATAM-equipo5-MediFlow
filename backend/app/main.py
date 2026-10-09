@@ -38,19 +38,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Deteniendo %s", settings.PROJECT_NAME)
 
 
+# En producción Swagger/OpenAPI no se publican: exponen el mapa completo de la API.
+_docs_enabled = not settings.is_production
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=__version__,
     lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
+# El token viaja en `Authorization` (no en cookies), así que no hacen falta credenciales CORS.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_origin_regex=settings.BACKEND_CORS_ORIGIN_REGEX,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(health_router, prefix=settings.API_V1_PREFIX)

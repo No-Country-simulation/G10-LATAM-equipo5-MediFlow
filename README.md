@@ -77,11 +77,14 @@ Los archivos originales se guardan en `recibidos/<id>/<n>.<extensión>` (un docu
 .
 ├── backend/                 # API REST en FastAPI (detalle en backend/README.md)
 ├── frontend/                # Interfaz web en React + Vite (detalle en frontend/README.md)
-├── workflow/                # Prompt del workflow de IA de n8n
+├── workflow/                # Workflow de n8n (MediFlow_unificado.json) y su README
 ├── docker/
-│   └── postgres/init.sql    # Crea tablas, índices, usuarios de prueba y tablas maestras semilla
-├── docker-compose.yml       # Levanta PostgreSQL 16 para desarrollo
-├── .env.example             # Credenciales del contenedor de PostgreSQL
+│   └── postgres/            # init.sql (tablas, índices, maestras) + seed_dev_users.sql (solo dev)
+├── deploy/                  # Caddyfile + imagen del front (producción)
+├── docker-compose.yml       # Desarrollo: PostgreSQL 16 + n8n
+├── docker-compose.prod.yml  # Producción en OCI: Caddy + front + backend + n8n + PostgreSQL
+├── .env.example             # Credenciales del contenedor de PostgreSQL (desarrollo)
+├── .env.prod.example        # Todas las variables de producción
 └── README.md                # Este archivo
 ```
 
@@ -149,7 +152,7 @@ Resumen (el detalle y la explicación de cada variable están en [`backend/READM
 cd backend
 py -3.12 -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
@@ -159,7 +162,7 @@ uvicorn app.main:app --reload --port 8000
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
@@ -189,7 +192,7 @@ Si no cambiaste las credenciales del `.env` de la raíz, el `backend/.env` de ej
 
 ### Usuarios de prueba
 
-`init.sql` crea un usuario por rol:
+`docker/postgres/seed_dev_users.sql` crea un usuario por rol (solo en desarrollo: `docker-compose.prod.yml` no lo carga):
 
 | Usuario | Contraseña | Rol |
 |---|---|---|
@@ -210,6 +213,7 @@ Con el contenedor levantado (`docker compose up -d`), ejecuta el script que ya e
 
 ```bash
 docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/init.sql
+docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/seed_dev_users.sql
 ```
 
 Funciona igual en PowerShell, Linux y macOS. En **Git Bash** antepón `MSYS_NO_PATHCONV=1 ` al comando para que no modifique la ruta. Los mensajes `NOTICE: ... already exists, skipping` son normales.
@@ -283,7 +287,9 @@ Prefijo: `/api/v1`. Salvo `health` y `login`, todos requieren `Authorization: Be
 |---|---|
 | [`backend/README.md`](backend/README.md) | Backend: instalación, endpoints, reglas, base de datos y pruebas |
 | [`frontend/README.md`](frontend/README.md) | Frontend: stack, scripts y qué endpoints usa cada pantalla |
-| Swagger (`/docs` con la API levantada) | Probar los endpoints y ver los esquemas exactos |
+| [`workflow/README.md`](workflow/README.md) | Workflow de n8n: flujo, configuración y reglas de uso de tokens |
+| [`docs/DESPLIEGUE_OCI.md`](docs/DESPLIEGUE_OCI.md) | Despliegue en Oracle Cloud y checklist de seguridad |
+| Swagger (`/docs` con la API levantada, solo fuera de producción) | Probar los endpoints y ver los esquemas exactos |
 
 ---
 

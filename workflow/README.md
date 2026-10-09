@@ -1,38 +1,57 @@
-# Workflow n8n — contrato FastAPI
+# Workflow n8n — MediFlow
 
-Tu schema del brief (`datos_extraidos`, `Cola_Revision_Humana`) **no entra** a `POST /api/v1/documents/ingest`. FastAPI espera `IngestPayload` (`datos_generales` + `detalle_clinico` + `archivos`).
+Workflow: [`MediFlow_unificado.json`](MediFlow_unificado.json) (webhook `POST /webhook/triaje-medico`).
 
-Copia original de tus archivos: [`legacy/`](legacy/).
-
-## Flujo de cada ingesta
+## Flujo
 
 ```
-login → crear/reusar documento_id → leer mantenedores → procesar → POST /documents/ingest
+Webhook ─► Preparar corrida ─► GET tipos activos ─► GET colas activas ─► ¿PDF o imagen?
+   PDF con texto ──► Contexto para IA ─► ¿Con imagen? ─► Triaje e Extracción IA (texto)  ─┐
+   imagen / PDF escaneado ─► Normalizador ─► Contexto para IA ─► Triaje IA Visión       ─┤
+                                                                                         ▼
+                       Armar IngestPayload ─► POST /documents/ingest ─► Formatear respuesta ─► Responder
 ```
 
-1. **Token.** No uses un JWT en variable de entorno. En cada corrida *Login FastAPI* llama `POST /api/v1/auth/login` y el Bearer de esa respuesta se usa en catálogos e ingesta. El token expira; la siguiente ingesta vuelve a loguearse.
-2. **Idempotencia.** *Preparar corrida* fija `documento_id` **después del login y antes de procesar**. Si el webhook ya trae `documento_id`, se reutiliza. FastAPI, con el mismo ID, actualiza el registro en vez de duplicarlo. El mapper no genera un ID nuevo al armar el POST.
-3. **Mantenedores.** Tipos y colas salen de `GET /api/v1/catalogs/document-types/active` y `GET /api/v1/catalogs/queues/active` (semilla en `docker/postgres/init.sql`). La IA solo elige entre esos listados; un admin puede agregar tipos/colas sin tocar n8n.
+1. **Preparar corrida** valida el token (`Authorization: Bearer`), el tipo (PDF/PNG/JPG) y el tamaño
+   (≤ 10 MB) **antes** de llamar a la IA, y genera `documento_id` (`DOC-<uuid>`).
+2. Los catálogos activos se leen del backend con el token del usuario: si el token es inválido el flujo
+   se corta con 401 antes de gastar tokens del LLM.
+3. **Contexto para IA** arma el prompt en un único lugar (lo usan los dos nodos LLM).
+4. **Armar IngestPayload** nunca rellena con valores inventados: un dato faltante va `null`, y si falta el
+   score, el paciente o el tipo/cola no existe, marca `requiere_auditoria_humana`.
+5. **Formatear respuesta** devuelve al front el body del backend, o `{status: "error", etapa, detalle}`
+   con el mismo código HTTP si el backend respondió error.
 
-Credenciales de **usuario/contraseña** van en el body del webhook (`api_username`, `api_password`) o se mapean desde un Credential de n8n. Nunca un `MEDIFLOW_API_TOKEN` fijo. La cuenta debe ser `ADMIN` o `AUDITOR_CLINICO` (el ingest no acepta `GESTOR_USUARIOS`).
+## Configuración
+
+| Variable (contenedor n8n) | Para qué |
+|---|---|
+| `MEDIFLOW_API_BASE_URL` | URL del backend vista desde n8n (`http://host.docker.internal:8000` en local, `http://backend:8000` en `docker-compose.prod.yml`). **Nunca** se toma del request: si viniera del navegador, cualquiera podría desviar el token del usuario (y el gasto del LLM) a otro servidor. |
+| `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` | Permite leer la variable anterior desde el nodo Code. Si se deja bloqueado se usa el valor por defecto. |
+| `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none` | Las ejecuciones contienen el archivo en base64, el token y datos del paciente: no se guardan las exitosas. |
 
 ## Cómo importar
 
-1. En n8n: **Import** → [`MediFlow_ingest_IngestPayload.json`](MediFlow_ingest_IngestPayload.json)
-2. Conecta Gemini en *Google Gemini Chat Model*
-3. Webhook `POST /webhook/triaje-medico` (multipart archivo + JSON):
-   - `api_base_url` (ej. `http://host.docker.internal:8000`)
-   - `api_username` / `api_password` (ej. `admin_user` / `admin123` en desarrollo)
-   - `documento_id` (opcional; si reintentas un fallo a mitad, manda **el mismo**)
-4. Prompt largo: [`prompt_gemini_mediflow.md`](prompt_gemini_mediflow.md)
-5. Mapper JS (nodo *Armar IngestPayload*): [`build_ingest_payload.js`](build_ingest_payload.js)
+1. n8n → **Import from file** → `MediFlow_unificado.json`.
+2. Asignar la credencial de Gemini en los dos nodos *Google Gemini Chat Model*.
+3. Activar el workflow.
 
-## Mapa brief → FastAPI
+## Uso de tokens (por qué el prompt es así)
 
-| Brief | FastAPI |
-|---|---|
-| `datos_extraidos` | `datos_generales` |
-| tipo `Imágenes/Laboratorio` | tipo del catálogo (Laboratorio **o** Imágenes) |
-| `Cola_Revision_Humana` | `requiere_auditoria_humana: true` |
-| `Historia_Clinica_Electronica` | `Ficha_Clinica` |
-| `almacenamiento_oci` | lo escribe FastAPI |
+Todo lo que entra al prompt se paga en **cada** documento. Reglas aplicadas:
+
+- **Catálogos en una línea por registro** (`- CODIGO (Nombre): descripción`), no JSON indentado. Cada tipo
+  lleva solo su bloque de `detalle_clinico`, y solo se envían los tipos activos.
+- **El LLM devuelve códigos** (`RECETA`, `Ficha_Clinica`), no nombres: sin mapeos rígidos en el código y
+  sin documentos enviados a auditoría por un nombre mal escrito.
+- **Salida mínima**: solo el bloque del tipo elegido (no 9 bloques en `null`), textos con largo máximo,
+  `temperature: 0` y `maxOutputTokens: 4096`.
+- **Texto del PDF normalizado y acotado**: se colapsan espacios y saltos de línea, y sobre 24.000
+  caracteres se conserva el inicio y el final (`[...texto omitido...]`).
+- **Prefijo estable**: instrucciones fijas → catálogos → documento al final. Así Gemini puede reutilizar
+  la caché implícita del prefijo entre documentos.
+- **Imágenes con la misma cadena simple** (no un nodo *Agent*), con el mismo prompt y catálogos.
+- El base64 del archivo **nunca** pasa por la IA: lo agrega *Armar IngestPayload* al final.
+
+Al cambiar un `codigo` semilla o su bloque, actualizar también `BLOQUES` en *Contexto para IA*
+(es el mismo mapa que `BLOQUE_POR_TIPO` en `backend/app/features/documents/service.py`).

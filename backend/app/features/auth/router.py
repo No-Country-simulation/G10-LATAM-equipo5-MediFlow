@@ -3,12 +3,13 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limit import login_throttle
 from app.core.security import create_access_token
 from app.features.auth.dependencies import get_current_user, oauth2_scheme, require_roles
 from app.features.auth.enums import UserRole
@@ -41,15 +42,33 @@ _USER_MANAGEMENT_ROLES = [UserRole.ADMIN, UserRole.GESTOR_USUARIOS]
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
-    """Autentica al usuario por username/password y retorna un token de acceso JWT."""
+async def login(
+    credentials: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
+    """Autentica al usuario por username/password y retorna un token de acceso JWT.
+
+    Tras `LOGIN_MAX_ATTEMPTS` fallos seguidos del mismo usuario desde la misma IP responde
+    `429` durante `LOGIN_LOCKOUT_MINUTES`.
+    """
+    client_ip = request.client.host if request.client else "desconocida"
+    throttle_key = f"{credentials.username.lower()}|{client_ip}"
+    retry_after = login_throttle.retry_after(throttle_key)
+    if retry_after:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos fallidos. Intenta nuevamente más tarde.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     user = await authenticate_user(db, credentials.username, credentials.password)
     if user is None:
+        login_throttle.register_failure(throttle_key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario o contraseña incorrectos",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    login_throttle.reset(throttle_key)
 
     access_token = create_access_token(
         data={"sub": user.username},

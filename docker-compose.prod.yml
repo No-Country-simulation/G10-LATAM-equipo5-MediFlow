@@ -1,0 +1,100 @@
+# Despliegue completo en una VM de OCI (ver docs/DESPLIEGUE_OCI.md):
+#   cp .env.prod.example .env   # y completar
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Solo `web` (Caddy) publica puertos (80/443). Postgres, backend y n8n quedan en la red interna.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?falta POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?falta POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Sin seed_dev_users.sql: en producción no hay usuarios con contraseñas conocidas.
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?falta JWT_SECRET_KEY}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      BACKEND_CORS_ORIGINS: https://${DOMAIN}
+      OCI_AUTH_MODE: ${OCI_AUTH_MODE:-instance_principal}
+      OCI_REGION: ${OCI_REGION:?falta OCI_REGION}
+      OCI_BUCKET_NAME: ${OCI_BUCKET_NAME:?falta OCI_BUCKET_NAME}
+      OCI_COMPARTMENT_OCID: ${OCI_COMPARTMENT_OCID:-}
+      # Solo con OCI_AUTH_MODE=api_key (la llave va en backend/secrets/, montada en solo lectura)
+      OCI_USER_OCID: ${OCI_USER_OCID:-}
+      OCI_TENANCY_OCID: ${OCI_TENANCY_OCID:-}
+      OCI_FINGERPRINT: ${OCI_FINGERPRINT:-}
+      OCI_KEY_FILE_PATH: /app/secrets/oci_api_key.pem
+    volumes:
+      - ./backend/secrets:/app/secrets:ro
+    networks: [internal]
+
+  n8n:
+    image: n8nio/n8n:${N8N_VERSION:-latest}
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      # Editor solo por túnel SSH: ssh -L 5678:localhost:5678 opc@<ip-vm>
+      - "127.0.0.1:5678:5678"
+    environment:
+      N8N_HOST: ${DOMAIN}
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://${DOMAIN}/
+      N8N_PROXY_HOPS: 1
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?falta N8N_ENCRYPTION_KEY}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Santiago}
+      TZ: ${GENERIC_TIMEZONE:-America/Santiago}
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      MEDIFLOW_API_BASE_URL: http://backend:8000
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: 72
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks: [internal]
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
+    restart: unless-stopped
+    depends_on: [backend, n8n]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?falta DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?falta ACME_EMAIL}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+
+networks:
+  internal:
+
+volumes:
+  postgres_data:
+  n8n_data:
+  caddy_data:
+  caddy_config:

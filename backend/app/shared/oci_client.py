@@ -42,18 +42,22 @@ class OCIStorageClient:
     def client(self) -> oci.object_storage.ObjectStorageClient:
         """Retorna (creando si es necesario) el cliente de bajo nivel de OCI Object Storage."""
         if self._client is None:
-            config = self._build_config()
-            oci.config.validate_config(config)
-            self._client = oci.object_storage.ObjectStorageClient(config)
+            if settings.OCI_AUTH_MODE == "instance_principal":
+                # La VM obtiene credenciales temporales del servicio de metadatos de OCI.
+                signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+                self._client = oci.object_storage.ObjectStorageClient(
+                    {"region": settings.OCI_REGION or signer.region}, signer=signer
+                )
+            else:
+                config = self._build_config()
+                oci.config.validate_config(config)
+                self._client = oci.object_storage.ObjectStorageClient(config)
         return self._client
 
     def _check_bucket_access_sync(self) -> bool:
-        """Realiza `get_namespace` y `get_bucket` de forma bloqueante contra el SDK de OCI."""
-        namespace_response = self.client.get_namespace(
-            compartment_id=settings.OCI_COMPARTMENT_OCID
-        )
-        self.client.get_bucket(
-            namespace_name=namespace_response.data,
+        """Realiza `get_namespace` y `head_bucket` de forma bloqueante contra el SDK de OCI."""
+        self.client.head_bucket(
+            namespace_name=self._get_namespace_sync(),
             bucket_name=settings.OCI_BUCKET_NAME,
         )
         return True
@@ -79,7 +83,7 @@ class OCIStorageClient:
         """Obtiene (cacheando) el namespace de Object Storage del tenancy configurado."""
         if self._namespace is None:
             self._namespace = self.client.get_namespace(
-                compartment_id=settings.OCI_COMPARTMENT_OCID
+                compartment_id=settings.OCI_COMPARTMENT_OCID or None
             ).data
         return self._namespace
 
