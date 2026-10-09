@@ -1,4 +1,6 @@
 import { getStoredToken } from './api';
+import { authService } from './authService';
+import { N8N_WEBHOOK_INGESTION_URL } from '@/config/api';
 import {
   IngestionError,
   type N8nErrorResponse,
@@ -37,17 +39,23 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 export async function ingestDocument(file: File): Promise<N8nIngestResponse> {
-  const webhookUrl: string | undefined = import.meta.env.VITE_N8N_WEBHOOK_URL;
+  const webhookUrl = N8N_WEBHOOK_INGESTION_URL;
   if (!webhookUrl) {
-    throw new IngestionError('CONFIGURACION', 'Falta la variable VITE_N8N_WEBHOOK_URL.');
+    throw new IngestionError('CONFIGURACION', 'Falta la URL de webhook para n8n.');
   }
+
+  const token = authService.getToken() || getStoredToken();
 
   const formData = new FormData();
   formData.append('data', file);
+  if (token) {
+    formData.append('token', token);
+  }
 
   const headers = new Headers();
-  const token = getStoredToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
 
   let response: Response;
   try {

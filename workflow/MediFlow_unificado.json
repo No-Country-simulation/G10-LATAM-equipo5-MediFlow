@@ -1,0 +1,574 @@
+{
+  "name": "MediFlow Unificado - Pipeline Multimodal e Ingesta FastAPI",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "triaje-medico",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1400,
+        -112
+      ],
+      "id": "webhook-ingesta-001",
+      "name": "Ingesta Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = $('Ingesta Webhook').first();\nconst json = webhook.json || {};\nconst headers = json.headers || {};\n\n// Extrae el token desde FormData o desde el encabezado Authorization\nconst authHeader = headers.authorization || headers.Authorization || '';\nconst token = json.token || authHeader.replace(/^Bearer\\s+/i, '').trim();\n\nif (!token) {\n  throw new Error('No se recibió token de autenticación (JWT) desde el frontend');\n}\n\nconst documentoId = json.documento_id || ('DOC-' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())));\n\nreturn [{\n  json: {\n    documento_id: String(documentoId),\n    access_token: token,\n    api_base_url: json.api_base_url || 'http://host.docker.internal:8000'\n  },\n  binary: webhook.binary\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1180,
+        -112
+      ],
+      "id": "prep-corrida-001",
+      "name": "Preparar corrida"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Preparar corrida').first().json.api_base_url }}/api/v1/catalogs/document-types/active",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Preparar corrida').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        -192
+      ],
+      "id": "get-tipos-001",
+      "name": "GET tipos activos"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Preparar corrida').first().json.api_base_url }}/api/v1/catalogs/queues/active",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Preparar corrida').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        -32
+      ],
+      "id": "get-colas-001",
+      "name": "GET colas activas"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prep = $('Preparar corrida').first();\nreturn [{ json: { ...prep.json }, binary: prep.binary }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -740,
+        -112
+      ],
+      "id": "restaurar-bin-001",
+      "name": "Restaurar binario"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cond-pdf",
+                    "leftValue": "=={{ JSON.stringify($binary) }}",
+                    "rightValue": "application/pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cond-img",
+                    "leftValue": "=={{ JSON.stringify($binary) }}",
+                    "rightValue": "image/|png|jpg|jpeg|webp|jfif",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -520,
+        -112
+      ],
+      "id": "switch-tipo-archivo-001",
+      "name": "Tipo de Archivo?"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "={{ Object.keys($binary)[0] || 'data' }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        -220
+      ],
+      "id": "extract-pdf-text-001",
+      "name": "Extract Text from PDF"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-has-text",
+              "leftValue": "=={{ $json.text ? $json.text.trim() : \"\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -80,
+        -220
+      ],
+      "id": "if-tiene-texto-001",
+      "name": "If (tiene texto?)"
+    },
+    {
+      "parameters": {
+        "jsCode": "function listFrom(name) {\n  try {\n    const items = $(name).all();\n    if (items.length === 1 && Array.isArray(items[0].json)) return items[0].json;\n    return items.map((i) => i.json);\n  } catch {\n    return [];\n  }\n}\nconst prep = $('Preparar corrida').first().json;\nconst text = $input.first().json.text || '';\nreturn [{\n  json: {\n    text,\n    catalogo_tipos: JSON.stringify(listFrom('GET tipos activos'), null, 2),\n    catalogo_colas: JSON.stringify(listFrom('GET colas activas'), null, 2),\n    documento_id: prep.documento_id\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        140,
+        -220
+      ],
+      "id": "contexto-ia-001",
+      "name": "Contexto para IA"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=IMPORTANTE: RESPONDE ÚNICAMENTE CON UN OBJETO JSON VÁLIDO. SIN markdown.\n\nUsa SOLO los tipos (campo nombre) y colas (campo codigo) de TIPOS_ACTIVOS y COLAS_ACTIVAS. Lee descripcion / descripcion_semantica. Si los catálogos vienen vacíos: tipo no clasificable, score < 0.70 y requiere_auditoria_humana true.\nNo inventes documento_id ni archivos.\n\nContrato:\n{\"clasificacion\":{\"tipo_documento\":\"\",\"especialidad\":\"\",\"nivel_prioridad\":\"Rutina|Prioritario|Urgente\",\"score_confianza_clasificacion\":0.95},\"datos_generales\":{\"paciente\":{\"rut\":null,\"nombre\":\"\",\"edad\":null},\"medico_solicitante\":{\"rut\":null,\"nombre\":\"\",\"matricula\":null},\"diagnostico_principal\":\"\",\"cie10_sugerido\":null},\"detalle_clinico\":{\"medicamentos\":null,\"examenes_y_laboratorio\":null,\"procedimientos_e_internacion\":null,\"informe_imagenologico\":null,\"nota_atencion_ambulatoria\":null},\"decision_enrutamiento\":{\"destino_principal\":\"\",\"requiere_auditoria_humana\":false,\"justificacion_enrutamiento\":\"\",\"notificacion_generada\":null}}\n\nTIPOS_ACTIVOS:\n{{ $json.catalogo_tipos }}\n\nCOLAS_ACTIVAS:\n{{ $json.catalogo_colas }}\n\nTEXTO:\n{{ $json.text }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        360,
+        -220
+      ],
+      "id": "triaje-extraccion-ia-001",
+      "name": "Triaje e Extracción IA"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        360,
+        -60
+      ],
+      "id": "gemini-chat-model-text-001",
+      "name": "Google Gemini Chat Model (Texto)",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uoXc6pOzbUGOZEa9",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nlet binary = item.binary;\nif (!binary || Object.keys(binary).length === 0) {\n  try {\n    binary = $('Preparar corrida').first().binary;\n  } catch (e) {\n    binary = {};\n  }\n}\nconst binaryKeys = Object.keys(binary || {});\nif (binaryKeys.length === 0) {\n  throw new Error('No se encontró ningún archivo binario en la entrada de imagen.');\n}\nconst binaryPropertyName = binaryKeys[0];\nconst binaryData = binary[binaryPropertyName];\n\nlet mimeType = binaryData.mimeType || 'image/jpeg';\nif (mimeType.includes('jfif') || binaryData.fileExtension === 'jfif') {\n  mimeType = 'image/jpeg';\n}\n\nreturn {\n  json: {\n    ...item.json,\n    es_imagen_normalizada: true,\n    mime_type_detectado: mimeType\n  },\n  binary: {\n    data: {\n      ...binaryData,\n      mimeType: mimeType,\n      fileExtension: mimeType.split('/')[1] || 'jpg'\n    }\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        80
+      ],
+      "id": "normalizador-imagenes-001",
+      "name": "Normalizador de imágenes"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "Analiza la imagen o documento escaneado adjunto. Realiza la lectura OCR correspondiente y extrae los datos del paciente, profesional y detalles clínicos en la estructura JSON definida.",
+        "options": {
+          "systemMessage": "Eres un sistema experto en inspección visual de documentos médicos, exámenes de laboratorio e imagenología (incluyendo documentos escaneados y fotografías).\n\nTu tarea es realizar OCR visual y análisis clínico de la imagen proporcionada para extraer todos los datos del paciente y el contenido médico.\n\nREGLAS DE CLASIFICACIÓN Y EXTRACCIÓN:\n1. Si el documento es una radiografía, ecografía, tomografía, orden o examen de laboratorio, asigna en documento.tipo: \"Informe de Estudio por Imágenes\" y establece clinico.es_estudio_imagen en true.\n2. Si la imagen es borrosa, oscura o ilegible, asigna metadata_control.requiere_revision_humana en true y detalla los motivos.\n3. Extrae con precisión el nombre completo del paciente, su número de RUT/DNI/Identificación, fecha de nacimiento y previsión si están visibles.\n4. Responde ÚNICAMENTE en formato JSON plano matching la siguiente estructura exacta:\n\n{\n  \"documento\": {\n    \"tipo\": \"Informe de Estudio por Imágenes\",\n    \"confianza_clasificacion\": 0.95\n  },\n  \"paciente\": {\n    \"nombre_completo\": \"Nombre encontrado o 'No claro'\",\n    \"identificacion\": \"RUT o DNI encontrado o 'Desconocido'\",\n    \"edad\": null,\n    \"fecha_nacimiento\": null,\n    \"prevision\": null\n  },\n  \"profesional\": {\n    \"nombre_completo\": \"Nombre del profesional o 'No especificado'\",\n    \"especialidad\": \"\",\n    \"matricula\": \"\"\n  },\n  \"clinico\": {\n    \"urgencia\": false,\n    \"hipotesis_diagnostica\": \"Descripción breve del examen, hallazgos o motivo\",\n    \"medicamentos\": [],\n    \"es_estudio_imagen\": true\n  },\n  \"metadata_control\": {\n    \"requiere_revision_humana\": false,\n    \"motivos_revision\": []\n  }\n}",
+          "passthroughBinaryImages": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -80,
+        80
+      ],
+      "id": "agente-ia-vision-001",
+      "name": "Agente IA Visión"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -80,
+        240
+      ],
+      "id": "gemini-chat-model-vision-001",
+      "name": "Google Gemini Chat Model (Visión)",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uoXc6pOzbUGOZEa9",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Nodo Code de n8n: Construcción y sanitización estricta de IngestPayload para FastAPI.\n */\nfunction parseGemini(raw) {\n  if (raw && typeof raw === 'object' && raw.clasificacion) return raw;\n  const text = typeof raw === 'string' ? raw : raw?.text || raw?.output || JSON.stringify(raw || {});\n  const match = String(text).match(/\\{[\\s\\S]*\\}/);\n  if (!match) return {};\n  try {\n    return JSON.parse(match[0]);\n  } catch {\n    return {};\n  }\n}\n\nfunction listFrom(nodeName) {\n  try {\n    const items = $(nodeName).all();\n    if (items.length === 1 && Array.isArray(items[0].json)) return items[0].json;\n    return items.map((i) => i.json);\n  } catch {\n    return [];\n  }\n}\n\nconst item = $input.first();\nconst prep = $('Preparar corrida').first();\nconst gemini = parseGemini(item.json);\n\n// 1. OBTENCIÓN Y CONVERSIÓN REAL A BASE64\nlet archivoBase64 = '';\nlet tipoArchivo = 'PDF';\ntry {\n  const binaryObj = item.binary || prep.binary || {};\n  const binaryKey = Object.keys(binaryObj)[0] || 'data';\n  const buffer = await this.helpers.getBinaryDataBuffer(0, binaryKey);\n  archivoBase64 = buffer.toString('base64');\n  \n  const mime = (binaryObj[binaryKey]?.mimeType || '').toLowerCase();\n  if (mime.includes('pdf')) tipoArchivo = 'PDF';\n  else if (mime.includes('png')) tipoArchivo = 'PNG';\n  else if (mime.includes('tif')) tipoArchivo = 'TIFF';\n  else if (mime.includes('dcm')) tipoArchivo = 'DCM';\n  else tipoArchivo = 'JPG';\n} catch (e) {\n  archivoBase64 = prep.binary?.data?.data || item.binary?.data?.data || '';\n}\n\n// 2. NORMALIZACIÓN DE CATÁLOGOS Y CÓDIGOS VÁLIDOS\nconst tiposCatalogo = listFrom('GET tipos activos');\nconst colasCatalogo = listFrom('GET colas activas');\n\nconst MAPA_TIPOS_CODIGO = {\n  'Informe de Laboratorio': 'LABORATORIO',\n  'Receta Médica': 'RECETA',\n  'Informe de Estudio por Imágenes': 'IMAGENES',\n  'Solicitud de Procedimiento': 'SOLICITUD_PROCEDIMIENTO',\n  'Epicrisis / Informe de Alta': 'EPICRISIS',\n  'Interconsulta / Derivación': 'INTERCONSULTA',\n  'Informe de Anatomía Patológica': 'ANATOMIA_PATOLOGICA',\n  'Protocolo Operatorio': 'PROTOCOLO_OPERATORIO',\n  'Nota de Atención Ambulatoria': 'NOTA_ATENCION',\n  'Otro / No clasificable': 'OTRO',\n};\n\nconst clasificacion = (typeof gemini.clasificacion === 'object' && gemini.clasificacion !== null) ? gemini.clasificacion : {};\nlet rawTipo = clasificacion.tipo_documento || gemini.documento?.tipo || 'OTRO';\nlet tipoCodigo = MAPA_TIPOS_CODIGO[rawTipo] || rawTipo;\n\nconst codigosTiposValidos = new Set(tiposCatalogo.map(t => t.codigo).filter(Boolean));\nif (codigosTiposValidos.size > 0 && !codigosTiposValidos.has(tipoCodigo)) {\n  tipoCodigo = 'OTRO';\n}\n\nlet prioridad = clasificacion.nivel_prioridad || 'Rutina';\nif (!['Rutina', 'Prioritario', 'Urgente'].includes(prioridad)) {\n  prioridad = prioridad === 'Normal' ? 'Rutina' : (prioridad === 'Ambiguo' ? 'Prioritario' : 'Rutina');\n}\n\nconst score = Number(\n  clasificacion.score_confianza_clasificacion ??\n  gemini.documento?.confianza_clasificacion ??\n  0.95\n);\n\n// 3. SANITIZACIÓN DE DATOS GENERALES (OBJETOS ESTRICTOS)\nconst datos = (typeof gemini.datos_generales === 'object' && gemini.datos_generales !== null) ? gemini.datos_generales : {};\nconst rawPac = (typeof datos.paciente === 'object' && datos.paciente !== null) ? datos.paciente : (typeof gemini.paciente === 'object' ? gemini.paciente : {});\nconst rawMed = (typeof datos.medico_solicitante === 'object' && datos.medico_solicitante !== null) ? datos.medico_solicitante : (typeof gemini.profesional === 'object' ? gemini.profesional : {});\nconst clinico = (typeof gemini.clinico === 'object' && gemini.clinico !== null) ? gemini.clinico : {};\nconst decision = (typeof gemini.decision_enrutamiento === 'object' && gemini.decision_enrutamiento !== null) ? gemini.decision_enrutamiento : {};\n\nconst pacienteLimpio = {\n  rut: rawPac.rut || rawPac.identificacion || null,\n  nombre: rawPac.nombre || rawPac.nombre_completo || 'Paciente no identificado',\n  edad: rawPac.edad != null && !isNaN(Number(rawPac.edad)) ? Number(rawPac.edad) : null,\n};\n\nconst medicoLimpio = {\n  rut: rawMed.rut || null,\n  nombre: rawMed.nombre || rawMed.nombre_completo || null,\n  matricula: rawMed.matricula || null,\n};\n\nconst diagnosticoPrincipal = datos.diagnostico_principal || clinico.hipotesis_diagnostica || 'Evaluación médica general';\n\n// 4. SANITIZACIÓN ESTRICTA DE DETALLE CLÍNICO (PREVENCIÓN ERROR 422)\nlet detalleClinicoSanitizado = {};\nif (gemini.detalle_clinico && typeof gemini.detalle_clinico === 'object' && !Array.isArray(gemini.detalle_clinico)) {\n  for (const [key, value] of Object.entries(gemini.detalle_clinico)) {\n    if (value && typeof value === 'object') {\n      detalleClinicoSanitizado[key] = value;\n    }\n  }\n}\n\n// 5. ENRUTAMIENTO Y HITL\nlet destino = decision.destino_principal || 'Ficha_Clinica';\nconst codigosColasValidas = new Set(colasCatalogo.map(c => c.codigo).filter(Boolean));\nif (codigosColasValidas.size > 0 && !codigosColasValidas.has(destino)) {\n  destino = codigosColasValidas.has('Ficha_Clinica') ? 'Ficha_Clinica' : [...codigosColasValidas][0];\n}\n\nconst urgente = prioridad === 'Urgente' || destino === 'Cola_Emergencia_Medica' || clinico.urgencia === true;\nlet hitl = Boolean(decision.requiere_auditoria_humana || gemini.metadata_control?.requiere_revision_humana);\nif (score < 0.85 || tipoCodigo === 'OTRO') hitl = true;\n\nconst notificacion = urgente\n  ? { canal: 'Alerta_Guardia_Medica', mensaje: `ALERTA URGENTE: ${diagnosticoPrincipal}` }\n  : null;\n\nconst documentoId = prep.json.documento_id || ('DOC-' + Date.now());\n\nreturn [{\n  json: {\n    documento_id: String(documentoId),\n    archivos: [\n      {\n        tipo_archivo: tipoArchivo,\n        archivo_base64: String(archivoBase64),\n        rol: 'documento_principal',\n      },\n    ],\n    clasificacion: {\n      tipo_documento: tipoCodigo,\n      especialidad: clasificacion.especialidad || rawMed.especialidad || 'Medicina General',\n      nivel_prioridad: urgente ? 'Urgente' : prioridad,\n      score_confianza_clasificacion: score,\n    },\n    datos_generales: {\n      paciente: pacienteLimpio,\n      medico_solicitante: medicoLimpio,\n      diagnostico_principal: String(diagnosticoPrincipal),\n      cie10_sugerido: datos.cie10_sugerido || clinico.codigo_cie10 || null,\n    },\n    detalle_clinico: detalleClinicoSanitizado,\n    decision_enrutamiento: {\n      destino_principal: destino,\n      requiere_auditoria_humana: hitl,\n      justificacion_enrutamiento: decision.justificacion_enrutamiento || (hitl ? 'Derivado a auditoría asistencial' : 'Enrutamiento automatizado'),\n      notificacion_generada: notificacion,\n    },\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        -112
+      ],
+      "id": "armar-ingest-payload-001",
+      "name": "Armar IngestPayload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Preparar corrida').first().json.api_base_url }}/api/v1/documents/ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Preparar corrida').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        820,
+        -112
+      ],
+      "id": "post-fastapi-ingest-001",
+      "name": "POST FastAPI Ingest"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        -112
+      ],
+      "id": "responder-json-001",
+      "name": "Responder JSON"
+    }
+  ],
+  "connections": {
+    "Ingesta Webhook": {
+      "main": [
+        [
+          {
+            "node": "Preparar corrida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar corrida": {
+      "main": [
+        [
+          {
+            "node": "GET tipos activos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET tipos activos": {
+      "main": [
+        [
+          {
+            "node": "GET colas activas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET colas activas": {
+      "main": [
+        [
+          {
+            "node": "Restaurar binario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restaurar binario": {
+      "main": [
+        [
+          {
+            "node": "Tipo de Archivo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipo de Archivo?": {
+      "main": [
+        [
+          {
+            "node": "Extract Text from PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizador de imágenes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizador de imágenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text from PDF": {
+      "main": [
+        [
+          {
+            "node": "If (tiene texto?)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If (tiene texto?)": {
+      "main": [
+        [
+          {
+            "node": "Contexto para IA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizador de imágenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contexto para IA": {
+      "main": [
+        [
+          {
+            "node": "Triaje e Extracción IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model (Texto)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Triaje e Extracción IA",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triaje e Extracción IA": {
+      "main": [
+        [
+          {
+            "node": "Armar IngestPayload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizador de imágenes": {
+      "main": [
+        [
+          {
+            "node": "Agente IA Visión",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model (Visión)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente IA Visión",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente IA Visión": {
+      "main": [
+        [
+          {
+            "node": "Armar IngestPayload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar IngestPayload": {
+      "main": [
+        [
+          {
+            "node": "POST FastAPI Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST FastAPI Ingest": {
+      "main": [
+        [
+          {
+            "node": "Responder JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "mediflow-unificado-v2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "mediflow-production-integration"
+  },
+  "id": "mediflow-unificado",
+  "tags": []
+}
