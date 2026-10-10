@@ -5,6 +5,7 @@ import jwt
 
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.features.auth import dependencies as auth_dependencies
 from app.features.auth import router as auth_router
 from app.features.auth.enums import UserRole
 from tests.conftest import make_area, make_user
@@ -304,3 +305,55 @@ async def test_admin_cannot_assign_inactive_area(client, login_as, db):
 
     assert r.status_code == 422
     assert user.area.codigo == "ADMISION"
+
+
+# --- Eliminación de usuarios (Smart Delete) ---
+
+
+async def test_delete_user_without_activity_is_hard_delete(client, login_as, db):
+    target = make_user(UserRole.OPERADOR, username="op")
+    db.queue(target, 0, 0)  # usuario, documentos y cambios de catálogos
+    headers = login_as(UserRole.GESTOR_USUARIOS)
+    r = await client.delete(f"/api/v1/users/{target.id}", headers=headers)
+
+    assert r.status_code == 200
+    assert r.json()["deletion_type"] == "HARD_DELETE"
+    assert db.deleted == [target]
+
+
+async def test_delete_user_with_activity_is_soft_delete(client, login_as, db):
+    target = make_user(UserRole.AUDITOR_CLINICO, username="aud")
+    db.queue(target, 4, 1)
+    headers = login_as(UserRole.ADMIN)
+    r = await client.delete(f"/api/v1/users/{target.id}", headers=headers)
+
+    assert r.json()["deletion_type"] == "SOFT_DELETE"
+    assert "5 registro(s)" in r.json()["message"]
+    assert target.is_active is False
+    assert db.deleted == []
+
+
+async def test_delete_missing_user_returns_404(client, login_as):
+    headers = login_as(UserRole.ADMIN)
+    assert (await client.delete(f"/api/v1/users/{uuid4()}", headers=headers)).status_code == 404
+
+
+async def test_cannot_delete_own_account(client, login_as, db):
+    headers = login_as(UserRole.ADMIN)
+    me = await auth_dependencies.get_user_by_username(None, "tester")
+    db.queue(me)
+    r = await client.delete(f"/api/v1/users/{me.id}", headers=headers)
+    assert r.status_code == 409
+    assert db.deleted == []
+
+
+async def test_gestor_cannot_delete_admin(client, login_as, db):
+    db.queue(make_user(UserRole.ADMIN, username="root"))
+    headers = login_as(UserRole.GESTOR_USUARIOS)
+    r = await client.delete(f"/api/v1/users/{uuid4()}", headers=headers)
+    assert r.status_code == 403
+
+
+async def test_delete_user_is_role_restricted(client, login_as):
+    headers = login_as(UserRole.AUDITOR_CLINICO)
+    assert (await client.delete(f"/api/v1/users/{uuid4()}", headers=headers)).status_code == 403

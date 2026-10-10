@@ -9,6 +9,7 @@ import type {
   UserOut,
   UserResponse,
 } from '../types/auth';
+import type { DeleteResponse } from '../types/catalog';
 
 export const authService = {
   getToken: (): string | null => getStoredToken(),
@@ -41,6 +42,10 @@ export const authService = {
 
   updateUser: (userId: string, payload: UserAdminUpdateRequest): Promise<UserResponse> => {
     return api.patch<UserResponse>(FASTAPI_ENDPOINTS.users.detail(userId), payload);
+  },
+
+  deleteUser: (userId: string): Promise<DeleteResponse> => {
+    return api.delete<DeleteResponse>(FASTAPI_ENDPOINTS.users.detail(userId));
   },
 };
 

@@ -1,5 +1,7 @@
-import { Shield, UserCog, Stethoscope, Headphones } from 'lucide-react';
+import { Building2, Headphones, Pencil, Shield, Stethoscope, Trash2, UserCog } from 'lucide-react';
 import type { UserResponse, UserRole } from '../../types/auth';
+import { ActiveToggle } from '../common/ActiveToggle';
+import { ICON_BUTTON } from '../common/formStyles';
 
 const ROLE_BADGES: Record<UserRole, { bg: string; text: string; border: string; icon: typeof Shield }> = {
   ADMIN: {
@@ -31,11 +33,20 @@ const ROLE_BADGES: Record<UserRole, { bg: string; text: string; border: string; 
 interface UserTableRowProps {
   user: UserResponse;
   isSelf: boolean;
+  /** Solo un ADMIN puede eliminar a otro ADMIN (el backend también lo valida). */
+  canDelete: boolean;
   isUpdating: boolean;
   onToggleStatus: (u: UserResponse) => void;
+  onEdit: (u: UserResponse) => void;
+  onDelete: (u: UserResponse) => void;
 }
 
-export const UserTableRow = ({ user, isSelf, isUpdating, onToggleStatus }: UserTableRowProps) => {
+const deleteTitle = (isSelf: boolean, canDelete: boolean): string => {
+  if (isSelf) return 'No puedes eliminar tu propia cuenta';
+  return canDelete ? 'Eliminar usuario' : 'Solo un ADMIN puede eliminar a otro ADMIN';
+};
+
+export const UserTableRow = ({ user, isSelf, canDelete, isUpdating, onToggleStatus, onEdit, onDelete }: UserTableRowProps) => {
   const roleCfg = ROLE_BADGES[user.role];
   const Icon = roleCfg.icon;
 
@@ -65,37 +76,23 @@ export const UserTableRow = ({ user, isSelf, isUpdating, onToggleStatus }: UserT
         </span>
       </td>
       <td className="px-5 py-3.5">
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            disabled={isSelf || isUpdating}
-            onClick={() => void onToggleStatus(user)}
-            title={
-              isSelf
-                ? 'No puedes desactivar tu propia cuenta'
-                : user.is_active
-                ? 'Clic para desactivar acceso'
-                : 'Clic para reactivar acceso'
-            }
-            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
-              user.is_active ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-slate-700 hover:bg-slate-600'
-            }`}
-          >
-            <span
-              aria-hidden="true"
-              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                user.is_active ? 'translate-x-4' : 'translate-x-0'
-              }`}
-            />
-          </button>
-          <span
-            className={`text-[11px] font-medium ${
-              user.is_active ? 'text-emerald-400' : 'text-slate-400'
-            }`}
-          >
-            {isUpdating ? 'Actualizando...' : user.is_active ? 'Activo' : 'Inactivo'}
+        {user.area ? (
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-300" title={user.area.codigo}>
+            <Building2 className="w-3 h-3 text-slate-500" />
+            {user.area.nombre}
           </span>
-        </div>
+        ) : (
+          <span className="text-[11px] text-amber-400/80 italic">Sin área</span>
+        )}
+      </td>
+      <td className="px-5 py-3.5">
+        <ActiveToggle
+          isActive={user.is_active}
+          isUpdating={isUpdating}
+          disabled={isSelf}
+          disabledReason="No puedes desactivar tu propia cuenta"
+          onToggle={() => onToggleStatus(user)}
+        />
       </td>
       <td className="px-5 py-3.5 text-slate-400 text-[11px]">
         {new Date(user.created_at).toLocaleDateString('es-CL', {
@@ -103,6 +100,29 @@ export const UserTableRow = ({ user, isSelf, isUpdating, onToggleStatus }: UserT
           month: 'short',
           day: 'numeric',
         })}
+      </td>
+      <td className="px-5 py-3.5">
+        <div className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => onEdit(user)}
+            title="Editar usuario"
+            aria-label={`Editar ${user.username}`}
+            className={`${ICON_BUTTON} hover:text-indigo-300 hover:bg-indigo-500/10 hover:border-indigo-500/30`}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(user)}
+            disabled={isSelf || !canDelete}
+            title={deleteTitle(isSelf, canDelete)}
+            aria-label={`Eliminar ${user.username}`}
+            className={`${ICON_BUTTON} hover:text-rose-300 hover:bg-rose-500/10 hover:border-rose-500/30`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </td>
     </tr>
   );

@@ -32,12 +32,14 @@ from app.features.auth.schemas import (
     UserOut,
     UserResponse,
 )
+from app.features.catalogs.schemas import DeleteResponse
 from app.features.auth.service import (
     admin_update_user,
     authenticate_user,
     change_password,
     consume_refresh_token,
     create_user,
+    delete_user,
     get_user_by_username,
     get_users_paginated,
     revoke_token,
@@ -242,3 +244,19 @@ async def update_user(
     """
     user = await admin_update_user(user_id, payload, db, current_user)
     return UserResponse.model_validate(user)
+
+
+@users_router.delete("/{user_id}", response_model=DeleteResponse)
+async def remove_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_USER_MANAGEMENT_ROLES)),
+) -> DeleteResponse:
+    """Smart Delete: borrado físico si el usuario no tiene actividad registrada; si la tiene
+    (documentos subidos, auditados o tomados, o cambios de catálogos), se desactiva para
+    conservar la autoría. Requiere rol ADMIN o GESTOR_USUARIOS.
+
+    `409` al intentar eliminarse a sí mismo; `403` si un no-ADMIN intenta eliminar a un ADMIN.
+    """
+    deletion_type, message = await delete_user(user_id, db, current_user)
+    return DeleteResponse(message=message, deletion_type=deletion_type)

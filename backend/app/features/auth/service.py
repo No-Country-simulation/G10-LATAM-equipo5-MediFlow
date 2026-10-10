@@ -5,15 +5,17 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_password_hash, verify_password
 from app.features.auth.enums import UserRole
 from app.features.auth.models import RevokedToken, User
-from app.features.catalogs.models import Area
+from app.features.catalogs.models import Area, CatalogHistory
+from app.features.catalogs.schemas import DeletionType
 from app.features.catalogs.service import get_active_area_or_none
+from app.features.documents.models import ClinicalDocument
 from app.features.auth.schemas import (
     PasswordChangeRequest,
     ProfileUpdateRequest,
@@ -157,17 +159,73 @@ async def create_user(payload: UserCreateRequest, db: AsyncSession, requesting_u
     return user
 
 
+async def _get_user_or_404(db: AsyncSession, user_id: UUID) -> User:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    return user
+
+
+async def _count_user_activity(db: AsyncSession, user_id: UUID) -> int:
+    """Registros que identifican al usuario como autor: documentos que subió, auditó o tomó, y
+    cambios de catálogos. Borrarlo físicamente dejaría esa trazabilidad en `NULL`."""
+    documents = await db.execute(
+        select(func.count(ClinicalDocument.id)).where(
+            or_(
+                ClinicalDocument.uploaded_by_id == user_id,
+                ClinicalDocument.audited_by_id == user_id,
+                ClinicalDocument.asignado_a_id == user_id,
+            )
+        )
+    )
+    catalog_changes = await db.execute(
+        select(func.count(CatalogHistory.id)).where(CatalogHistory.changed_by_id == user_id)
+    )
+    return documents.scalar_one() + catalog_changes.scalar_one()
+
+
+async def delete_user(
+    user_id: UUID, db: AsyncSession, requesting_user: User
+) -> tuple[DeletionType, str]:
+    """Smart Delete de un usuario: físico si no tiene actividad registrada; si la tiene, se desactiva.
+
+    Nadie puede eliminarse a sí mismo y solo un ADMIN puede eliminar a otro ADMIN.
+    """
+    user = await _get_user_or_404(db, user_id)
+    if user.id == requesting_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="No puedes eliminar tu propia cuenta"
+        )
+    if user.role == UserRole.ADMIN and requesting_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un usuario con rol ADMIN puede eliminar a otro ADMIN",
+        )
+
+    activity = await _count_user_activity(db, user.id)
+    if activity == 0:
+        await db.delete(user)
+        result: tuple[DeletionType, str] = (
+            "HARD_DELETE",
+            f"Usuario {user.username} eliminado físicamente de la base de datos",
+        )
+    else:
+        user.is_active = False
+        result = (
+            "SOFT_DELETE",
+            f"Usuario {user.username} desactivado: tiene {activity} registro(s) de actividad "
+            "(documentos o cambios de catálogos) que deben conservar su autoría",
+        )
+    await db.commit()
+    return result
+
+
 async def admin_update_user(
     user_id: UUID, payload: UserAdminUpdateRequest, db: AsyncSession, requesting_user: User
 ) -> User:
     """Busca un usuario por `user_id` y actualiza los campos administrativos presentes en el payload."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado"
-        )
-
+    user = await _get_user_or_404(db, user_id)
     updates = payload.model_dump(exclude_unset=True, exclude_none=True)
 
     if "role" in updates:

@@ -8,11 +8,13 @@ import DocumentsPage from './pages/DocumentsPage';
 import IngestionPage from './pages/IngestionPage';
 import AuditPage from './pages/AuditPage';
 import UsersPage from './pages/UsersPage';
+import CatalogsPage from './pages/CatalogsPage';
 import TriagePage from './pages/TriagePage';
 import { RoleRoute } from './components/auth/RoleRoute';
 import { useAuth } from './hooks/useAuth';
 import {
   AUDIT_ACCESS_ROLES,
+  CATALOG_MANAGEMENT_ROLES,
   DOCUMENT_ACCESS_ROLES,
   INGEST_ACCESS_ROLES,
   USER_MANAGEMENT_ROLES,
@@ -81,6 +83,14 @@ const App = () => {
               element={
                 <RoleRoute allowedRoles={USER_MANAGEMENT_ROLES}>
                   <UsersPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/catalogos"
+              element={
+                <RoleRoute allowedRoles={CATALOG_MANAGEMENT_ROLES}>
+                  <CatalogsPage />
                 </RoleRoute>
               }
             />

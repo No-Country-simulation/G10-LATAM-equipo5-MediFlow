@@ -4,6 +4,8 @@ export const DOCUMENT_ACCESS_ROLES: UserRole[] = ['ADMIN', 'AUDITOR_CLINICO', 'O
 export const INGEST_ACCESS_ROLES: UserRole[] = ['ADMIN', 'AUDITOR_CLINICO', 'OPERADOR'];
 export const AUDIT_ACCESS_ROLES: UserRole[] = ['ADMIN', 'AUDITOR_CLINICO'];
 export const USER_MANAGEMENT_ROLES: UserRole[] = ['ADMIN', 'GESTOR_USUARIOS'];
+// GESTOR_USUARIOS solo ve la pestaña de Áreas (ver catalogConfig).
+export const CATALOG_MANAGEMENT_ROLES: UserRole[] = ['ADMIN', 'GESTOR_USUARIOS'];
 
 export const canAccessRoute = (
   userRole: UserRole | undefined,

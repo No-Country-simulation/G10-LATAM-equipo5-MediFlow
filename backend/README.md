@@ -177,6 +177,7 @@ Todos con prefijo `/api/v1`.
 | GET | `/users` | Lista paginada de usuarios | `ADMIN`, `GESTOR_USUARIOS` |
 | POST | `/users` | Crea un usuario (`username`, `email`, `password`, `full_name`, `role`, `area_id`; rol por defecto `AUDITOR_CLINICO`). `area_id` es **obligatorio** y debe ser un [área](#áreas) activa (`422` si no) | `ADMIN`, `GESTOR_USUARIOS` |
 | PATCH | `/users/{user_id}` | Cambia nombre, email, rol, área (`area_id`, debe estar activa) o activa/desactiva | `ADMIN`, `GESTOR_USUARIOS` |
+| DELETE | `/users/{user_id}` | Smart Delete: borrado físico si el usuario no tiene actividad; si subió, auditó o tomó documentos, o cambió catálogos, solo se desactiva para conservar la autoría. `409` si es tu propia cuenta; `403` si un no-ADMIN intenta eliminar a un ADMIN | `ADMIN`, `GESTOR_USUARIOS` |
 
 Las respuestas de usuario (`/auth/login`, `/auth/me`, `/users`, ...) incluyen `area: {id, codigo, nombre}` (`null` en usuarios creados antes de existir las áreas). El usuario no puede cambiar su propia área desde `PATCH /users/me`.
 
@@ -467,7 +468,7 @@ Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión de base de dato
 | `test_security.py` | Hash de contraseñas y tokens JWT (`exp`, `jti` único) |
 | `test_ingest_service.py` | Regla de triaje (umbral 0.85, tipo OTRO, catálogos, bloque vs. tipo, `campos_adicionales` vs. JSON Schema), formatos de archivo, `documento_id` repetido, quién subió el documento, JSON sin base64, subida a OCI, compensación ante fallos de OCI o base de datos, médico por RUT |
 | `test_documents_api.py` | Ingesta (401/403/400/409/500, rol OPERADOR, motivos de auditoría, solo el bloque poblado), JSON completo de respuesta para React, listado paginado y filtros |
-| `test_auth_api.py` | Login, token inválido, usuario inactivo, logout, token revocado, refresh token (rotación, reúso, expiración, tipo de token, logout), restricción por rol, área obligatoria y activa al crear/editar usuarios |
+| `test_auth_api.py` | Login, token inválido, usuario inactivo, logout, token revocado, refresh token (rotación, reúso, expiración, tipo de token, logout), restricción por rol, área obligatoria y activa al crear/editar usuarios, Smart Delete de usuarios (físico/lógico, propia cuenta, ADMIN) |
 | `test_areas_api.py` | Mantenedor de áreas: permisos (ADMIN y GESTOR_USUARIOS escriben), formato de `codigo`, actualización parcial, Smart Delete según usuarios y documentos asociados, historial |
 | `test_document_detail_api.py` | Detalle de documento: acceso (404 para documentos ajenos del OPERADOR), URL por archivo, tablas por tipo, campos relevantes (incluidos los de tipos personalizados), detalle sin URLs si OCI falla; área de origen en la ingesta y en el listado |
 | `test_audit_api.py` | Detalle con URL por archivo y motivos, resolución con valores corregidos arriba y `version_ia`, corrección de `detalle_clinico`, validación contra catálogos, descarte, tomar/liberar caso, errores (404/409/422/500) |

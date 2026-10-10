@@ -1,13 +1,22 @@
 import { useState } from 'react';
-import { Users, AlertCircle, RefreshCw, UserPlus, CheckCircle2, X } from 'lucide-react';
+import { Users, RefreshCw, UserPlus } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUsersManagement } from '../hooks/useUsersManagement';
-import { CreateUserModal } from '../components/users/CreateUserModal';
+import { UserFormModal } from '../components/users/UserFormModal';
 import { UsersTable } from '../components/users/UsersTable';
+import { ConfirmDialog } from '../components/common/ConfirmDialog';
+import { PageHeader } from '../components/common/PageHeader';
+import { StatusBanner } from '../components/common/StatusBanner';
+import { BUTTON_CREATE, BUTTON_SECONDARY } from '../components/common/formStyles';
+import type { UserResponse } from '../types/auth';
+
+/** `null`: cerrado; `'new'`: alta; un usuario: edición. */
+type FormTarget = UserResponse | 'new' | null;
 
 const UsersPage = () => {
   const { user: currentUser } = useAuth();
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formTarget, setFormTarget] = useState<FormTarget>(null);
+  const [userToDelete, setUserToDelete] = useState<UserResponse | null>(null);
   const {
     users,
     isLoading,
@@ -17,84 +26,70 @@ const UsersPage = () => {
     fetchUsers,
     toggleUserStatus,
     createNewUser,
+    updateExistingUser,
+    deleteUser,
     dismissMessages,
   } = useUsersManagement();
 
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+    await deleteUser(userToDelete);
+    setUserToDelete(null);
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Users className="w-5 h-5 text-indigo-400" />
-            <span>Directorio de Usuarios</span>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">
-              Control RBAC
-            </span>
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Gestión de roles y estado operativo del personal clínico y administrativo
-          </p>
-        </div>
+      <PageHeader
+        icon={Users}
+        title="Directorio de Usuarios"
+        badge="Control RBAC"
+        subtitle="Gestión de roles, áreas y estado operativo del personal clínico y administrativo"
+        actions={
+          <>
+            <button type="button" onClick={() => void fetchUsers()} disabled={isLoading} className={BUTTON_SECONDARY}>
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Actualizar</span>
+            </button>
+            <button type="button" onClick={() => setFormTarget('new')} className={BUTTON_CREATE}>
+              <UserPlus className="w-4 h-4" />
+              <span>Nuevo Usuario</span>
+            </button>
+          </>
+        }
+      />
 
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => void fetchUsers()}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 text-xs font-medium hover:bg-slate-800 transition disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Actualizar</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-md shadow-indigo-950/40 border border-indigo-500/30 transition cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Nuevo Usuario</span>
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-xs flex items-center justify-between gap-2 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-            <span>{error}</span>
-          </div>
-          <button type="button" onClick={dismissMessages} className="text-rose-400 hover:text-white p-1 cursor-pointer">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {successMessage && (
-        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-300 text-xs flex items-center justify-between gap-2 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-            <span>{successMessage}</span>
-          </div>
-          <button type="button" onClick={dismissMessages} className="text-emerald-400 hover:text-white p-1 cursor-pointer">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+      <StatusBanner tone="error" message={error} onDismiss={dismissMessages} />
+      <StatusBanner tone="success" message={successMessage} onDismiss={dismissMessages} />
 
       <UsersTable
         users={users}
         isLoading={isLoading}
         currentUserId={currentUser?.id}
+        currentUserRole={currentUser?.role}
         updatingUserId={updatingUserId}
-        onToggleStatus={toggleUserStatus}
+        onToggleStatus={(u) => void toggleUserStatus(u)}
+        onEdit={setFormTarget}
+        onDelete={setUserToDelete}
       />
 
-      <CreateUserModal
-        isOpen={isModalOpen}
-        currentUserRole={currentUser?.role}
-        onClose={() => setIsModalOpen(false)}
-        onSubmit={createNewUser}
+      {formTarget !== null && (
+        <UserFormModal
+          key={formTarget === 'new' ? 'new' : formTarget.id}
+          user={formTarget === 'new' ? undefined : formTarget}
+          currentUserRole={currentUser?.role}
+          onClose={() => setFormTarget(null)}
+          onCreate={createNewUser}
+          onUpdate={updateExistingUser}
+        />
+      )}
+
+      <ConfirmDialog
+        isOpen={userToDelete !== null}
+        title="Eliminar Usuario"
+        message={`¿Eliminar al usuario ${userToDelete?.username ?? ''}?`}
+        detail="Si tiene actividad registrada (documentos subidos o auditados, cambios de catálogos) solo se desactivará, para conservar la trazabilidad."
+        onConfirm={handleConfirmDelete}
+        onClose={() => setUserToDelete(null)}
       />
     </div>
   );
