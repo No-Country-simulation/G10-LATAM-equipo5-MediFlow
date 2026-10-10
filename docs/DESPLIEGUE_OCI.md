@@ -52,7 +52,7 @@ Producción no carga los usuarios de prueba (`seed_dev_users.sql`). Crear el pri
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backend python -m app.cli create-admin \
-    --username admin --email admin@hospital.cl --full-name "Administrador"
+    --username admin --email admin@hospital.cl --full-name "Administrador" --area ADMINISTRACION
 ```
 
 ## 4. n8n

@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 from app.core.config import settings
+from app.features.catalogs.schemas import AreaSummary
 
 NivelPrioridad = Literal["Rutina", "Prioritario", "Urgente"]
 
@@ -320,17 +321,86 @@ class DocumentListItemResponse(BaseModel):
     estado: str
     rut_paciente: str | None
     nombre_paciente: str | None
+    medico_nombre: str | None = None
     tipo_documento: str
+    especialidad: str | None = None
     nivel_prioridad: str
     score_confianza: float
+    diagnostico_principal: str | None = None
+    cie10_sugerido: str | None = None
     destino_enrutamiento: str | None
     oci_json_path: str
     uploaded_by_id: UUID | None = None
+    area_origen: AreaSummary | None = None
     motivos_auditoria: list[str] = []
     asignado_a_id: UUID | None = None
     asignado_a_username: str | None = None
     asignado_at: datetime | None = None
     created_at: datetime
+
+
+class ArchivoDocumento(BaseModel):
+    """Un archivo original del documento con su URL pre-firmada de solo lectura.
+
+    `visualizable` indica si el navegador puede mostrarlo (PDF/PNG/JPG); TIFF y DICOM se
+    ofrecen como descarga. `url` es `None` si OCI no pudo generarla (ver `aviso_archivos`).
+    """
+
+    orden: int
+    tipo_archivo: str
+    rol: str | None
+    url: str | None
+    visualizable: bool
+
+
+class ArchivoPreview(ArchivoDocumento):
+    """Archivo con URL garantizada: la auditoría no se puede hacer sin ver el original."""
+
+    url: str
+
+
+class CampoRelevante(BaseModel):
+    """Campo del detalle clínico sin tabla propia, listo para mostrarse (`etiqueta`: `valor`)."""
+
+    campo: str
+    etiqueta: str
+    valor: Any
+
+
+class TablasClinicas(BaseModel):
+    """Datos tabulares del documento, leídos de las tablas hijas normalizadas.
+
+    Solo viene poblada la tabla del tipo: medicamentos (RECETA), paneles con sus parámetros
+    (LABORATORIO) o procedimientos realizados (EPICRISIS).
+    """
+
+    medicamentos: list[MedicamentoItem] = []
+    paneles_laboratorio: list[PanelLaboratorio] = []
+    procedimientos: list[str] = []
+
+
+class DetalleDocumento(BaseModel):
+    """Detalle clínico para mostrar: las tablas del tipo y los campos de texto relevantes."""
+
+    tablas: TablasClinicas = Field(default_factory=TablasClinicas)
+    campos_relevantes: list[CampoRelevante] = []
+
+
+class DocumentDetailResponse(DocumentListItemResponse):
+    """Detalle completo de un documento: datos del caso, archivos originales y detalle clínico."""
+
+    edad_paciente: int | None = None
+    medico_rut: str | None = None
+    requiere_auditoria: bool
+    justificacion_enrutamiento: str | None = None
+    audited_by_id: UUID | None = None
+    audited_at: datetime | None = None
+    audit_notes: str | None = None
+    updated_at: datetime | None = None
+    archivos: list[ArchivoDocumento] = []
+    preview_expira_en_minutos: int = settings.DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES
+    aviso_archivos: str | None = None
+    detalle: DetalleDocumento = Field(default_factory=DetalleDocumento)
 
 
 class PaginatedDocumentResponse(BaseModel):

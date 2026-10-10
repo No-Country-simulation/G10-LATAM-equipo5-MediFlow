@@ -20,8 +20,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.features.audit.schemas import (
-    ArchivoPreview,
     AuditClaimResponse,
     AuditDetailResponse,
     AuditDiscardRequest,
@@ -29,8 +29,9 @@ from app.features.audit.schemas import (
 )
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
+from app.features.documents.detail import attachment_fields, create_preview_url
 from app.features.documents.models import ClinicalDocument
-from app.features.documents.schemas import TIPOS_ARCHIVO_PRINCIPAL, DetalleClinicoExtract
+from app.features.documents.schemas import ArchivoPreview, DetalleClinicoExtract
 from app.features.documents.service import (
     active_document_types,
     active_queue_codes,
@@ -41,7 +42,6 @@ from app.shared.oci_client import oci_storage_client
 
 logger = logging.getLogger(__name__)
 
-PREVIEW_URL_EXPIRE_MINUTES = 15
 CLAIM_TTL_MINUTES = 30
 
 ESTADO_PENDIENTE = "PENDIENTE_AUDITORIA"
@@ -202,22 +202,13 @@ async def get_audit_case(documento_id: str, db: AsyncSession) -> AuditDetailResp
 
     # El adjunto de `orden` más bajo es el archivo principal (el informe/receta en sí);
     # los siguientes son imágenes de respaldo del mismo estudio. Las URLs se piden en paralelo.
+    # A diferencia del detalle de documentos, aquí un fallo de OCI corta la respuesta: un
+    # auditor no puede resolver el caso sin ver el original.
     urls = await asyncio.gather(
-        *(
-            oci_storage_client.create_preauthenticated_request(
-                attachment.oci_path, expire_minutes=PREVIEW_URL_EXPIRE_MINUTES
-            )
-            for attachment in document.attachments
-        )
+        *(create_preview_url(attachment.oci_path) for attachment in document.attachments)
     )
     archivos = [
-        ArchivoPreview(
-            orden=attachment.orden,
-            tipo_archivo=attachment.tipo_archivo,
-            rol=attachment.rol,
-            url=url,
-            visualizable=attachment.tipo_archivo in TIPOS_ARCHIVO_PRINCIPAL,
-        )
+        ArchivoPreview(**attachment_fields(attachment), url=url)
         for attachment, url in zip(document.attachments, urls, strict=True)
     ]
 
@@ -226,7 +217,7 @@ async def get_audit_case(documento_id: str, db: AsyncSession) -> AuditDetailResp
         estado=document.estado,
         oci_preview_url=archivos[0].url,
         archivos=archivos,
-        preview_expira_en_minutos=PREVIEW_URL_EXPIRE_MINUTES,
+        preview_expira_en_minutos=settings.DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES,
         motivos_auditoria=document.motivos_auditoria,
         rut_paciente=document.rut_paciente,
         nombre_paciente=document.nombre_paciente,

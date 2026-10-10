@@ -273,11 +273,11 @@ Prefijo: `/api/v1`. Salvo `health`, `login` y `refresh`, todos requieren `Author
 | Área | Endpoints |
 |---|---|
 | Salud | `GET /health` |
-| Autenticación | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` |
+| Autenticación | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me` |
 | Perfil y usuarios | `/users/me`, `/users/me/change-password`, `/users` |
-| Documentos | `POST /documents/ingest`, `GET /documents` |
+| Documentos | `POST /documents/ingest`, `GET /documents`, `GET /documents/{documento_id}` (detalle con URLs pre-firmadas) |
 | Auditoría | `GET /audit/{documento_id}`, `POST`/`DELETE /audit/{documento_id}/claim`, `PUT /audit/{documento_id}/resolve`, `PUT /audit/{documento_id}/discard` |
-| Tablas maestras | CRUD en `/catalogs/queues` y `/catalogs/document-types`, más `/active` (para n8n) y `/{id}/history` en cada una |
+| Tablas maestras | CRUD en `/catalogs/queues`, `/catalogs/document-types` y `/catalogs/areas`, más `/active` y `/{id}/history` en cada una |
 
 ---
 

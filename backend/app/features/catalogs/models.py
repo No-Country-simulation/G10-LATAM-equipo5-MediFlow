@@ -72,6 +72,33 @@ class DocumentType(Base):
     )
 
 
+class Area(Base):
+    """Área o servicio del hospital al que pertenece un usuario (Urgencias, Admisión, etc.).
+
+    A diferencia de las colas y los tipos, se referencia por FK (`users.area_id` y
+    `clinical_documents.area_origen_id`): no viaja en el prompt del LLM.
+    """
+
+    __tablename__ = "areas"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    codigo: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    nombre: Mapped[str] = mapped_column(String(150), nullable=False)
+    descripcion: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    es_sistema: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
 class CatalogHistory(Base):
     """Bitácora de cambios de los catálogos: quién cambió qué, cuándo y con qué valores.
 

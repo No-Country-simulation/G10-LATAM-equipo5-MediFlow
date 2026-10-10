@@ -1,4 +1,4 @@
-"""Router de catálogos y tablas maestras (colas de enrutamiento y tipos de documento)."""
+"""Router de catálogos y tablas maestras (colas de enrutamiento, tipos de documento y áreas)."""
 
 from uuid import UUID
 
@@ -11,6 +11,10 @@ from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.catalogs import service
 from app.features.catalogs.schemas import (
+    AreaCreate,
+    AreaResponse,
+    AreaSummary,
+    AreaUpdate,
     CatalogHistoryResponse,
     DeleteResponse,
     DocumentTypeActiveForLLM,
@@ -194,3 +198,83 @@ async def get_document_type_history(
         CatalogHistoryResponse.model_validate(h)
         for h in await service.document_type_history(type_id, db)
     ]
+
+
+# --- Áreas -------------------------------------------------------------------
+# Las gestionan ADMIN y GESTOR_USUARIOS: son quienes registran usuarios y les asignan un área.
+
+_require_area_manager = require_roles([UserRole.ADMIN, UserRole.GESTOR_USUARIOS])
+
+
+@router.get("/areas/active", response_model=list[AreaSummary])
+async def list_active_areas(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AreaSummary]:
+    """Áreas activas en formato compacto, para el selector del registro de usuarios. Requiere autenticación."""
+    return [AreaSummary.model_validate(a) for a in await service.get_active_areas(db)]
+
+
+@router.get("/areas", response_model=list[AreaResponse])
+async def list_areas(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    is_active: bool | None = _IS_ACTIVE_FILTER,
+) -> list[AreaResponse]:
+    """Lista las áreas del hospital. Requiere autenticación."""
+    return [AreaResponse.model_validate(a) for a in await service.list_areas(db, is_active=is_active)]
+
+
+@router.get("/areas/{area_id}", response_model=AreaResponse)
+async def get_area(
+    area_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AreaResponse:
+    """Obtiene un área por id. Requiere autenticación."""
+    return AreaResponse.model_validate(await service.get_area(area_id, db))
+
+
+@router.post("/areas", response_model=AreaResponse, status_code=status.HTTP_201_CREATED)
+async def create_area(
+    payload: AreaCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_require_area_manager),
+) -> AreaResponse:
+    """Crea un área. Requiere rol ADMIN o GESTOR_USUARIOS."""
+    return AreaResponse.model_validate(await service.create_area(payload, db, current_user))
+
+
+@router.put("/areas/{area_id}", response_model=AreaResponse)
+async def update_area(
+    area_id: UUID,
+    payload: AreaUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_require_area_manager),
+) -> AreaResponse:
+    """Actualiza parcialmente un área. Requiere rol ADMIN o GESTOR_USUARIOS."""
+    return AreaResponse.model_validate(await service.update_area(area_id, payload, db, current_user))
+
+
+@router.delete("/areas/{area_id}", response_model=DeleteResponse)
+async def delete_area(
+    area_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_require_area_manager),
+) -> DeleteResponse:
+    """Smart Delete: borrado físico si ningún usuario ni documento usa el área; si no, la desactiva.
+
+    Requiere rol ADMIN o GESTOR_USUARIOS.
+    """
+    deletion_type, message = await service.smart_delete_area(area_id, db, current_user)
+    return DeleteResponse(message=message, deletion_type=deletion_type)
+
+
+@router.get("/areas/{area_id}/history", response_model=list[CatalogHistoryResponse])
+async def get_area_history(
+    area_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_require_area_manager),
+) -> list[CatalogHistoryResponse]:
+    """Historial de cambios de un área (más reciente primero). Requiere rol ADMIN o GESTOR_USUARIOS."""
+    return [CatalogHistoryResponse.model_validate(h) for h in await service.area_history(area_id, db)]

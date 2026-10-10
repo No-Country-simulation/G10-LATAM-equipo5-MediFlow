@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.features.auth.enums import UserRole
+from app.features.catalogs.schemas import AreaSummary
 
 
 class LoginRequest(BaseModel):
@@ -25,6 +26,7 @@ class UserOut(BaseModel):
     email: str
     full_name: str
     role: UserRole
+    area: AreaSummary | None = None
 
 
 class TokenResponse(BaseModel):
@@ -75,6 +77,7 @@ class UserCreateRequest(BaseModel):
     password: str = Field(min_length=8, max_length=72)
     full_name: str = Field(min_length=1, max_length=150)
     role: UserRole = UserRole.AUDITOR_CLINICO
+    area_id: UUID
 
 
 class UserAdminUpdateRequest(BaseModel):
@@ -84,6 +87,7 @@ class UserAdminUpdateRequest(BaseModel):
     email: EmailStr | None = None
     role: UserRole | None = None
     is_active: bool | None = None
+    area_id: UUID | None = None
 
 
 class UserResponse(BaseModel):
@@ -97,6 +101,7 @@ class UserResponse(BaseModel):
     full_name: str
     role: UserRole
     is_active: bool
+    area: AreaSummary | None = None
     created_at: datetime
 
 

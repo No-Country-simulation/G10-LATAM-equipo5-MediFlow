@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.features.catalogs.models import Area
 
 
 class ClinicalDocument(Base):
@@ -58,6 +59,9 @@ class ClinicalDocument(Base):
     uploaded_by_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
+    # Área del usuario que subió el documento, copiada al ingerirlo: si el usuario cambia de
+    # área después, el documento conserva el área de la que salió.
+    area_origen_id: Mapped[UUID | None] = mapped_column(ForeignKey("areas.id"), index=True)
 
     audited_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     audit_notes: Mapped[str | None] = mapped_column(Text)
@@ -78,6 +82,9 @@ class ClinicalDocument(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
+
+    # Many-to-one: un LEFT JOIN en la misma consulta, también en el listado paginado.
+    area_origen: Mapped[Area | None] = relationship(lazy="joined")
 
     # `lazy="selectin"` en las cuatro relaciones: se cargan en la misma consulta que trae el
     # documento (una query extra por relación, sin N+1) y quedan disponibles de forma segura

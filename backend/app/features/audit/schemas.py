@@ -6,24 +6,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, StringConstraints
 
-from app.features.documents.schemas import DetalleClinicoExtract, NivelPrioridad
+from app.features.documents.schemas import ArchivoPreview, DetalleClinicoExtract, NivelPrioridad
 
 # Texto obligatorio: se recortan los espacios antes de validar el largo, así "   " no pasa.
 TextoObligatorio = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-
-
-class ArchivoPreview(BaseModel):
-    """Un archivo del documento con su URL pre-firmada de solo lectura.
-
-    `visualizable` indica si el navegador puede mostrarlo (PDF/PNG/JPG); TIFF y DICOM se
-    ofrecen como descarga.
-    """
-
-    orden: int
-    tipo_archivo: str
-    rol: str | None
-    url: str
-    visualizable: bool
 
 
 class AuditDetailResponse(BaseModel):

@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_password_hash, verify_password
 from app.features.auth.enums import UserRole
 from app.features.auth.models import RevokedToken, User
+from app.features.catalogs.models import Area
+from app.features.catalogs.service import get_active_area_or_none
 from app.features.auth.schemas import (
     PasswordChangeRequest,
     ProfileUpdateRequest,
@@ -114,9 +116,21 @@ def _ensure_can_grant_role(requesting_user: User, role: UserRole) -> None:
         )
 
 
+async def _get_assignable_area(db: AsyncSession, area_id: UUID) -> Area:
+    """Retorna el área a asignar a un usuario o lanza HTTPException 422 si no existe o está inactiva."""
+    area = await get_active_area_or_none(db, area_id)
+    if area is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El área indicada no existe o está inactiva",
+        )
+    return area
+
+
 async def create_user(payload: UserCreateRequest, db: AsyncSession, requesting_user: User) -> User:
-    """Crea un nuevo usuario, validando que `username` y `email` no estén ya en uso."""
+    """Crea un nuevo usuario, validando que `username` y `email` no estén ya en uso y que el área esté activa."""
     _ensure_can_grant_role(requesting_user, payload.role)
+    area = await _get_assignable_area(db, payload.area_id)
 
     result = await db.execute(
         select(User).where(
@@ -135,6 +149,7 @@ async def create_user(payload: UserCreateRequest, db: AsyncSession, requesting_u
         hashed_password=get_password_hash(payload.password),
         full_name=payload.full_name,
         role=payload.role,
+        area=area,
     )
     db.add(user)
     await db.commit()
@@ -160,6 +175,10 @@ async def admin_update_user(
 
     if "email" in updates and updates["email"] != user.email:
         await _ensure_email_not_taken(db, updates["email"], user.id)
+
+    # Se asigna la relación (no solo el FK) para que la respuesta traiga el área nueva.
+    if "area_id" in updates:
+        user.area = await _get_assignable_area(db, updates.pop("area_id"))
 
     for field, value in updates.items():
         setattr(user, field, value)

@@ -5,6 +5,7 @@ import binascii
 import json
 import logging
 import math
+import operator
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -330,6 +331,7 @@ async def ingest_document(
             "motivos_auditoria": motivos_auditoria,
             "uploaded_by_id": str(uploaded_by.id) if uploaded_by else None,
             "uploaded_by_username": uploaded_by.username if uploaded_by else None,
+            "area_origen_codigo": uploaded_by.area.codigo if uploaded_by and uploaded_by.area else None,
         }
         extraction_json = json.dumps(extraction_payload, ensure_ascii=False).encode("utf-8")
         await oci_storage_client.upload_object(
@@ -363,6 +365,7 @@ async def ingest_document(
         "oci_bucket_name": settings.OCI_BUCKET_NAME,
         "oci_json_path": json_path,
         "uploaded_by_id": uploaded_by.id if uploaded_by else None,
+        "area_origen_id": uploaded_by.area_id if uploaded_by else None,
         # Persistimos el payload íntegro (incluye el texto libre de `detalle_clinico`, ej.
         # hallazgos de imagenología o evolución de una epicrisis) para no perder información
         # clínica que no tiene columna ni tabla relacional propia.
@@ -404,30 +407,28 @@ async def get_paginated_documents(
     fecha_desde: datetime | None = None,
     fecha_hasta: datetime | None = None,
     uploaded_by_id: UUID | None = None,
+    area_origen_id: UUID | None = None,
 ) -> dict:
-    """Lista la bandeja documental con filtros dinámicos y paginación."""
-    conditions = []
-    if uploaded_by_id is not None:
-        conditions.append(ClinicalDocument.uploaded_by_id == uploaded_by_id)
-    if estado is not None:
-        conditions.append(ClinicalDocument.estado == estado)
-    if destino is not None:
-        conditions.append(ClinicalDocument.destino_enrutamiento == destino)
-    if rut is not None:
-        conditions.append(ClinicalDocument.rut_paciente == rut)
-    if prioridad is not None:
-        conditions.append(ClinicalDocument.nivel_prioridad == prioridad)
-    if fecha_desde is not None:
-        conditions.append(ClinicalDocument.created_at >= fecha_desde)
-    if fecha_hasta is not None:
-        conditions.append(ClinicalDocument.created_at <= fecha_hasta)
+    """Lista la bandeja documental con filtros dinámicos y paginación (se omite cada filtro en `None`)."""
+    filters = (
+        (ClinicalDocument.uploaded_by_id, operator.eq, uploaded_by_id),
+        (ClinicalDocument.area_origen_id, operator.eq, area_origen_id),
+        (ClinicalDocument.estado, operator.eq, estado),
+        (ClinicalDocument.destino_enrutamiento, operator.eq, destino),
+        (ClinicalDocument.rut_paciente, operator.eq, rut),
+        (ClinicalDocument.nivel_prioridad, operator.eq, prioridad),
+        (ClinicalDocument.created_at, operator.ge, fecha_desde),
+        (ClinicalDocument.created_at, operator.le, fecha_hasta),
+    )
+    conditions = [compare(column, value) for column, compare, value in filters if value is not None]
 
     total_result = await db.execute(
         select(func.count(ClinicalDocument.id)).where(*conditions)
     )
     total = total_result.scalar_one()
 
-    # La bandeja solo muestra columnas del documento: no se cargan las tablas hijas (selectin).
+    # La bandeja solo muestra columnas del documento (y su área, por JOIN): no se cargan las
+    # tablas hijas (selectin).
     items_result = await db.execute(
         select(ClinicalDocument)
         .options(

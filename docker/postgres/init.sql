@@ -13,6 +13,25 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- 1.1 Áreas del hospital (mantenedor: GET/POST /api/v1/catalogs/areas). Cada usuario pertenece a
+-- un área y cada documento guarda el área de quien lo subió (`area_origen_id`).
+CREATE TABLE IF NOT EXISTS areas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    codigo VARCHAR(50) UNIQUE NOT NULL,
+    nombre VARCHAR(150) NOT NULL,
+    descripcion TEXT,
+    is_active BOOLEAN DEFAULT TRUE NOT NULL,
+    es_sistema BOOLEAN DEFAULT FALSE NOT NULL,
+    updated_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- Área del usuario. Nullable solo por los usuarios anteriores a las áreas: la API la exige al crear.
+-- (`ADD COLUMN IF NOT EXISTS` también migra bases existentes.)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS area_id UUID REFERENCES areas(id);
+CREATE INDEX IF NOT EXISTS idx_users_area_id ON users(area_id);
+
 -- 2. Tabla de Documentos Clínicos y Triaje
 CREATE TABLE IF NOT EXISTS clinical_documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -52,6 +71,9 @@ CREATE TABLE IF NOT EXISTS clinical_documents (
     -- Usuario que subió el documento desde el front (token reenviado por n8n a /ingest)
     uploaded_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
 
+    -- Área del usuario que subió el documento, copiada al ingerirlo
+    area_origen_id UUID REFERENCES areas(id),
+
     -- Control Human-in-the-Loop
     audited_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
     audit_notes TEXT,
@@ -71,6 +93,8 @@ CREATE TABLE IF NOT EXISTS clinical_documents (
 ALTER TABLE clinical_documents
     ADD COLUMN IF NOT EXISTS uploaded_by_id UUID REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_clinical_docs_uploaded_by ON clinical_documents(uploaded_by_id);
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS area_origen_id UUID REFERENCES areas(id);
+CREATE INDEX IF NOT EXISTS idx_clinical_docs_area_origen ON clinical_documents(area_origen_id);
 ALTER TABLE clinical_documents
     ADD COLUMN IF NOT EXISTS asignado_a_id UUID REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS asignado_a_username VARCHAR(50);
@@ -189,7 +213,7 @@ ALTER TABLE document_types ALTER COLUMN descripcion SET NOT NULL;
 -- borrado físico. `cambios` = {campo: {"antes": ..., "despues": ...}}.
 CREATE TABLE IF NOT EXISTS catalog_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    catalogo VARCHAR(30) NOT NULL,           -- QUEUE | DOCUMENT_TYPE
+    catalogo VARCHAR(30) NOT NULL,           -- QUEUE | DOCUMENT_TYPE | AREA
     registro_id UUID NOT NULL,
     codigo VARCHAR(80) NOT NULL,
     accion VARCHAR(20) NOT NULL,             -- CREATE | UPDATE | HARD_DELETE | SOFT_DELETE
@@ -311,3 +335,20 @@ ON CONFLICT (codigo) DO NOTHING;
 -- Registros de sistema: OTRO es el comodín de la IA y Ficha_Clinica el destino por defecto.
 UPDATE document_types SET es_sistema = TRUE WHERE codigo = 'OTRO';
 UPDATE routing_queues SET es_sistema = TRUE WHERE codigo = 'Ficha_Clinica';
+
+-- Áreas semilla. Los usuarios de prueba (seed_dev_users.sql) y el primer ADMIN de producción
+-- (`python -m app.cli create-admin --area ADMINISTRACION`) se asignan a una de ellas.
+INSERT INTO areas (codigo, nombre, descripcion) VALUES
+('ADMINISTRACION', 'Administración y TI', 'Administración del sistema, gestión de usuarios y soporte informático.'),
+('ADMISION', 'Admisión y Recepción', 'Recepción de pacientes y digitalización de documentos clínicos que llegan al hospital.'),
+('URGENCIAS', 'Servicio de Urgencias', 'Atención de pacientes con riesgo vital o condiciones agudas.'),
+('CONSULTAS_AMBULATORIAS', 'Consultas Ambulatorias', 'Policlínicos y consultas de especialidad.'),
+('HOSPITALIZACION', 'Hospitalización', 'Unidades de hospitalización médico-quirúrgica.'),
+('PABELLON', 'Pabellón y Cirugía', 'Pabellones quirúrgicos y procedimientos invasivos.'),
+('LABORATORIO_CLINICO', 'Laboratorio Clínico', 'Análisis de muestras biológicas.'),
+('IMAGENOLOGIA', 'Imagenología', 'Radiología, tomografía, resonancia, ecografía y medicina nuclear.'),
+('ANATOMIA_PATOLOGICA', 'Anatomía Patológica', 'Estudio de biopsias, piezas quirúrgicas y citologías.'),
+('FARMACIA', 'Farmacia Hospitalaria', 'Validación y dispensación de medicamentos.'),
+('ONCOLOGIA', 'Oncología', 'Atención y seguimiento de pacientes oncológicos.'),
+('AUDITORIA_MEDICA', 'Auditoría Médica', 'Revisión y corrección humana de los documentos clasificados por la IA.')
+ON CONFLICT (codigo) DO NOTHING;

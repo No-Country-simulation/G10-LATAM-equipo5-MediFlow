@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     INGEST_MAX_FILE_MB: int = 10
     INGEST_MAX_FILES: int = 10
 
+    # Vigencia de las URLs pre-firmadas (PAR) de solo lectura para ver los archivos originales.
+    DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES: int = 15
+
     # Oracle Cloud Infrastructure (OCI) Object Storage.
     # `api_key`: usuario + llave PEM (desarrollo). `instance_principal`: la VM de OCI se
     # autentica sola mediante un Dynamic Group + Policy, sin llaves en el servidor.

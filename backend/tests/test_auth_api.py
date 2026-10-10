@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import jwt
 
@@ -6,7 +7,7 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.features.auth import router as auth_router
 from app.features.auth.enums import UserRole
-from tests.conftest import make_user
+from tests.conftest import make_area, make_user
 
 
 async def test_login_success(client, monkeypatch):
@@ -227,3 +228,79 @@ async def test_logout_ignores_refresh_token_of_other_user(client, login_as, monk
 
     assert r.status_code == 204
     assert len(revoked) == 1  # solo el access token propio
+
+
+# --- Área del usuario ---
+
+
+def _new_user_body(**overrides) -> dict:
+    body = {
+        "username": "nuevo",
+        "email": "nuevo@mediflow.cl",
+        "password": "password123",
+        "full_name": "Usuario Nuevo",
+        "role": "OPERADOR",
+        "area_id": str(uuid4()),
+    }
+    body.update(overrides)
+    return body
+
+
+async def test_me_includes_area(client, login_as):
+    headers = login_as(UserRole.OPERADOR, area=make_area("URGENCIAS", "Urgencias"))
+    r = await client.get("/api/v1/auth/me", headers=headers)
+    assert r.json()["area"]["codigo"] == "URGENCIAS"
+
+
+async def test_create_user_requires_area(client, login_as):
+    headers = login_as(UserRole.ADMIN)
+    body = _new_user_body()
+    del body["area_id"]
+    assert (await client.post("/api/v1/users", json=body, headers=headers)).status_code == 422
+
+
+async def test_create_user_with_area(client, login_as, db):
+    area = make_area()
+    db.get_result = area
+    headers = login_as(UserRole.GESTOR_USUARIOS)
+    r = await client.post("/api/v1/users", json=_new_user_body(area_id=str(area.id)), headers=headers)
+
+    assert r.status_code == 201
+    assert r.json()["area"] == {"id": str(area.id), "codigo": "ADMISION", "nombre": "Admisión y Recepción"}
+    assert db.added[0].area is area
+
+
+async def test_create_user_rejects_missing_or_inactive_area(client, login_as, db):
+    headers = login_as(UserRole.ADMIN)
+    r = await client.post("/api/v1/users", json=_new_user_body(), headers=headers)
+    assert r.status_code == 422
+    assert r.json()["detail"] == "El área indicada no existe o está inactiva"
+
+    db.get_result = make_area(is_active=False)
+    r = await client.post("/api/v1/users", json=_new_user_body(), headers=headers)
+    assert r.status_code == 422
+    assert db.added == []
+
+
+async def test_admin_can_change_user_area(client, login_as, db):
+    user = make_user(UserRole.OPERADOR, username="op", area=make_area())
+    nueva = make_area("URGENCIAS", "Urgencias")
+    db.queue(user)
+    db.get_result = nueva
+    headers = login_as(UserRole.ADMIN)
+    r = await client.patch(f"/api/v1/users/{user.id}", json={"area_id": str(nueva.id)}, headers=headers)
+
+    assert r.status_code == 200
+    assert r.json()["area"]["codigo"] == "URGENCIAS"
+    assert user.area is nueva
+
+
+async def test_admin_cannot_assign_inactive_area(client, login_as, db):
+    user = make_user(UserRole.OPERADOR, username="op", area=make_area())
+    db.queue(user)
+    db.get_result = make_area("URGENCIAS", "Urgencias", is_active=False)
+    headers = login_as(UserRole.ADMIN)
+    r = await client.patch(f"/api/v1/users/{user.id}", json={"area_id": str(uuid4())}, headers=headers)
+
+    assert r.status_code == 422
+    assert user.area.codigo == "ADMISION"

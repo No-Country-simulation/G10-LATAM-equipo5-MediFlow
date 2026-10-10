@@ -21,6 +21,7 @@ from app.core.security import create_access_token, get_password_hash  # noqa: E4
 from app.features.auth import dependencies as auth_dependencies  # noqa: E402
 from app.features.auth.enums import UserRole  # noqa: E402
 from app.features.auth.models import User  # noqa: E402
+from app.features.catalogs.models import Area  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -124,6 +125,7 @@ def oci(monkeypatch) -> FakeOCI:
     fake = FakeOCI()
     monkeypatch.setattr("app.features.documents.service.oci_storage_client", fake)
     monkeypatch.setattr("app.features.audit.service.oci_storage_client", fake)
+    monkeypatch.setattr("app.features.documents.detail.oci_storage_client", fake)
     return fake
 
 
@@ -136,7 +138,23 @@ async def client(db):
     app.dependency_overrides.clear()
 
 
-def make_user(role: UserRole, username: str = "tester", active: bool = True) -> User:
+def make_area(codigo: str = "ADMISION", nombre: str = "Admisión y Recepción", **overrides) -> Area:
+    fields = {
+        "id": uuid4(),
+        "codigo": codigo,
+        "nombre": nombre,
+        "descripcion": None,
+        "is_active": True,
+        "es_sistema": False,
+        "created_at": datetime.now(timezone.utc),
+    }
+    fields.update(overrides)
+    return Area(**fields)
+
+
+def make_user(
+    role: UserRole, username: str = "tester", active: bool = True, area: Area | None = None
+) -> User:
     return User(
         id=uuid4(),
         username=username,
@@ -145,6 +163,8 @@ def make_user(role: UserRole, username: str = "tester", active: bool = True) -> 
         full_name="Usuario de Prueba",
         role=role,
         is_active=active,
+        area=area,
+        area_id=area.id if area else None,
         created_at=datetime.now(timezone.utc),
     )
 

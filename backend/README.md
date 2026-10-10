@@ -96,7 +96,7 @@ uvicorn app.main:app --reload --port 8000
 - Swagger UI (probar endpoints desde el navegador): <http://localhost:8000/docs>
 - ReDoc: <http://localhost:8000/redoc>
 
-Al arrancar, la API crea las tablas `revoked_tokens`, `routing_queues` y `document_types` si no existen. **No agrega columnas nuevas a tablas existentes ni carga los datos semilla**: si tu base es anterior, vuelve a ejecutar `init.sql` (ver [Base de datos](#base-de-datos)); si no, fallarán los endpoints que usan las columnas nuevas.
+Al arrancar, la API crea las tablas `revoked_tokens`, `routing_queues`, `document_types` y `areas` si no existen. **No agrega columnas nuevas a tablas existentes ni carga los datos semilla**: si tu base es anterior, vuelve a ejecutar `init.sql` (ver [Base de datos](#base-de-datos)); si no, fallarán los endpoints que usan las columnas nuevas.
 
 ### 6. Comprobar que funciona
 
@@ -120,6 +120,7 @@ Devuelve `200 OK` si la base de datos y OCI funcionan, o `503 Service Unavailabl
 | `OCI_USER_OCID`, `OCI_TENANCY_OCID`, `OCI_FINGERPRINT`, `OCI_REGION` | Datos de tu API Key de OCI |
 | `OCI_KEY_FILE_PATH` | Ruta a la clave privada `.pem` |
 | `OCI_BUCKET_NAME`, `OCI_COMPARTMENT_OCID` | Bucket y compartimento donde se guardan los documentos |
+| `DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES` | Vigencia en minutos de las URLs pre-firmadas de los archivos originales (15 por defecto) |
 | `BACKEND_CORS_ORIGINS` | Orígenes permitidos por CORS, separados por coma (también acepta lista JSON). Por defecto `http://localhost:3000,http://localhost:5173` |
 | `BACKEND_CORS_ORIGIN_REGEX` | Opcional. Regex para orígenes variables, ej. `https://mediflow-.*\.vercel\.app` |
 
@@ -174,14 +175,27 @@ Todos con prefijo `/api/v1`.
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
 | GET | `/users` | Lista paginada de usuarios | `ADMIN`, `GESTOR_USUARIOS` |
-| POST | `/users` | Crea un usuario (`username`, `email`, `password`, `full_name`, `role`; rol por defecto `AUDITOR_CLINICO`) | `ADMIN`, `GESTOR_USUARIOS` |
-| PATCH | `/users/{user_id}` | Cambia nombre, email, rol o activa/desactiva | `ADMIN`, `GESTOR_USUARIOS` |
+| POST | `/users` | Crea un usuario (`username`, `email`, `password`, `full_name`, `role`, `area_id`; rol por defecto `AUDITOR_CLINICO`). `area_id` es **obligatorio** y debe ser un [área](#áreas) activa (`422` si no) | `ADMIN`, `GESTOR_USUARIOS` |
+| PATCH | `/users/{user_id}` | Cambia nombre, email, rol, área (`area_id`, debe estar activa) o activa/desactiva | `ADMIN`, `GESTOR_USUARIOS` |
+
+Las respuestas de usuario (`/auth/login`, `/auth/me`, `/users`, ...) incluyen `area: {id, codigo, nombre}` (`null` en usuarios creados antes de existir las áreas). El usuario no puede cambiar su propia área desde `PATCH /users/me`.
 
 ### Documentos
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
 | POST | `/documents/ingest` | Recibe un documento procesado por n8n, lo sube a OCI y lo registra. Responde `201` | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
-| GET | `/documents` | Bandeja central paginada con filtros (un `OPERADOR` solo ve los que subió) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| GET | `/documents` | Bandeja central paginada con filtros, incluido `area_origen_id` (un `OPERADOR` solo ve los que subió). Cada ítem trae diagnóstico, CIE-10, especialidad, médico y `area_origen` | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| GET | `/documents/{documento_id}` | Detalle completo del caso: datos, `area_origen`, archivos originales con **URL pre-firmada** y detalle clínico (tablas y campos relevantes). Un `OPERADOR` solo ve los que subió (`404` para los demás) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+
+**Área de origen.** Al ingerir, el documento guarda en `area_origen_id` el área del usuario que lo subió. Es una copia: si después el usuario cambia de área, el documento conserva el área de la que salió.
+
+**Detalle (`GET /documents/{documento_id}`).** Además de todos los campos del listado:
+
+- `archivos[]`: `{orden, tipo_archivo, rol, url, visualizable}`, con una URL de solo lectura por archivo, válida por `preview_expira_en_minutos` (`DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES`, 15 por defecto). Las URLs **no** se incluyen en el listado: cada una es una llamada a OCI, y generarlas para toda una página sería lento y crearía enlaces a datos de pacientes que nadie va a abrir.
+- Si OCI no puede generar alguna URL, el detalle se entrega igual: ese archivo queda con `url: null` y `aviso_archivos` lo explica, para que el caso se pueda revisar con los datos clínicos.
+- `detalle.tablas`: `medicamentos` (RECETA), `paneles_laboratorio` con sus `parametros` (LABORATORIO) y `procedimientos` (EPICRISIS), leídos de las tablas normalizadas.
+- `detalle.campos_relevantes`: lista de `{campo, etiqueta, valor}` con los campos de texto no vacíos del bloque del tipo (ej. `hallazgos` e `impresion_diagnostica` en IMAGENES, `malignidad` en ANATOMIA_PATOLOGICA). En los tipos creados desde el mantenedor salen de `campos_adicionales`, con la etiqueta tomada del `title` de cada propiedad del JSON Schema (o del nombre del campo si no lo tiene).
+- Tras una auditoría, tanto las tablas como los campos muestran la versión corregida.
 
 **Ingesta.** n8n reenvía el token Bearer del usuario que subió el documento desde el front (rol `ADMIN`, `AUDITOR_CLINICO` u `OPERADOR`); ese usuario queda registrado en `uploaded_by_id`. El payload sigue el patrón **Envelope**: `clasificacion` y `datos_generales` son comunes a cualquier documento, y `detalle_clinico` transporta un único bloque poblado según `clasificacion.tipo_documento` (el `codigo` del tipo en la [tabla maestra](#tablas-maestras-catálogos)). Cada tipo semilla tiene su bloque:
 
@@ -344,7 +358,7 @@ Si no hay resultados, la respuesta trae `items: []` y un `message` explicativo. 
 
 ### Tablas maestras (catálogos)
 
-Dos maestras independientes, cada una con su CRUD:
+Tres maestras independientes, cada una con su CRUD (las áreas se describen en [su propia sección](#áreas)):
 
 - **Tipos de documento** (`document_types`): qué clases de documento clínico acepta el pipeline. `descripcion` (obligatoria) explica al LLM cuándo usar el tipo; `campos_extraccion` (opcional) es un JSON Schema con campos adicionales a extraer.
 - **Colas de enrutamiento** (`routing_queues`): a qué área se puede derivar un documento. `descripcion_semantica` explica al LLM cuándo usar y cuándo no usar la cola; `notificar_inmediato` marca las colas que requieren aviso inmediato.
@@ -366,13 +380,27 @@ Dos maestras independientes, cada una con su CRUD:
 | PUT | `/catalogs/document-types/{id}` | Modifica solo los campos enviados (`nombre`, `descripcion`, `campos_extraccion`, `is_active`) | `ADMIN` |
 | DELETE | `/catalogs/document-types/{id}` | Smart Delete (ver abajo) | `ADMIN` |
 
+#### Áreas
+
+Áreas o servicios del hospital (Urgencias, Admisión, Laboratorio, ...). Cada usuario pertenece a una y cada documento guarda el área de quien lo subió. A diferencia de las otras maestras, no viajan en el prompt del LLM y se referencian por id (FK), no por `codigo`. Las gestionan quienes registran usuarios.
+
+| Método | Ruta | Descripción | Acceso |
+|---|---|---|---|
+| GET | `/catalogs/areas/active` | Áreas activas en formato compacto (`id`, `codigo`, `nombre`), para el selector del registro de usuarios | Autenticado |
+| GET | `/catalogs/areas` | Todas las áreas; filtro opcional `?is_active=true\|false` | Autenticado |
+| GET | `/catalogs/areas/{id}` | Detalle de un área | Autenticado |
+| GET | `/catalogs/areas/{id}/history` | Historial de cambios del área | `ADMIN`, `GESTOR_USUARIOS` |
+| POST | `/catalogs/areas` | Crea un área (`codigo` con formato `^[A-Z0-9_]+$`, `nombre`, `descripcion` opcional). Responde `201` | `ADMIN`, `GESTOR_USUARIOS` |
+| PUT | `/catalogs/areas/{id}` | Modifica solo los campos enviados (`nombre`, `descripcion`, `is_active`) | `ADMIN`, `GESTOR_USUARIOS` |
+| DELETE | `/catalogs/areas/{id}` | Smart Delete: físico si ningún usuario ni documento la usa; si no, la desactiva | `ADMIN`, `GESTOR_USUARIOS` |
+
 **Reglas:**
 
 - El `codigo` es único (duplicado → `409`) y **no se puede modificar**, porque los documentos ya guardados lo referencian. Formato: tipos `^[A-Z0-9_]+$` (ej. `LICENCIA`), colas `^[A-Za-z0-9_]+$` (ej. `Gestion_GES`); otro formato → `422`.
 - En un `PUT`, los campos de texto y `is_active` no admiten `null` (`422`). `campos_extraccion: null` sí: elimina el esquema del tipo.
 - `campos_extraccion` debe ser un JSON Schema válido con `"type": "object"` (`422` si no). El LLM llena esos campos en `detalle_clinico.campos_adicionales` y el backend los valida en la ingesta: si no cumplen el esquema, el documento va a auditoría.
 - **Desactivar / reactivar:** `PUT` con `{"is_active": false}` o `{"is_active": true}`. Un registro inactivo deja de aparecer en `/active` y, por lo tanto, en el prompt de n8n.
-- **Smart Delete (`DELETE`):** el backend cuenta los documentos clínicos que usan el registro (`destino_enrutamiento = cola.codigo` o `tipo_documento = tipo.codigo`).
+- **Smart Delete (`DELETE`):** el backend cuenta lo que usa el registro: documentos clínicos con `destino_enrutamiento = cola.codigo` o `tipo_documento = tipo.codigo`; para un área, usuarios (`area_id`) y documentos (`area_origen_id`).
   - Si no hay ninguno → **borrado físico**; responde `{"deletion_type": "HARD_DELETE", ...}`.
   - Si hay alguno → **borrado lógico** (`is_active = false`) para no dejar documentos huérfanos; responde `{"deletion_type": "SOFT_DELETE", ...}`.
 - **Registros de sistema** (`es_sistema = true`): el tipo `OTRO` (comodín de la IA) y la cola `Ficha_Clinica` (destino por defecto). Se pueden editar, pero no eliminar ni desactivar (`409`).
@@ -397,21 +425,26 @@ El esquema y los datos semilla los crea `docker/postgres/init.sql`, que Docker e
 
 | Tabla | Contenido |
 |---|---|
-| `users` | Usuarios, contraseña hasheada (bcrypt), rol y estado activo |
+| `users` | Usuarios, contraseña hasheada (bcrypt), rol, área (`area_id`) y estado activo |
+| `areas` | Tabla maestra de áreas del hospital |
 | `revoked_tokens` | Tokens JWT invalidados por logout o refresh tokens ya canjeados, hasta su expiración |
-| `clinical_documents` | Paciente y médico, clasificación, prioridad, score de confianza, diagnóstico/CIE-10, destino, rutas en OCI, JSON consolidado (`raw_extracted_json`), quién lo subió (`uploaded_by_id`), asignación del caso (`asignado_a_*`) y campos de auditoría |
+| `clinical_documents` | Paciente y médico, clasificación, prioridad, score de confianza, diagnóstico/CIE-10, destino, rutas en OCI, JSON consolidado (`raw_extracted_json`), quién lo subió (`uploaded_by_id`) y desde qué área (`area_origen_id`), asignación del caso (`asignado_a_*`) y campos de auditoría |
 | `clinical_document_attachments`, `clinical_document_medications`, `lab_panels`, `lab_parameters`, `clinical_document_procedures` | Detalle clínico normalizado (ver [Documentos](#documentos)) |
 | `document_types` | Tabla maestra de tipos de documento |
 | `routing_queues` | Tabla maestra de colas de enrutamiento |
-| `catalog_history` | Historial de cambios de ambas tablas maestras (quién, cuándo y qué cambió) |
+| `catalog_history` | Historial de cambios de las tablas maestras (quién, cuándo y qué cambió) |
 
-**Datos semilla:** un usuario por rol (`admin_user`, `gestor_user`, `auditor_user`, `operador_user`; ver [Autenticación y roles](#autenticación-y-roles)), 10 tipos de documento y 6 colas de enrutamiento. El tipo `OTRO` y la cola `Ficha_Clinica` quedan marcados como registros de sistema.
+**Datos semilla:** 12 áreas, 10 tipos de documento y 6 colas de enrutamiento (`init.sql`), y un usuario por rol con su área (`seed_dev_users.sql`, solo desarrollo): `admin_user` y `gestor_user` → `ADMINISTRACION`, `auditor_user` → `AUDITORIA_MEDICA`, `operador_user` → `ADMISION` (ver [Autenticación y roles](#autenticación-y-roles)). El tipo `OTRO` y la cola `Ficha_Clinica` quedan marcados como registros de sistema.
 
 **¿Tu base es anterior y le faltan tablas, columnas o datos?** `init.sql` se puede volver a ejecutar sin riesgo: crea lo que falta, agrega las columnas nuevas (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) y no duplica registros. Está probado tanto en una base nueva como sobre una base creada con la versión anterior. Desde la **raíz** del repo, con el contenedor levantado:
 
 ```bash
 docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/init.sql
+# En desarrollo, además: asigna el área a los usuarios semilla que aún no la tienen
+docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/seed_dev_users.sql
 ```
+
+> **Obligatorio tras actualizar a la versión con áreas:** el modelo `User` ahora lee `users.area_id`, así que con una base anterior **fallan el login y todos los endpoints autenticados** hasta ejecutar `init.sql`.
 
 (En Git Bash, antepón `MSYS_NO_PATHCONV=1 `.) La alternativa `docker compose down -v` también funciona, pero **borra todos los datos**.
 
@@ -434,7 +467,9 @@ Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión de base de dato
 | `test_security.py` | Hash de contraseñas y tokens JWT (`exp`, `jti` único) |
 | `test_ingest_service.py` | Regla de triaje (umbral 0.85, tipo OTRO, catálogos, bloque vs. tipo, `campos_adicionales` vs. JSON Schema), formatos de archivo, `documento_id` repetido, quién subió el documento, JSON sin base64, subida a OCI, compensación ante fallos de OCI o base de datos, médico por RUT |
 | `test_documents_api.py` | Ingesta (401/403/400/409/500, rol OPERADOR, motivos de auditoría, solo el bloque poblado), JSON completo de respuesta para React, listado paginado y filtros |
-| `test_auth_api.py` | Login, token inválido, usuario inactivo, logout, token revocado, refresh token (rotación, reúso, expiración, tipo de token, logout), restricción por rol |
+| `test_auth_api.py` | Login, token inválido, usuario inactivo, logout, token revocado, refresh token (rotación, reúso, expiración, tipo de token, logout), restricción por rol, área obligatoria y activa al crear/editar usuarios |
+| `test_areas_api.py` | Mantenedor de áreas: permisos (ADMIN y GESTOR_USUARIOS escriben), formato de `codigo`, actualización parcial, Smart Delete según usuarios y documentos asociados, historial |
+| `test_document_detail_api.py` | Detalle de documento: acceso (404 para documentos ajenos del OPERADOR), URL por archivo, tablas por tipo, campos relevantes (incluidos los de tipos personalizados), detalle sin URLs si OCI falla; área de origen en la ingesta y en el listado |
 | `test_audit_api.py` | Detalle con URL por archivo y motivos, resolución con valores corregidos arriba y `version_ia`, corrección de `detalle_clinico`, validación contra catálogos, descarte, tomar/liberar caso, errores (404/409/422/500) |
 | `test_health_api.py` | `200` si todo funciona, `503` si falla alguna dependencia |
 | `test_catalogs_api.py` | CRUD de tablas maestras, permisos (401/403), `409` por código duplicado, `404`, Smart Delete físico y lógico, rutas `/active`, formato de `codigo`, `descripcion` obligatoria, `campos_extraccion`, registros de sistema e historial |
