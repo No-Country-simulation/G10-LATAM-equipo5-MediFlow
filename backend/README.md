@@ -115,7 +115,8 @@ Devuelve `200 OK` si la base de datos y OCI funcionan, o `503 Service Unavailabl
 | `DATABASE_URL` | Conexión a Postgres con driver async: `postgresql+asyncpg://usuario:clave@localhost:5432/mediflow_db`. Debe coincidir con el `.env` de la raíz |
 | `JWT_SECRET_KEY` | Clave secreta para firmar tokens. **Cámbiala** (`openssl rand -hex 32`) |
 | `JWT_ALGORITHM` | Algoritmo del JWT (`HS256`) |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Vida del token en minutos (720 = 12 h en el ejemplo) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Vida del access token en minutos (30 por defecto) |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Vida del refresh token en días (7 por defecto): pasado ese plazo sin renovarse, hay que volver a iniciar sesión |
 | `OCI_USER_OCID`, `OCI_TENANCY_OCID`, `OCI_FINGERPRINT`, `OCI_REGION` | Datos de tu API Key de OCI |
 | `OCI_KEY_FILE_PATH` | Ruta a la clave privada `.pem` |
 | `OCI_BUCKET_NAME`, `OCI_COMPARTMENT_OCID` | Bucket y compartimento donde se guardan los documentos |
@@ -161,8 +162,9 @@ Todos con prefijo `/api/v1`.
 ### Autenticación y perfil
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
-| POST | `/auth/login` | Inicia sesión y devuelve el JWT | Público |
-| POST | `/auth/logout` | Cierra la sesión: invalida el token actual (queda en la tabla `revoked_tokens` hasta que expira). Responde `204`. El frontend debe además borrar el token guardado | Autenticado |
+| POST | `/auth/login` | Inicia sesión y devuelve `access_token` (vida corta) y `refresh_token` (vida larga) | Público |
+| POST | `/auth/refresh` | Body `{"refresh_token": "..."}`. Devuelve un par nuevo de tokens. El refresh token es de **un solo uso** (rotación): el usado queda revocado. `401` si es inválido, expiró, ya se usó o el usuario está inactivo. Un refresh token no sirve como `Authorization: Bearer` | Público (con refresh token) |
+| POST | `/auth/logout` | Cierra la sesión: invalida el access token actual y, si se envía en el body `{"refresh_token": "..."}`, también el refresh token (quedan en la tabla `revoked_tokens` hasta que expiran). Responde `204`. El frontend debe además borrar los tokens guardados | Autenticado |
 | GET | `/auth/me` | Datos básicos del usuario autenticado | Autenticado |
 | GET | `/users/me` | Perfil completo propio | Autenticado |
 | PATCH | `/users/me` | Editar propio `full_name` y/o `email` | Autenticado |
@@ -396,7 +398,7 @@ El esquema y los datos semilla los crea `docker/postgres/init.sql`, que Docker e
 | Tabla | Contenido |
 |---|---|
 | `users` | Usuarios, contraseña hasheada (bcrypt), rol y estado activo |
-| `revoked_tokens` | Tokens JWT invalidados por logout, hasta su expiración |
+| `revoked_tokens` | Tokens JWT invalidados por logout o refresh tokens ya canjeados, hasta su expiración |
 | `clinical_documents` | Paciente y médico, clasificación, prioridad, score de confianza, diagnóstico/CIE-10, destino, rutas en OCI, JSON consolidado (`raw_extracted_json`), quién lo subió (`uploaded_by_id`), asignación del caso (`asignado_a_*`) y campos de auditoría |
 | `clinical_document_attachments`, `clinical_document_medications`, `lab_panels`, `lab_parameters`, `clinical_document_procedures` | Detalle clínico normalizado (ver [Documentos](#documentos)) |
 | `document_types` | Tabla maestra de tipos de documento |
@@ -432,7 +434,7 @@ Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión de base de dato
 | `test_security.py` | Hash de contraseñas y tokens JWT (`exp`, `jti` único) |
 | `test_ingest_service.py` | Regla de triaje (umbral 0.85, tipo OTRO, catálogos, bloque vs. tipo, `campos_adicionales` vs. JSON Schema), formatos de archivo, `documento_id` repetido, quién subió el documento, JSON sin base64, subida a OCI, compensación ante fallos de OCI o base de datos, médico por RUT |
 | `test_documents_api.py` | Ingesta (401/403/400/409/500, rol OPERADOR, motivos de auditoría, solo el bloque poblado), JSON completo de respuesta para React, listado paginado y filtros |
-| `test_auth_api.py` | Login, token inválido, usuario inactivo, logout, token revocado, restricción por rol |
+| `test_auth_api.py` | Login, token inválido, usuario inactivo, logout, token revocado, refresh token (rotación, reúso, expiración, tipo de token, logout), restricción por rol |
 | `test_audit_api.py` | Detalle con URL por archivo y motivos, resolución con valores corregidos arriba y `version_ia`, corrección de `detalle_clinico`, validación contra catálogos, descarte, tomar/liberar caso, errores (404/409/422/500) |
 | `test_health_api.py` | `200` si todo funciona, `503` si falla alguna dependencia |
 | `test_catalogs_api.py` | CRUD de tablas maestras, permisos (401/403), `409` por código duplicado, `404`, Smart Delete físico y lógico, rutas `/active`, formato de `codigo`, `descripcion` obligatoria, `campos_extraccion`, registros de sistema e historial |

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_password_hash, verify_password
@@ -25,6 +26,23 @@ async def revoke_token(db: AsyncSession, jti: str, expires_at: datetime) -> None
     if await db.get(RevokedToken, jti) is None:
         db.add(RevokedToken(jti=jti, expires_at=expires_at))
     await db.commit()
+
+
+async def consume_refresh_token(db: AsyncSession, jti: str, expires_at: datetime) -> bool:
+    """Revoca el refresh token de forma atómica. Retorna `False` si ya estaba revocado.
+
+    Con `ON CONFLICT DO NOTHING`, si dos peticiones usan el mismo token a la vez solo una lo consume.
+    """
+    await db.execute(delete(RevokedToken).where(RevokedToken.expires_at < datetime.now(timezone.utc)))
+    result = await db.execute(
+        pg_insert(RevokedToken)
+        .values(jti=jti, expires_at=expires_at)
+        .on_conflict_do_nothing(index_elements=[RevokedToken.jti])
+        .returning(RevokedToken.jti)
+    )
+    consumed = result.scalar_one_or_none() is not None
+    await db.commit()
+    return consumed
 
 
 async def is_token_revoked(db: AsyncSession, jti: str) -> bool:

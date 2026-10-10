@@ -28,11 +28,24 @@ class UserOut(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """Respuesta del login: token de acceso y perfil del usuario autenticado."""
+    """Respuesta del login y del refresh: par de tokens y perfil del usuario autenticado."""
 
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class RefreshRequest(BaseModel):
+    """Refresh token con el que se pide un par nuevo de tokens."""
+
+    refresh_token: str = Field(max_length=2048)
+
+
+class LogoutRequest(BaseModel):
+    """Cuerpo opcional del logout: si trae el refresh token, también se revoca."""
+
+    refresh_token: str | None = Field(default=None, max_length=2048)
 
 
 class ProfileUpdateRequest(BaseModel):

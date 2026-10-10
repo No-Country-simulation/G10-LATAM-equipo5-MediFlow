@@ -23,7 +23,7 @@ El detalle de cada endpoint (request, respuesta y errores) está en [`backend/RE
 
 | Pantalla | Llama a | Notas |
 |---|---|---|
-| Login | `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` | Guardar el token; `401` → volver al login, `403` → "no autorizado" |
+| Login | `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me`, `POST /auth/logout` | Guardar ambos tokens. Ante un `401`, `services/api.ts` canjea el refresh token una vez y reintenta; si falla → volver al login. `403` → "no autorizado" |
 | Carga de documento | Webhook de n8n (`multipart/form-data` + `Authorization: Bearer`) | n8n llama al backend con el token del usuario y devuelve la respuesta de `POST /documents/ingest`. El archivo principal debe ser PDF, PNG o JPG |
 | Resultado | Respuesta de la ingesta | `status` es `PROCESADO` o `PENDIENTE_AUDITORIA`; mostrar `motivos_auditoria`; `detalle_clinico` trae un solo bloque, según el tipo |
 | Bandeja | `GET /documents` (filtros `estado`, `prioridad`, `destino`, `rut`, fechas) | Cada fila trae `motivos_auditoria` y quién tiene el caso tomado |

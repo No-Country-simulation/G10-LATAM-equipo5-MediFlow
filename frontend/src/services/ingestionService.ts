@@ -1,5 +1,4 @@
-import { getStoredToken } from './api';
-import { authService } from './authService';
+import { ensureFreshToken } from './api';
 import { N8N_WEBHOOK_INGESTION_URL } from '@/config/api';
 import {
   IngestionError,
@@ -44,7 +43,8 @@ export async function ingestDocument(file: File): Promise<N8nIngestResponse> {
     throw new IngestionError('CONFIGURACION', 'Falta la URL de webhook para n8n.');
   }
 
-  const token = authService.getToken() || getStoredToken();
+  // n8n reenvía el token al backend y no puede renovarlo: debe seguir vigente toda la ingesta.
+  const token = await ensureFreshToken(INGEST_TIMEOUT_MS + 60_000);
 
   const formData = new FormData();
   formData.append('data', file);

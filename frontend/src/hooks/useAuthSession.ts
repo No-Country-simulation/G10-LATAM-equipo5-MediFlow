@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { authService } from '../services/authService';
-import { getStoredToken, removeStoredToken, setStoredToken } from '../services/api';
+import { getStoredToken, removeStoredToken, setStoredTokens } from '../services/api';
 import { getStoredItem, removeStoredItem, setStoredItem } from '../services/sessionStorage';
-import type { LoginRequest, UserOut } from '../types/auth';
+import type { LoginRequest, TokenResponse, UserOut } from '../types/auth';
 
 const USER_KEY = 'mediflow_user';
 
@@ -36,17 +36,28 @@ export const useAuthSession = () => {
       }
     };
 
+    const handleTokenRefreshed = (event: Event) => {
+      const { access_token, user: refreshedUser } = (event as CustomEvent<TokenResponse>).detail;
+      setStoredItem(USER_KEY, refreshedUser);
+      setToken(access_token);
+      setUser(refreshedUser);
+    };
+
     initSession();
 
     window.addEventListener('auth:unauthorized', clearSession);
-    return () => window.removeEventListener('auth:unauthorized', clearSession);
+    window.addEventListener('auth:token-refreshed', handleTokenRefreshed);
+    return () => {
+      window.removeEventListener('auth:unauthorized', clearSession);
+      window.removeEventListener('auth:token-refreshed', handleTokenRefreshed);
+    };
   }, []);
 
   const login = async (credentials: LoginRequest): Promise<UserOut> => {
     setIsLoading(true);
     try {
-      const { access_token, user: loggedUser } = await authService.login(credentials);
-      setStoredToken(access_token);
+      const { access_token, refresh_token, user: loggedUser } = await authService.login(credentials);
+      setStoredTokens(access_token, refresh_token);
       setStoredItem(USER_KEY, loggedUser);
       setToken(access_token);
       setUser(loggedUser);

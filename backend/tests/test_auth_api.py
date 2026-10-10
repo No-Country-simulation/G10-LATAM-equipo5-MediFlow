@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 
 from app.core.config import settings
+from app.core.security import create_access_token
 from app.features.auth import router as auth_router
 from app.features.auth.enums import UserRole
 from tests.conftest import make_user
@@ -107,3 +108,122 @@ async def test_users_management_is_role_restricted(client, login_as):
     headers = login_as(UserRole.AUDITOR_CLINICO)
     assert (await client.get("/api/v1/users", headers=headers)).status_code == 403
     assert (await client.post("/api/v1/users", json={}, headers=headers)).status_code == 403
+
+
+# --- Refresh token ---
+
+
+def _refresh_token_for(username: str, **kwargs) -> str:
+    from app.core.security import create_refresh_token
+
+    return create_refresh_token({"sub": username}, **kwargs)
+
+
+def _patch_refresh(monkeypatch, user, consumed: list | None = None, already_used: bool = False):
+    async def fake_get_user(_db, _username):
+        return user
+
+    async def fake_consume(_db, jti, expires_at):
+        if consumed is not None:
+            consumed.append((jti, expires_at))
+        return not already_used
+
+    monkeypatch.setattr(auth_router, "get_user_by_username", fake_get_user)
+    monkeypatch.setattr(auth_router, "consume_refresh_token", fake_consume)
+
+
+async def test_login_returns_refresh_token(client, monkeypatch):
+    user = make_user(UserRole.ADMIN, username="admin")
+
+    async def fake_auth(*_):
+        return user
+
+    monkeypatch.setattr(auth_router, "authenticate_user", fake_auth)
+    body = (await client.post("/api/v1/auth/login", json={"username": "admin", "password": "ok"})).json()
+
+    refresh = jwt.decode(body["refresh_token"], settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    access = jwt.decode(body["access_token"], settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    assert refresh["type"] == "refresh"
+    assert access["type"] == "access"
+    assert refresh["exp"] > access["exp"]
+
+
+async def test_refresh_rotates_tokens(client, monkeypatch):
+    user = make_user(UserRole.AUDITOR_CLINICO, username="ana")
+    consumed = []
+    _patch_refresh(monkeypatch, user, consumed)
+    old_refresh = _refresh_token_for("ana")
+
+    r = await client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["access_token"] and body["refresh_token"] != old_refresh
+    assert body["user"]["username"] == "ana"
+    old_jti = jwt.decode(old_refresh, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])["jti"]
+    assert consumed[0][0] == old_jti
+
+
+async def test_refresh_rejects_reused_token(client, monkeypatch):
+    _patch_refresh(monkeypatch, make_user(UserRole.ADMIN), already_used=True)
+    r = await client.post("/api/v1/auth/refresh", json={"refresh_token": _refresh_token_for("tester")})
+    assert r.status_code == 401
+
+
+async def test_refresh_rejects_access_token(client, monkeypatch):
+    consumed = []
+    _patch_refresh(monkeypatch, make_user(UserRole.ADMIN), consumed)
+    access = create_access_token({"sub": "tester"})
+    r = await client.post("/api/v1/auth/refresh", json={"refresh_token": access})
+    assert r.status_code == 401
+    assert consumed == []
+
+
+async def test_refresh_rejects_expired_token(client, monkeypatch):
+    _patch_refresh(monkeypatch, make_user(UserRole.ADMIN))
+    expired = _refresh_token_for("tester", expires_delta=timedelta(seconds=-1))
+    r = await client.post("/api/v1/auth/refresh", json={"refresh_token": expired})
+    assert r.status_code == 401
+
+
+async def test_refresh_rejects_inactive_user(client, monkeypatch):
+    _patch_refresh(monkeypatch, make_user(UserRole.ADMIN, active=False))
+    r = await client.post("/api/v1/auth/refresh", json={"refresh_token": _refresh_token_for("tester")})
+    assert r.status_code == 401
+
+
+async def test_refresh_token_cannot_authorize_requests(client, login_as):
+    login_as(UserRole.ADMIN)  # parchea el usuario y la revocación
+    headers = {"Authorization": f"Bearer {_refresh_token_for('tester')}"}
+    assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 401
+
+
+async def test_logout_also_revokes_refresh_token(client, login_as, monkeypatch):
+    headers = login_as(UserRole.ADMIN)  # usuario "tester"
+    revoked = []
+
+    async def fake_revoke(_db, jti, expires_at):
+        revoked.append(jti)
+
+    monkeypatch.setattr(auth_router, "revoke_token", fake_revoke)
+    own = _refresh_token_for("tester")
+    r = await client.post("/api/v1/auth/logout", headers=headers, json={"refresh_token": own})
+
+    assert r.status_code == 204
+    own_jti = jwt.decode(own, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])["jti"]
+    assert len(revoked) == 2 and revoked[1] == own_jti
+
+
+async def test_logout_ignores_refresh_token_of_other_user(client, login_as, monkeypatch):
+    headers = login_as(UserRole.ADMIN)
+    revoked = []
+
+    async def fake_revoke(_db, jti, expires_at):
+        revoked.append(jti)
+
+    monkeypatch.setattr(auth_router, "revoke_token", fake_revoke)
+    other = _refresh_token_for("otro")
+    r = await client.post("/api/v1/auth/logout", headers=headers, json={"refresh_token": other})
+
+    assert r.status_code == 204
+    assert len(revoked) == 1  # solo el access token propio

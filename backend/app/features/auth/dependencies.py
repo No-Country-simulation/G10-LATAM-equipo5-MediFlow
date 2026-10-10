@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.security import ACCESS_TOKEN_TYPE, decode_token
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.auth.service import get_user_by_username, is_token_revoked
@@ -29,12 +30,14 @@ async def get_current_user(
 ) -> User:
     """Decodifica el JWT recibido y retorna el usuario autenticado correspondiente."""
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        username: str | None = payload.get("sub")
-        if username is None:
-            raise _CREDENTIALS_ERROR
+        payload = decode_token(token)
     except jwt.PyJWTError as exc:
         raise _CREDENTIALS_ERROR from exc
+    username: str | None = payload.get("sub")
+    # Un refresh token no autoriza peticiones. Los tokens sin `type` (emitidos antes del
+    # refresh token) se aceptan como access hasta que expiren.
+    if username is None or payload.get("type", ACCESS_TOKEN_TYPE) != ACCESS_TOKEN_TYPE:
+        raise _CREDENTIALS_ERROR
 
     jti: str | None = payload.get("jti")
     if jti is not None and await is_token_revoked(db, jti):

@@ -1,6 +1,8 @@
-import { API_BASE_URL } from '@/config/api';
+import { API_BASE_URL, FASTAPI_ENDPOINTS } from '@/config/api';
+import type { TokenResponse } from '@/types/auth';
 
 const TOKEN_KEY = 'mediflow_token';
+const REFRESH_TOKEN_KEY = 'mediflow_refresh_token';
 
 export class ApiError extends Error {
   status: number;
@@ -13,15 +15,81 @@ export class ApiError extends Error {
 }
 
 export const getStoredToken = (): string | null => sessionStorage.getItem(TOKEN_KEY);
-export const setStoredToken = (token: string): void => sessionStorage.setItem(TOKEN_KEY, token);
-export const removeStoredToken = (): void => sessionStorage.removeItem(TOKEN_KEY);
+export const getStoredRefreshToken = (): string | null => sessionStorage.getItem(REFRESH_TOKEN_KEY);
+export const setStoredTokens = (accessToken: string, refreshToken: string): void => {
+  sessionStorage.setItem(TOKEN_KEY, accessToken);
+  sessionStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+};
+export const removeStoredToken = (): void => {
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+};
+
+let refreshInFlight: Promise<string | null> | null = null;
+
+const requestNewTokens = async (): Promise<string | null> => {
+  const refreshToken = getStoredRefreshToken();
+  if (!refreshToken) return null;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${FASTAPI_ENDPOINTS.auth.refresh}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) return null;
+
+    const tokens = (await response.json()) as TokenResponse;
+    setStoredTokens(tokens.access_token, tokens.refresh_token);
+    window.dispatchEvent(new CustomEvent<TokenResponse>('auth:token-refreshed', { detail: tokens }));
+    return tokens.access_token;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Canjea el refresh token por un par nuevo. El backend rota el refresh token (es de un solo
+ * uso), así que las llamadas concurrentes comparten la misma petición.
+ */
+export const refreshAccessToken = (): Promise<string | null> => {
+  refreshInFlight ??= requestNewTokens().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+};
+
+const getTokenExpiresAt = (token: string): number | null => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Retorna un access token con al menos `minValidityMs` de vigencia, renovándolo si hace falta.
+ * Útil antes de entregar el token a terceros (n8n), que no pueden refrescarlo por su cuenta.
+ */
+export const ensureFreshToken = async (minValidityMs = 60000): Promise<string | null> => {
+  const token = getStoredToken();
+  if (!token) return null;
+
+  const expiresAt = getTokenExpiresAt(token);
+  if (expiresAt !== null && expiresAt - Date.now() > minValidityMs) return token;
+  return (await refreshAccessToken()) ?? token;
+};
 
 interface RequestOptions extends RequestInit {
   timeoutMs?: number;
+  /** No intentar renovar el token ante un 401 (login, logout o el reintento tras renovar). */
+  skipAuthRefresh?: boolean;
 }
 
 export const request = async <T>(endpoint: string, options: RequestOptions = {}): Promise<T> => {
-  const { timeoutMs = 30000, headers, ...customConfig } = options;
+  const { timeoutMs = 30000, skipAuthRefresh = false, headers, ...customConfig } = options;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -44,6 +112,10 @@ export const request = async <T>(endpoint: string, options: RequestOptions = {})
       headers: requestHeaders,
       signal: controller.signal,
     });
+
+    if (response.status === 401 && token && !skipAuthRefresh && (await refreshAccessToken())) {
+      return await request<T>(endpoint, { ...options, skipAuthRefresh: true });
+    }
 
     if (response.status === 401) {
       removeStoredToken();

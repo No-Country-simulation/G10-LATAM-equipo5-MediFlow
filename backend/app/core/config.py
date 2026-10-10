@@ -35,7 +35,9 @@ class Settings(BaseSettings):
     # Autenticación (JWT)
     JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # Vida del refresh token: pasado ese plazo sin renovarse, hay que volver a iniciar sesión.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # Bloqueo temporal del login tras varios intentos fallidos (por usuario + IP).
     LOGIN_MAX_ATTEMPTS: int = 5

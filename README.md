@@ -268,7 +268,7 @@ Cada registro trae una descripción que el LLM usa para decidir; los tipos puede
 
 ## 🔌 Resumen de la API
 
-Prefijo: `/api/v1`. Salvo `health` y `login`, todos requieren `Authorization: Bearer <token>`. El detalle está en [`backend/README.md`](backend/README.md).
+Prefijo: `/api/v1`. Salvo `health`, `login` y `refresh`, todos requieren `Authorization: Bearer <token>`. El detalle está en [`backend/README.md`](backend/README.md).
 
 | Área | Endpoints |
 |---|---|

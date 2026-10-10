@@ -96,7 +96,7 @@ curl https://$DOMAIN/api/v1/health         # 200 si la base y OCI responden; 503
 | ✅ | n8n no guarda ejecuciones exitosas (contienen archivo, token y datos del paciente) |
 | ✅ | Contenedor del backend sin root |
 | ⬜ | El token JWT vive en `sessionStorage`: ante un XSS sería legible. A futuro: cookie `HttpOnly` + `SameSite=Strict` |
-| ⬜ | Tokens de 8 h sin refresh: evaluar 1-2 h + refresh token |
+| ✅ | Access token de 30 min + refresh token de 7 días con rotación (cada refresh token es de un solo uso) |
 | ⬜ | El bloqueo de login es en memoria (por proceso): con varias réplicas, moverlo a Redis/BD |
 | ⬜ | Auditoría de accesos a datos clínicos (quién vio qué documento), exigible por normativa de datos de salud |
 | ⬜ | Cifrado del bucket con llave propia (OCI Vault) y política de retención/ciclo de vida |
