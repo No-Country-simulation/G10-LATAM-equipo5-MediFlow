@@ -1,6 +1,7 @@
 import { FileText, User, Stethoscope, AlertTriangle, ArrowRight } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import PriorityBadge from '../common/PriorityBadge';
+import { formatIdentificacion } from '../../utils/identificacion';
 
 interface AuditDocumentCardProps {
   doc: DocumentListItemResponse;
@@ -61,7 +62,7 @@ const AuditDocumentCard = ({ doc, onReview, isClaiming }: AuditDocumentCardProps
             {doc.nombre_paciente ?? 'Paciente No Identificado'}
           </div>
           <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-            RUT: {doc.rut_paciente ?? 'Sin RUT'}
+            {formatIdentificacion(doc.identificacion_paciente, doc.tipo_identificacion)}
           </div>
         </div>
 

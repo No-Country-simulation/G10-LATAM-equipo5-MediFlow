@@ -20,7 +20,7 @@ const DocumentsPage = () => {
     const params: Record<string, string | number> = { page_size: 100 };
     if (selectedDestination !== 'ALL') params.destino = selectedDestination;
     if (selectedPrioridad !== 'ALL') params.prioridad = selectedPrioridad;
-    if (rutSearch.trim()) params.rut = rutSearch.trim();
+    if (rutSearch.trim()) params.identificacion = rutSearch.trim();
     return params;
   }, [selectedDestination, selectedPrioridad, rutSearch]);
 

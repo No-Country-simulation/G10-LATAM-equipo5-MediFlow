@@ -39,13 +39,24 @@ CREATE TABLE IF NOT EXISTS clinical_documents (
     estado VARCHAR(30) NOT NULL,
     
     -- Datos del Paciente (Indexados)
-    rut_paciente VARCHAR(20),
+    -- Identificación de cualquier país (RUT, DNI, CURP, cédula, CPF, pasaporte), normalizada
+    identificacion_paciente VARCHAR(30),
+    tipo_identificacion VARCHAR(15),
+    pais_identificacion VARCHAR(2),
     nombre_paciente VARCHAR(150),
     edad_paciente INTEGER,
+    fecha_nacimiento DATE,
+    sexo VARCHAR(1),
+    -- N° de ficha / historia clínica / expediente de la institución
+    numero_ficha VARCHAR(50),
     
     -- Datos del Profesional
     medico_nombre VARCHAR(150),
-    medico_rut VARCHAR(20),
+    medico_identificacion VARCHAR(30),
+
+    -- Emisor y fecha del documento (fecha del examen, de la atención o de emisión)
+    institucion_emisora VARCHAR(200),
+    fecha_documento DATE,
     
     -- Clasificación y Triaje Clínico
     tipo_documento VARCHAR(80) NOT NULL,
@@ -57,6 +68,8 @@ CREATE TABLE IF NOT EXISTS clinical_documents (
     -- Diagnóstico y Derivación
     diagnostico_principal TEXT,
     cie10_sugerido VARCHAR(10),
+    -- DOCUMENTO (venía impreso) | INFERIDO (lo propuso la IA) | AUDITOR (lo fijó un auditor)
+    cie10_origen VARCHAR(10),
     destino_enrutamiento VARCHAR(80),
     justificacion_enrutamiento TEXT,
     
@@ -119,7 +132,12 @@ CREATE TABLE IF NOT EXISTS clinical_document_medications (
     document_id UUID NOT NULL REFERENCES clinical_documents(id) ON DELETE CASCADE,
     nombre VARCHAR(200) NOT NULL,
     dosis VARCHAR(100),
+    frecuencia VARCHAR(100),
+    via VARCHAR(50),
     duracion_tratamiento VARCHAR(100),
+    cantidad VARCHAR(100),
+    -- PRESCRITO (receta, indicaciones) | ADMINISTRADO (urgencias, ambulancia)
+    tipo VARCHAR(15) DEFAULT 'PRESCRITO' NOT NULL,
     orden INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_document_medications_document_id
@@ -130,6 +148,7 @@ CREATE TABLE IF NOT EXISTS lab_panels (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     document_id UUID NOT NULL REFERENCES clinical_documents(id) ON DELETE CASCADE,
     nombre_panel VARCHAR(150) NOT NULL,
+    muestra VARCHAR(50),
     orden INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_lab_panels_document_id ON lab_panels(document_id);
@@ -138,10 +157,12 @@ CREATE TABLE IF NOT EXISTS lab_parameters (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     panel_id UUID NOT NULL REFERENCES lab_panels(id) ON DELETE CASCADE,
     nombre VARCHAR(150) NOT NULL,
-    valor VARCHAR(50),
-    unidad VARCHAR(30),
-    rango_referencia VARCHAR(50),
+    valor VARCHAR(100),
+    unidad VARCHAR(50),
+    rango_referencia VARCHAR(100),
     alterado BOOLEAN,
+    -- Valor crítico o de pánico informado por el laboratorio: eleva la prioridad a Urgente
+    critico BOOLEAN,
     orden INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_lab_parameters_panel_id ON lab_parameters(panel_id);
@@ -158,6 +179,81 @@ CREATE TABLE IF NOT EXISTS clinical_document_procedures (
 );
 CREATE INDEX IF NOT EXISTS idx_document_procedures_document_id
 ON clinical_document_procedures(document_id);
+
+-- 2.5 Diagnósticos del documento (principal y secundarios, con su CIE-10 y de dónde salió)
+CREATE TABLE IF NOT EXISTS clinical_document_diagnoses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    document_id UUID NOT NULL REFERENCES clinical_documents(id) ON DELETE CASCADE,
+    descripcion VARCHAR(300),
+    cie10 VARCHAR(10),
+    tipo VARCHAR(15) DEFAULT 'SECUNDARIO' NOT NULL,      -- PRINCIPAL | SECUNDARIO
+    certeza VARCHAR(15) DEFAULT 'PRESUNTIVO' NOT NULL,   -- CONFIRMADO | PRESUNTIVO
+    origen_cie10 VARCHAR(10),                            -- DOCUMENTO | INFERIDO | AUDITOR
+    orden INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_document_diagnoses_document_id ON clinical_document_diagnoses(document_id);
+CREATE INDEX IF NOT EXISTS idx_document_diagnoses_cie10 ON clinical_document_diagnoses(cie10);
+
+-- 2.6 Exámenes o estudios pedidos en una orden médica (aún no realizados)
+CREATE TABLE IF NOT EXISTS clinical_document_requested_exams (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    document_id UUID NOT NULL REFERENCES clinical_documents(id) ON DELETE CASCADE,
+    codigo VARCHAR(30),                                  -- código de prestación (ej. FONASA)
+    nombre VARCHAR(300) NOT NULL,
+    categoria VARCHAR(20) DEFAULT 'OTRO' NOT NULL,       -- LABORATORIO | IMAGENOLOGIA | PROCEDIMIENTO | OTRO
+    orden INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_document_requested_exams_document_id
+ON clinical_document_requested_exams(document_id);
+
+-- 2.7 Profesionales del documento con su rol
+CREATE TABLE IF NOT EXISTS clinical_document_professionals (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    document_id UUID NOT NULL REFERENCES clinical_documents(id) ON DELETE CASCADE,
+    nombre VARCHAR(150) NOT NULL,
+    identificacion VARCHAR(30),
+    registro_profesional VARCHAR(50),                    -- registro, matrícula, cédula profesional
+    especialidad VARCHAR(100),
+    rol VARCHAR(20) DEFAULT 'OTRO' NOT NULL,             -- SOLICITANTE | INFORMANTE | TRATANTE | DESTINATARIO | OTRO
+    orden INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_document_professionals_document_id
+ON clinical_document_professionals(document_id);
+
+-- Migración de bases anteriores al modelo v2 (no hace nada si ya está aplicada):
+-- `rut_paciente` y `medico_rut` pasan a `identificacion_paciente` y `medico_identificacion`.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'clinical_documents' AND column_name = 'rut_paciente') THEN
+        ALTER TABLE clinical_documents RENAME COLUMN rut_paciente TO identificacion_paciente;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'clinical_documents' AND column_name = 'medico_rut') THEN
+        ALTER TABLE clinical_documents RENAME COLUMN medico_rut TO medico_identificacion;
+    END IF;
+END $$;
+ALTER TABLE clinical_documents ALTER COLUMN identificacion_paciente TYPE VARCHAR(30);
+ALTER TABLE clinical_documents ALTER COLUMN medico_identificacion TYPE VARCHAR(30);
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS tipo_identificacion VARCHAR(15);
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS pais_identificacion VARCHAR(2);
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS fecha_nacimiento DATE;
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS sexo VARCHAR(1);
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS numero_ficha VARCHAR(50);
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS institucion_emisora VARCHAR(200);
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS fecha_documento DATE;
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS cie10_origen VARCHAR(10);
+ALTER TABLE clinical_document_medications ADD COLUMN IF NOT EXISTS frecuencia VARCHAR(100);
+ALTER TABLE clinical_document_medications ADD COLUMN IF NOT EXISTS via VARCHAR(50);
+ALTER TABLE clinical_document_medications ADD COLUMN IF NOT EXISTS cantidad VARCHAR(100);
+ALTER TABLE clinical_document_medications
+    ADD COLUMN IF NOT EXISTS tipo VARCHAR(15) DEFAULT 'PRESCRITO' NOT NULL;
+ALTER TABLE lab_panels ADD COLUMN IF NOT EXISTS muestra VARCHAR(50);
+ALTER TABLE lab_parameters ADD COLUMN IF NOT EXISTS critico BOOLEAN;
+ALTER TABLE lab_parameters ALTER COLUMN valor TYPE VARCHAR(100);
+ALTER TABLE lab_parameters ALTER COLUMN unidad TYPE VARCHAR(50);
+ALTER TABLE lab_parameters ALTER COLUMN rango_referencia TYPE VARCHAR(100);
+DROP INDEX IF EXISTS idx_clinical_docs_rut;
 
 -- Tokens JWT invalidados por logout
 CREATE TABLE IF NOT EXISTS revoked_tokens (
@@ -227,7 +323,9 @@ ON catalog_history(catalogo, registro_id, changed_at DESC);
 -- 3. Índices de Alto Rendimiento
 -- Acelera el conteo del Smart Delete de colas (destino_enrutamiento = routing_queues.codigo)
 CREATE INDEX IF NOT EXISTS idx_clinical_docs_destino ON clinical_documents(destino_enrutamiento);
-CREATE INDEX IF NOT EXISTS idx_clinical_docs_rut ON clinical_documents(rut_paciente);
+CREATE INDEX IF NOT EXISTS idx_clinical_docs_identificacion ON clinical_documents(identificacion_paciente);
+CREATE INDEX IF NOT EXISTS idx_clinical_docs_ficha ON clinical_documents(numero_ficha);
+CREATE INDEX IF NOT EXISTS idx_clinical_docs_fecha_documento ON clinical_documents(fecha_documento);
 CREATE INDEX IF NOT EXISTS idx_clinical_docs_estado ON clinical_documents(estado);
 CREATE INDEX IF NOT EXISTS idx_clinical_docs_pendiente_auditoria 
 ON clinical_documents(created_at DESC) 
@@ -235,106 +333,8 @@ WHERE estado = 'PENDIENTE_AUDITORIA';
 
 -- 4. Los usuarios de prueba están en seed_dev_users.sql (solo desarrollo).
 
--- 5. Maestras semilla. n8n las lee vía GET /api/v1/catalogs/document-types/active y
--- GET /api/v1/catalogs/queues/active para armar el prompt,
--- por lo que el `codigo` (de tipos y de colas) es exactamente lo que el LLM debe devolver.
--- Cada `codigo` de tipo tiene un bloque fijo en `detalle_clinico` (ver DetalleClinicoExtract).
--- Las descripciones las lee el LLM: dicen cuándo SÍ y cuándo NO usar cada opción.
-INSERT INTO document_types (codigo, nombre, descripcion) VALUES
-(
-    'RECETA',
-    'Receta Médica',
-    'Prescripción de medicamentos con nombre, dosis, frecuencia y duración del tratamiento. Incluye recetas de medicamentos controlados (psicotrópicos, estupefacientes). NO incluye indicaciones al alta dentro de una epicrisis.'
-),
-(
-    'LABORATORIO',
-    'Informe de Laboratorio',
-    'Resultados de análisis de muestras biológicas con parámetros, valores, unidades y rangos de referencia: hemograma, bioquímica, coagulación, orina, cultivos, gases. NO incluye biopsias ni citologías (ver Anatomía Patológica).'
-),
-(
-    'IMAGENES',
-    'Informe de Estudio por Imágenes',
-    'Informe de un estudio de imagenología con técnica, hallazgos y conclusión del radiólogo: radiografía, tomografía, resonancia, ecografía, mamografía, medicina nuclear.'
-),
-(
-    'SOLICITUD_PROCEDIMIENTO',
-    'Solicitud de Procedimiento',
-    'Orden o solicitud de un procedimiento aún no realizado: cirugía, endoscopía, biopsia, cateterismo u otro examen invasivo que debe agendarse. NO incluye derivaciones a otra especialidad (ver Interconsulta).'
-),
-(
-    'EPICRISIS',
-    'Epicrisis / Informe de Alta',
-    'Resumen de una hospitalización al momento del alta: motivo de ingreso, evolución, procedimientos realizados, diagnósticos de egreso e indicaciones al alta.'
-),
-(
-    'INTERCONSULTA',
-    'Interconsulta / Derivación',
-    'Solicitud de evaluación por otra especialidad o de derivación a otro centro o nivel de atención, con motivo de la consulta y antecedentes clínicos.'
-),
-(
-    'ANATOMIA_PATOLOGICA',
-    'Informe de Anatomía Patológica',
-    'Resultado del análisis de tejidos o células: biopsias, piezas quirúrgicas, citologías, PAP. Suele indicar si hay o no malignidad.'
-),
-(
-    'PROTOCOLO_OPERATORIO',
-    'Protocolo Operatorio',
-    'Informe del equipo quirúrgico sobre un procedimiento YA realizado: técnica, hallazgos intraoperatorios, complicaciones y muestras enviadas a estudio.'
-),
-(
-    'NOTA_ATENCION',
-    'Nota de Atención Ambulatoria',
-    'Registro de una consulta médica ambulatoria (policlínico o consulta de especialidad): motivo de consulta, anamnesis, examen físico, diagnóstico e indicaciones. NO incluye hospitalizaciones (ver Epicrisis) ni documentos cuyo fin principal es derivar (ver Interconsulta) o prescribir (ver Receta).'
-),
-(
-    'OTRO',
-    'Otro / No clasificable',
-    'Usar cuando el documento no corresponde claramente a ninguno de los otros tipos (consentimientos, certificados, documentos administrativos) o es ilegible. Siempre requiere auditoría humana.'
-)
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO routing_queues (codigo, nombre, descripcion_semantica, notificar_inmediato) VALUES
-(
-    'Cola_Emergencia_Medica',
-    'Urgencias',
-    'Usar SOLO si el documento contiene un hallazgo que amenaza la vida o un valor crítico que requiere acción en minutos u horas (ej. tromboembolismo pulmonar, neumotórax, infarto, hemorragia activa, potasio > 6.5 mEq/L, hemoglobina < 7 g/dL). Aplica a cualquier tipo de documento. NO usar para resultados alterados sin riesgo inmediato ni para urgencia meramente administrativa.',
-    TRUE
-),
-(
-    'Farmacia_Hospitalaria',
-    'Farmacia Hospitalaria',
-    'Recetas médicas que requieren validación farmacéutica o dispensación, con prioridad para medicamentos controlados, alto costo o posibles interacciones. NO usar si la receta contiene además un hallazgo crítico (ver Urgencias).',
-    FALSE
-),
-(
-    'Gestion_Procedimientos',
-    'Procedimientos y Quirófano',
-    'Solicitudes de procedimientos o cirugías pendientes que deben agendarse (cirugía, endoscopía, biopsia, procedimiento invasivo). NO usar para procedimientos ya realizados (ver Ficha Clínica).',
-    FALSE
-),
-(
-    'Gestion_Interconsultas',
-    'Interconsultas y Derivaciones',
-    'Interconsultas o derivaciones a otra especialidad, centro o nivel de atención que deben gestionarse e ingresar a lista de espera o agenda.',
-    FALSE
-),
-(
-    'Cola_Oncologia',
-    'Oncología',
-    'Documentos con sospecha o confirmación de malignidad (ej. biopsia positiva para carcinoma, imagen sugerente de neoplasia) que requieren ingreso oportuno a la ruta de atención oncológica. Si además hay riesgo vital inmediato, usar Urgencias.',
-    TRUE
-),
-(
-    'Ficha_Clinica',
-    'Ficha Clínica',
-    'Destino por defecto: documentos informativos que solo deben incorporarse a la historia clínica del paciente, sin acción pendiente (resultados normales o alterados sin riesgo inmediato, epicrisis, protocolos operatorios, informes de control).',
-    FALSE
-)
-ON CONFLICT (codigo) DO NOTHING;
-
--- Registros de sistema: OTRO es el comodín de la IA y Ficha_Clinica el destino por defecto.
-UPDATE document_types SET es_sistema = TRUE WHERE codigo = 'OTRO';
-UPDATE routing_queues SET es_sistema = TRUE WHERE codigo = 'Ficha_Clinica';
+-- 5. Tipos de documento y colas semilla: ver init_catalogo.sql (se ejecuta después de este
+-- archivo y también actualiza las descripciones de una base existente).
 
 -- Áreas semilla. Los usuarios de prueba (seed_dev_users.sql) y el primer ADMIN de producción
 -- (`python -m app.cli create-admin --area ADMINISTRACION`) se asignan a una de ellas.

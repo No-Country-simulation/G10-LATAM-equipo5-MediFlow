@@ -2,6 +2,7 @@ import { FileText, Cloud, ArrowUpRight } from 'lucide-react';
 import type { TriageDocument } from '../../types/triage';
 import PriorityBadge from '../common/PriorityBadge';
 import { SCORE_CONFIANZA_THRESHOLD } from '../../types/medical';
+import { formatIdentificacion } from '../../utils/identificacion';
 
 interface TriageDocumentListProps {
   documents: TriageDocument[];
@@ -60,7 +61,8 @@ const TriageDocumentList = ({ documents, onSelectDocument }: TriageDocumentListP
                   {doc.datos_extraidos.paciente.nombre} ({doc.datos_extraidos.paciente.edad} años)
                 </div>
                 <div className="text-slate-400 text-[11px]">
-                  RUT: {doc.datos_extraidos.paciente.rut || 'N/A'} • {doc.datos_extraidos.medico_solicitante?.nombre}
+                  {formatIdentificacion(doc.datos_extraidos.paciente.identificacion, doc.datos_extraidos.paciente.tipo_identificacion)}
+                  {doc.datos_extraidos.profesional?.nombre ? ` • ${doc.datos_extraidos.profesional.nombre}` : ''}
                 </div>
               </div>
 

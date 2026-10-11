@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.log_config import set_current_username
 from app.core.security import ACCESS_TOKEN_TYPE, decode_token
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
@@ -46,6 +47,7 @@ async def get_current_user(
     user = await get_user_by_username(db, username)
     if user is None or not user.is_active:
         raise _CREDENTIALS_ERROR
+    set_current_username(user.username)
     return user
 
 

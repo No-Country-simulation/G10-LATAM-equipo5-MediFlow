@@ -17,6 +17,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       # Scripts ejecutados automáticamente SOLO en la primera inicialización (orden alfabético)
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./docker/postgres/init_catalogo.sql:/docker-entrypoint-initdb.d/init_catalogo.sql:ro
       - ./docker/postgres/seed_dev_users.sql:/docker-entrypoint-initdb.d/seed_dev_users.sql:ro
     networks:
       - mediflow-net
@@ -46,11 +47,22 @@ services:
       # URL del backend que usa el workflow (NO se acepta desde el request del navegador)
       MEDIFLOW_API_BASE_URL: ${MEDIFLOW_API_BASE_URL:-http://host.docker.internal:8000}
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # Modelos de Gemini: el rápido procesa todo; el preciso repite solo los documentos dudosos
+      # (legibilidad o certeza no "alta"). Google renueva los IDs: ai.google.dev/gemini-api/docs/models
+      GEMINI_MODELO_RAPIDO: ${GEMINI_MODELO_RAPIDO:-gemini-3.1-flash-lite}
+      GEMINI_MODELO_PRECISO: ${GEMINI_MODELO_PRECISO:-gemini-3.8-flash}
       # Cada ejecución guarda el archivo (base64), el token y datos del paciente: no se
       # conservan las exitosas y las fallidas se purgan a las 72 h.
       EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: 72
+      # Logs del servidor n8n: `docker logs -f mediflow-n8n` y archivo rotado en el volumen
+      # n8n_data (/home/node/.n8n/logs/n8n.log). `N8N_LOG_LEVEL=debug` para más detalle.
+      N8N_LOG_LEVEL: ${N8N_LOG_LEVEL:-info}
+      N8N_LOG_OUTPUT: console,file
+      N8N_LOG_FILE_LOCATION: /home/node/.n8n/logs/n8n.log
+      N8N_LOG_FILE_SIZE_MAX: 16
+      N8N_LOG_FILE_COUNT_MAX: 5
     extra_hosts:
       # Permite que el workflow llame al backend FastAPI del host (http://host.docker.internal:8000)
       - "host.docker.internal:host-gateway"

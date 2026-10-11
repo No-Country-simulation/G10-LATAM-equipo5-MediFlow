@@ -11,6 +11,7 @@ from app.features.documents.service import (
     _audit_reasons,
     _resolve_routing,
     ingest_document,
+    preparar_extraccion,
 )
 from tests.conftest import CATALOGO_COLAS, CATALOGO_TIPOS, ingest_body, make_user, queue_ingest
 
@@ -20,9 +21,10 @@ def _payload(**kwargs) -> IngestPayload:
 
 
 def _triage(p: IngestPayload) -> tuple[tuple[str, str, bool], list[str]]:
-    motivos = _audit_reasons(p, dict.fromkeys(CATALOGO_TIPOS), set(CATALOGO_COLAS))
     p.documento_id = "D1"
-    return _resolve_routing(p, motivos), motivos
+    preparada = preparar_extraccion(p)
+    motivos = _audit_reasons(preparada, dict.fromkeys(CATALOGO_TIPOS), set(CATALOGO_COLAS))
+    return _resolve_routing(preparada, motivos), motivos
 
 
 def _clasificacion(tipo: str) -> dict:
@@ -84,7 +86,7 @@ def test_bloque_que_no_corresponde_al_tipo_va_a_auditoria():
     result, motivos = _triage(p)
     assert result[0] == "PENDIENTE_AUDITORIA"
     assert motivos == [
-        "detalle_clinico trae ['interconsulta'] pero el tipo 'RECETA' espera ['medicamentos']"
+        "detalle_clinico trae ['interconsulta'] pero el tipo 'RECETA' espera ningún bloque propio"
     ]
 
 
@@ -101,10 +103,11 @@ def test_archivo_principal_debe_ser_visualizable(tipo):
         _payload(tipo_archivo=tipo)
 
 
-def test_medico_admite_rut_y_matricula():
-    p = _payload()
-    assert p.datos_generales.medico_solicitante.rut == "9.876.543-2"
-    assert p.datos_generales.medico_solicitante.matricula == "MED-4321"
+def test_profesional_admite_identificacion_y_registro():
+    profesional = _payload().datos_generales.profesionales[0]
+    assert profesional.identificacion == "9.876.543-2"
+    assert profesional.registro_profesional == "MED-4321"
+    assert profesional.rol == "SOLICITANTE"
 
 
 @pytest.mark.parametrize("estado", ["PROCESADO", "PENDIENTE_AUDITORIA", "AUDITADO"])
@@ -140,7 +143,13 @@ async def test_ingest_uploads_binary_and_json_and_persists(db, oci):
         "procesados/urgente/DOC-TEST-1.json",
     }
     assert doc.estado == "PROCESADO"
-    assert doc.medico_rut == "9.876.543-2"
+    assert doc.medico_identificacion == "9.876.543-2"
+    assert doc.identificacion_paciente == "12345678-5"  # normalizado
+    assert doc.tipo_identificacion == "RUT"
+    assert doc.numero_ficha == "43805"
+    assert doc.cie10_sugerido == "I26.9"
+    assert [d.cie10 for d in doc.diagnoses] == ["I26.9"]
+    assert [p.rol for p in doc.professionals] == ["SOLICITANTE"]
     assert doc.oci_bucket_name == "test-bucket"
     assert db.commits == 1
 
@@ -270,12 +279,12 @@ def _licencia(campos: dict) -> IngestPayload:
 def test_campos_adicionales_validos_para_tipo_con_esquema():
     tipos = {**dict.fromkeys(CATALOGO_TIPOS), "LICENCIA": ESQUEMA_LICENCIA}
     p = _licencia({"dias_reposo": 7, "fecha_inicio": "2026-10-01"})
-    assert _audit_reasons(p, tipos, set(CATALOGO_COLAS)) == []
+    assert _audit_reasons(preparar_extraccion(p), tipos, set(CATALOGO_COLAS)) == []
 
 
 def test_campos_adicionales_que_no_cumplen_el_esquema_van_a_auditoria():
     tipos = {**dict.fromkeys(CATALOGO_TIPOS), "LICENCIA": ESQUEMA_LICENCIA}
-    motivos = _audit_reasons(_licencia({"dias_reposo": "siete"}), tipos, set(CATALOGO_COLAS))
+    motivos = _audit_reasons(preparar_extraccion(_licencia({"dias_reposo": "siete"})), tipos, set(CATALOGO_COLAS))
     assert motivos == [
         "campos_adicionales no cumple el esquema del tipo 'LICENCIA': "
         "dias_reposo: 'siete' is not of type 'integer'"
@@ -284,7 +293,109 @@ def test_campos_adicionales_que_no_cumplen_el_esquema_van_a_auditoria():
 
 def test_campos_adicionales_en_tipo_sin_esquema_van_a_auditoria():
     tipos = {**dict.fromkeys(CATALOGO_TIPOS), "LICENCIA": None}
-    motivos = _audit_reasons(_licencia({"dias_reposo": 7}), tipos, set(CATALOGO_COLAS))
+    motivos = _audit_reasons(preparar_extraccion(_licencia({"dias_reposo": 7})), tipos, set(CATALOGO_COLAS))
     assert motivos == [
-        "detalle_clinico trae ['campos_adicionales'] pero el tipo 'LICENCIA' espera ningún bloque"
+        "detalle_clinico trae ['campos_adicionales'] pero el tipo 'LICENCIA' espera ningún bloque propio"
     ]
+
+
+# --- Contrato v2: autoevaluación, normalización y score ----------------------
+
+EVALUACION_CLARA = {"legibilidad": "alta", "certeza_tipo": "alta", "evidencia_tipo": "Informe de resultados"}
+
+
+async def test_score_se_calcula_con_la_autoevaluacion(db, oci):
+    queue_ingest(db)
+    # El LLM dice 0.5, pero el documento es legible, completo y de tipo claro.
+    doc = await ingest_document(_payload(score=0.5, evaluacion=EVALUACION_CLARA), db)
+
+    assert doc.estado == "PROCESADO"
+    assert float(doc.score_confianza) == 0.95
+    triaje = doc.raw_extracted_json["triaje"]
+    assert (triaje["score_confianza"], triaje["score_ia"]) == (0.95, 0.5)
+
+
+async def test_identificacion_invalida_y_cie10_invalido_van_a_auditoria_con_motivos(db, oci):
+    queue_ingest(db)
+    body = ingest_body(evaluacion=EVALUACION_CLARA)
+    body["datos_generales"]["paciente"]["identificacion"]["numero"] = "12.345.678-9"  # DV incorrecto
+    body["datos_generales"]["diagnosticos"][0]["cie10"] = "TEP"
+    doc = await ingest_document(IngestPayload.model_validate(body), db)
+
+    assert doc.estado == "PENDIENTE_AUDITORIA"
+    assert doc.motivos_auditoria == [
+        "Score de confianza 0.75 menor al umbral 0.85",
+        "Identificación RUT con formato o dígito verificador inválido",
+        "1 código(s) CIE-10 con formato inválido descartado(s)",
+    ]
+    assert doc.cie10_sugerido is None
+
+
+async def test_valor_critico_de_laboratorio_eleva_la_prioridad(db, oci):
+    queue_ingest(db)
+    body = ingest_body(evaluacion=EVALUACION_CLARA)
+    body["clasificacion"]["nivel_prioridad"] = "Rutina"
+    parametro = body["detalle_clinico"]["examenes_y_laboratorio"]["paneles"][0]["parametros"][0]
+    parametro.update(nombre="Potasio", critico=True)
+    doc = await ingest_document(IngestPayload.model_validate(body), db)
+
+    assert doc.nivel_prioridad == "Urgente"
+    assert doc.oci_json_path == "procesados/urgente/DOC-TEST-1.json"
+    assert doc.raw_extracted_json["triaje"]["ajustes"] == [
+        "Prioridad elevada a Urgente por valor crítico en: Potasio"
+    ]
+
+
+async def test_medicamentos_de_cualquier_tipo_y_examenes_solicitados_se_normalizan(db, oci):
+    queue_ingest(db)
+    payload = _payload(
+        clasificacion={**_clasificacion("EPICRISIS")},
+        detalle_clinico={
+            "procedimientos_e_internacion": {"resumen_evolucion": "Circuncisión sin complicaciones"},
+            "medicamentos": [
+                {"nombre": "Ibuprofeno", "dosis": "10 cc", "frecuencia": "cada 8 horas", "via": "oral"},
+                {"nombre": None, "dosis": "sin nombre: se omite"},
+            ],
+            "examenes_solicitados": [{"codigo": "0301045", "nombre": "Hemograma", "categoria": "laboratorio"}],
+        },
+    )
+    doc = await ingest_document(payload, db)
+
+    assert [(m.nombre, m.frecuencia, m.via) for m in doc.medications] == [("Ibuprofeno", "cada 8 horas", "oral")]
+    assert [(e.codigo, e.nombre, e.categoria) for e in doc.requested_exams] == [
+        ("0301045", "Hemograma", "LABORATORIO")
+    ]
+
+
+async def test_cie10_impreso_en_el_documento_conserva_su_origen(db, oci):
+    queue_ingest(db)
+    body = ingest_body()
+    body["datos_generales"]["diagnosticos"] = [
+        {"descripcion": "Fimosis", "cie10": "n47", "origen_cie10": "DOCUMENTO"},
+        {"descripcion": "Control", "cie10": None},
+    ]
+    doc = await ingest_document(IngestPayload.model_validate(body), db)
+
+    assert (doc.diagnostico_principal, doc.cie10_sugerido, doc.cie10_origen) == ("Fimosis", "N47", "DOCUMENTO")
+    assert [(d.tipo, d.origen_cie10) for d in doc.diagnoses] == [("PRINCIPAL", "DOCUMENTO"), ("SECUNDARIO", None)]
+
+
+async def test_profesional_responsable_prioriza_al_informante(db, oci):
+    queue_ingest(db)
+    body = ingest_body()
+    body["datos_generales"]["profesionales"] = [
+        {"nombre": "Dr. Solicitante", "rol": "SOLICITANTE"},
+        {"nombre": "Dra. Radióloga", "identificacion": "15.691.648-K", "rol": "INFORMANTE"},
+    ]
+    doc = await ingest_document(IngestPayload.model_validate(body), db)
+    assert (doc.medico_nombre, doc.medico_identificacion) == ("Dra. Radióloga", "15.691.648-K")
+
+
+async def test_paciente_sin_identificacion_nacional_usa_la_ficha(db, oci):
+    queue_ingest(db)
+    body = ingest_body(evaluacion=EVALUACION_CLARA)
+    body["datos_generales"]["paciente"] = {"nombre": "Paciente de México", "numero_ficha": "EXP-991"}
+    doc = await ingest_document(IngestPayload.model_validate(body), db)
+
+    assert doc.estado == "PROCESADO"  # sin cédula pero con N° de expediente: no se descuenta
+    assert (doc.identificacion_paciente, doc.numero_ficha) == (None, "EXP-991")

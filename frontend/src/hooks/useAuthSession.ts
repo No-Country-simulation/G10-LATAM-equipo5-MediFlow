@@ -3,8 +3,10 @@ import { authService } from '../services/authService';
 import { getStoredToken, removeStoredToken, setStoredTokens } from '../services/api';
 import { getStoredItem, removeStoredItem, setStoredItem } from '../services/sessionStorage';
 import type { LoginRequest, TokenResponse, UserOut } from '../types/auth';
+import { createLogger, describeError } from '../utils/logger';
 
 const USER_KEY = 'mediflow_user';
+const log = createLogger('auth');
 
 export const useAuthSession = () => {
   const [token, setToken] = useState<string | null>(getStoredToken);
@@ -29,7 +31,9 @@ export const useAuthSession = () => {
         const profile = await authService.getProfile();
         setUser(profile);
         setStoredItem(USER_KEY, profile);
-      } catch {
+        log.info('Sesión restaurada', { user: profile.username, role: profile.role });
+      } catch (error) {
+        log.warn('La sesión guardada ya no es válida: se pide iniciar sesión de nuevo', { error: describeError(error) });
         clearSession();
       } finally {
         setIsLoading(false);
@@ -61,7 +65,11 @@ export const useAuthSession = () => {
       setStoredItem(USER_KEY, loggedUser);
       setToken(access_token);
       setUser(loggedUser);
+      log.info('Inicio de sesión', { user: loggedUser.username, role: loggedUser.role, area: loggedUser.area?.codigo });
       return loggedUser;
+    } catch (error) {
+      log.warn('Inicio de sesión rechazado', { user: credentials.username, error: describeError(error) });
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -71,8 +79,9 @@ export const useAuthSession = () => {
     setIsLoading(true);
     try {
       await authService.logout();
+      log.info('Cierre de sesión', { user: user?.username });
     } catch (error) {
-      console.warn('Backend logout warning:', error);
+      log.warn('El backend no confirmó el cierre de sesión; se limpia la sesión local igual', { error: describeError(error) });
     } finally {
       clearSession();
       setIsLoading(false);

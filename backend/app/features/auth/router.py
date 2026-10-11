@@ -1,5 +1,6 @@
 """Router de la feature de autenticación: login, perfil propio y gestión administrativa de usuarios."""
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -9,6 +10,7 @@ import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.log_config import safe, set_current_username
 from app.core.rate_limit import login_throttle
 from app.core.security import (
     REFRESH_TOKEN_TYPE,
@@ -46,6 +48,8 @@ from app.features.auth.service import (
     update_profile,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["Auth"])
 users_router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -69,8 +73,10 @@ async def login(
     """
     client_ip = request.client.host if request.client else "desconocida"
     throttle_key = f"{credentials.username.lower()}|{client_ip}"
+    login_name = safe(credentials.username)
     retry_after = login_throttle.retry_after(throttle_key)
     if retry_after:
+        logger.warning("Login bloqueado para %s desde %s: %d s restantes", login_name, client_ip, retry_after)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Demasiados intentos fallidos. Intenta nuevamente más tarde.",
@@ -80,12 +86,15 @@ async def login(
     user = await authenticate_user(db, credentials.username, credentials.password)
     if user is None:
         login_throttle.register_failure(throttle_key)
+        logger.warning("Login fallido para %s desde %s", login_name, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario o contraseña incorrectos",
             headers={"WWW-Authenticate": "Bearer"},
         )
     login_throttle.reset(throttle_key)
+    set_current_username(user.username)
+    logger.info("Inicio de sesión de %s (%s) desde %s", user.username, user.role.value, client_ip)
 
     return _issue_tokens(user)
 
@@ -125,15 +134,22 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
     """
     payload = _decode_refresh_token(body.refresh_token)
     if payload is None:
+        logger.warning("Refresh rechazado: token inválido o expirado")
         raise _INVALID_REFRESH_ERROR
 
+    username = safe(payload["sub"])
+    set_current_username(username)
     user = await get_user_by_username(db, payload["sub"])
     if user is None or not user.is_active:
+        logger.warning("Refresh rechazado: el usuario %s no existe o está inactivo", username)
         raise _INVALID_REFRESH_ERROR
 
     if not await consume_refresh_token(db, payload["jti"], _expiration(payload)):
+        # Un refresh token ya canjeado que vuelve a llegar puede indicar que fue robado.
+        logger.warning("Refresh rechazado: token ya utilizado (posible reutilización) de %s", username)
         raise _INVALID_REFRESH_ERROR
 
+    logger.info("Sesión renovada para %s", username)
     return _issue_tokens(user)
 
 
@@ -155,6 +171,7 @@ async def logout(
         # Solo se revoca un refresh token del mismo usuario; uno inválido se ignora.
         if refresh_payload is not None and refresh_payload["sub"] == current_user.username:
             await revoke_token(db, refresh_payload["jti"], _expiration(refresh_payload))
+    logger.info("Cierre de sesión de %s", current_user.username)
 
 
 @router.get("/me", response_model=UserOut)

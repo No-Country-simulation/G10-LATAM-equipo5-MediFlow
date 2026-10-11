@@ -12,34 +12,38 @@
       "typeVersion": 2,
       "position": [
         -1400,
-        -112
+        0
       ],
       "id": "webhook-ingesta-001",
       "name": "Ingesta Webhook"
     },
     {
       "parameters": {
-        "jsCode": "// Entrada del webhook: valida token y archivo ANTES de gastar tokens del LLM.\nconst MAX_BYTES = 10 * 1024 * 1024;\nconst MIME_PERMITIDOS = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];\n// URL del backend: solo desde la configuración del servidor, nunca desde el request\n// (si viniera del navegador, cualquiera podría desviar el token del usuario a otro host).\nlet apiBaseUrl = 'http://host.docker.internal:8000';\ntry {\n  apiBaseUrl = $env.MEDIFLOW_API_BASE_URL || apiBaseUrl;\n} catch (e) {\n  // N8N_BLOCK_ENV_ACCESS_IN_NODE=true: se usa el valor por defecto.\n}\n\nconst webhook = $('Ingesta Webhook').first();\nconst json = webhook.json || {};\nconst headers = json.headers || {};\n\nconst authHeader = headers.authorization || headers.Authorization || '';\nconst token = authHeader.replace(/^Bearer\\s+/i, '').trim() || String((json.body || {}).token || json.token || '').trim();\nif (!token) {\n  throw new Error('No se recibió token de autenticación (JWT) desde el frontend');\n}\n\nconst binary = webhook.binary || {};\nconst binaryKey = Object.keys(binary)[0];\nif (!binaryKey) {\n  throw new Error('No se recibió ningún archivo en el webhook');\n}\nconst mime = (binary[binaryKey].mimeType || '').toLowerCase();\nif (!MIME_PERMITIDOS.includes(mime)) {\n  throw new Error('Formato no admitido (' + mime + '): use PDF, PNG o JPG');\n}\n\n// Convierte a base64 aquí: es el único nodo cuya entrada trae el binario del webhook.\n// En n8n 2.x binary.data.data es solo una referencia al disco, no el contenido.\nconst buffer = await this.helpers.getBinaryDataBuffer(0, binaryKey);\nif (buffer.length > MAX_BYTES) {\n  throw new Error('El archivo supera el límite de 10 MB');\n}\n\nreturn [{\n  json: {\n    // Siempre lo genera el servidor: un único responsable evita colisiones y rutas raras en OCI.\n    documento_id: 'DOC-' + (typeof crypto !== 'undefined' && crypto.randomUUID\n      ? crypto.randomUUID()\n      : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12)),\n    access_token: token,\n    api_base_url: apiBaseUrl.replace(/\\/+$/, ''),\n    archivo_base64: buffer.toString('base64'),\n    archivo_mime: mime\n  },\n  binary\n}];\n"
+        "jsCode": "// Entrada del webhook: valida token y archivo ANTES de gastar tokens del LLM.\nconst MAX_BYTES = 10 * 1024 * 1024;\nconst MIME_PERMITIDOS = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];\n// URL del backend: solo desde la configuración del servidor, nunca desde el request\n// (si viniera del navegador, cualquiera podría desviar el token del usuario a otro host).\n// Modelos de Gemini: el rápido procesa todo; el preciso solo repite los documentos dudosos.\n// Configurables porque Google renueva los IDs (ver ai.google.dev/gemini-api/docs/models).\nfunction leerEnv(nombre, porDefecto) {\n  try {\n    return $env[nombre] || porDefecto;\n  } catch (e) {\n    // N8N_BLOCK_ENV_ACCESS_IN_NODE=true: se usa el valor por defecto.\n    return porDefecto;\n  }\n}\nconst apiBaseUrl = leerEnv('MEDIFLOW_API_BASE_URL', 'http://host.docker.internal:8000');\nconst modeloRapido = leerEnv('GEMINI_MODELO_RAPIDO', 'gemini-3.1-flash-lite');\nconst modeloPreciso = leerEnv('GEMINI_MODELO_PRECISO', 'gemini-3.8-flash');\n\nconst webhook = $('Ingesta Webhook').first();\nconst json = webhook.json || {};\nconst headers = json.headers || {};\n\nconst authHeader = headers.authorization || headers.Authorization || '';\nconst token = authHeader.replace(/^Bearer\\s+/i, '').trim() || String((json.body || {}).token || json.token || '').trim();\n\n// ID de seguimiento: lo genera el front y se reenvía al backend como X-Request-ID, para\n// seguir la misma ingesta en los logs del navegador, de n8n y del backend.\nconst receivedId = String((json.body || {}).request_id || headers['x-request-id'] || '').trim();\nconst request_id = /^[A-Za-z0-9_-]{8,64}$/.test(receivedId)\n  ? receivedId\n  : 'n8n-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);\nif (!token) {\n  throw new Error('No se recibió token de autenticación (JWT) desde el frontend');\n}\n\nconst binary = webhook.binary || {};\nconst binaryKey = Object.keys(binary)[0];\nif (!binaryKey) {\n  throw new Error('No se recibió ningún archivo en el webhook');\n}\nconst mime = (binary[binaryKey].mimeType || '').toLowerCase();\nif (!MIME_PERMITIDOS.includes(mime)) {\n  throw new Error('Formato no admitido (' + mime + '): use PDF, PNG o JPG');\n}\n\n// Convierte a base64 aquí: es el único nodo cuya entrada trae el binario del webhook.\n// En n8n 2.x binary.data.data es solo una referencia al disco, no el contenido.\nconst buffer = await this.helpers.getBinaryDataBuffer(0, binaryKey);\nif (buffer.length > MAX_BYTES) {\n  throw new Error('El archivo supera el límite de 10 MB');\n}\n\nreturn [{\n  json: {\n    // Siempre lo genera el servidor: un único responsable evita colisiones y rutas raras en OCI.\n    documento_id: 'DOC-' + (typeof crypto !== 'undefined' && crypto.randomUUID\n      ? crypto.randomUUID()\n      : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12)),\n    request_id,\n    access_token: token,\n    api_base_url: apiBaseUrl.replace(/\\/+$/, ''),\n    modelo_rapido: modeloRapido,\n    modelo_preciso: modeloPreciso,\n    archivo_base64: buffer.toString('base64'),\n    // Gemini espera el MIME estándar de JPEG.\n    archivo_mime: mime === 'image/jpg' ? 'image/jpeg' : mime\n  }\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         -1180,
-        -112
+        0
       ],
-      "id": "prep-corrida-001",
+      "id": "preparar-corrida-01",
       "name": "Preparar corrida"
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $('Preparar corrida').first().json.api_base_url }}/api/v1/catalogs/document-types/active",
+        "url": "={{ $('Preparar corrida').first().json.api_base_url }}/api/v1/catalogs/document-types/forms",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
               "value": "=Bearer {{ $('Preparar corrida').first().json.access_token }}"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $('Preparar corrida').first().json.request_id }}"
             }
           ]
         },
@@ -49,10 +53,10 @@
       "typeVersion": 4.2,
       "position": [
         -960,
-        -192
+        0
       ],
-      "id": "get-tipos-001",
-      "name": "GET tipos activos"
+      "id": "get-formularios-01",
+      "name": "GET formularios"
     },
     {
       "parameters": {
@@ -64,6 +68,10 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $('Preparar corrida').first().json.access_token }}"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $('Preparar corrida').first().json.request_id }}"
             }
           ]
         },
@@ -72,103 +80,71 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -960,
-        -32
+        -740,
+        0
       ],
-      "id": "get-colas-001",
+      "id": "get-colas-01",
       "name": "GET colas activas"
     },
     {
       "parameters": {
-        "jsCode": "const prep = $('Preparar corrida').first();\n// El base64 no viaja por la rama de IA: solo lo lee 'Armar IngestPayload' desde 'Preparar corrida'\nconst { archivo_base64, ...json } = prep.json;\nreturn [{ json, binary: prep.binary }];"
+        "jsCode": "// Nodo \"Contexto para IA\": arma el prompt y la petición a Gemini con el archivo adjunto.\n//\n// El archivo (PDF, PNG o JPG) se envía TAL CUAL a Gemini, que lee PDF nativo (texto, tablas y\n// escaneos) e imágenes: no hay extracción de texto previa, que desordenaba las tablas de\n// laboratorio y no servía para escaneos.\n//\n// Todo lo que entra al prompt se paga en cada documento: instrucciones fijas primero, luego los\n// catálogos (cambian poco) y el archivo al final, para aprovechar la caché implícita de Gemini.\n// Los campos de cada tipo salen de GET /catalogs/document-types/forms: la misma fuente que usa el\n// formulario de auditoría del backend.\n\nconst MAX_OUTPUT_TOKENS = 16384;\n\n/** Tipo principal de un JSON Schema (`[\"string\", \"null\"]` -> `string`). */\nfunction tipoDe(esquema) {\n  const tipo = esquema && esquema.type;\n  return Array.isArray(tipo) ? tipo.find((t) => t !== 'null') : tipo;\n}\n\n/** Descripción compacta de los campos de un esquema: `{campo,otro:(A|B),lista:[{...}]}`. */\nfunction describirCampos(esquema) {\n  if (!esquema) return '';\n  const tipo = tipoDe(esquema);\n  if (tipo === 'array') return '[' + describirCampos(esquema.items) + ']';\n  if (tipo !== 'object') return '';\n  const campos = Object.entries(esquema.properties || {}).map(([nombre, definicion]) => {\n    const tipoCampo = tipoDe(definicion);\n    if (tipoCampo === 'object' || tipoCampo === 'array') return nombre + ':' + describirCampos(definicion);\n    if (Array.isArray(definicion.enum)) {\n      return nombre + ':(' + definicion.enum.filter((v) => v !== null).join('|') + ')';\n    }\n    if (definicion.format === 'date') return nombre + ':fecha';\n    if (tipoCampo === 'boolean') return nombre + ':bool';\n    if (tipoCampo === 'integer' || tipoCampo === 'number') return nombre + ':num';\n    return nombre;\n  });\n  return '{' + campos.join(',') + '}';\n}\n\nfunction lineaTipo(tipo) {\n  let linea = '- ' + tipo.codigo + ' (' + tipo.nombre + '): ' + tipo.descripcion;\n  if (tipo.bloque) linea += '\\n  bloque ' + tipo.bloque + ':' + describirCampos(tipo.esquema);\n  return linea;\n}\n\nfunction lineaCola(cola) {\n  return '- ' + cola.codigo + ' (' + cola.nombre + ')' + (cola.notificar_inmediato ? ' [NOTIFICAR]' : '') +\n    ': ' + cola.descripcion_semantica;\n}\n\nconst INSTRUCCIONES = `Eres MediFlow-AI, motor de triaje y extracción de documentos clínicos de cualquier país de habla hispana o portuguesa. Lee el archivo adjunto completo (todas sus páginas) y responde SOLO un objeto JSON válido con la estructura de SALIDA.\n\n1. CLASIFICACIÓN (decide en este orden)\n- ¿Es un documento clínico? Si no, tipo OTRO y es_documento_clinico=false.\n- Decide por el CONTENIDO y el título, no por el formulario impreso: un talonario \"Rp.\" puede ser una receta, una orden de exámenes o una derivación.\n- ¿Trae RESULTADOS (valores, hallazgos, informe de un estudio hecho)? -> LABORATORIO, IMAGENES o ANATOMIA_PATOLOGICA.\n- ¿PIDE algo que aún no se hace? Exámenes -> SOLICITUD_EXAMENES; cirugía o procedimiento invasivo -> SOLICITUD_PROCEDIMIENTO; evaluación por otro profesional o centro -> INTERCONSULTA.\n- ¿Prescribe medicamentos para que el paciente los adquiera? -> RECETA.\n- ¿Registra una atención? Urgencia o ambulancia -> ATENCION_URGENCIA; hospitalización al alta -> EPICRISIS; consulta o evaluación ambulatoria -> NOTA_ATENCION; cirugía realizada -> PROTOCOLO_OPERATORIO.\n- ¿Certifica algo ante un tercero (reposo, licencia, asistencia)? -> CERTIFICADO_MEDICO.\n- tipo_documento y destino_principal: EXACTAMENTE un \"codigo\" de TIPOS y de COLAS.\n\n2. DATOS DEL PACIENTE\n- nombre: tal como aparece, sin reordenar; si aparece escrito de dos formas, usa la más completa.\n- identificacion: el documento de identidad del PACIENTE (nunca el de un profesional). tipo: RUT (Chile: \"RUT\", \"RUN\", \"Número de documento\" con formato 12.345.678-9), DNI (Argentina, Perú, España), CURP (México, 18 caracteres), CEDULA (\"C.I.\", \"C.C.\", \"Cédula\" de otros países), CPF (Brasil), PASAPORTE u OTRO. numero: cópialo tal cual. pais: código ISO de 2 letras si se deduce (institución, dirección, formato); si no, null.\n- numero_ficha: \"Ficha\", \"N° de ficha\", \"Historia clínica\", \"HC\", \"N° de historia\", \"Expediente\", \"MRN\". NO es ficha el número del informe, petición, orden, folio o consecutivo.\n- edad en años (entero); fecha_nacimiento; sexo F, M o X.\n\n3. DEMÁS DATOS\n- Fechas en formato AAAA-MM-DD; interpreta dd/mm/aaaa. Si el año tiene 2 dígitos o la fecha es ambigua: null y agrégala a campos_dudosos.\n- fecha_documento: la del examen en un informe, la de la atención en una atención o urgencia, la de alta en una epicrisis, la de emisión en recetas, órdenes y certificados.\n- institucion_emisora: hospital, clínica, laboratorio o centro que emite el documento.\n- profesionales: cada uno con su rol. INFORMANTE: radiólogo, patólogo o quien valida un laboratorio; quien firma una epicrisis o certificado. SOLICITANTE: quien pide el examen, la orden o la interconsulta (\"Referido por\"). TRATANTE: quien atiende la consulta o la urgencia. DESTINATARIO: a quien se deriva. identificacion: RUT o cédula del profesional; registro_profesional: matrícula, registro, colegiatura o cédula profesional.\n- \"NO DISPONIBLE\", \"NO APLICA\", \"S/I\", guiones o campos de plantilla vacíos: null. No inventes datos; lo que falta va null.\n- Copia los textos literalmente. Si el mismo texto se repite en varias secciones (fichas electrónicas), inclúyelo solo en la sección que corresponde.\n- Si el archivo trae más de un documento, extrae solo el principal y marca documentos_multiples=true.\n\n4. DIAGNÓSTICOS Y CIE-10\n- diagnosticos: todos los diagnósticos explícitos; uno solo con tipo PRINCIPAL (impresión o conclusión de un informe, diagnóstico de egreso de una epicrisis, diagnóstico final de una urgencia o, si no hay, el presuntivo). certeza: CONFIRMADO o PRESUNTIVO (sospecha, hipótesis, \"a descartar\", \"en estudio\").\n- Si el documento trae el código CIE-10 impreso, cópialo con origen_cie10 DOCUMENTO.\n- Si no, asigna el código CIE-10 (OMS) más específico que respalde el diagnóstico escrito, con 4 caracteres cuando el texto lo permita (ej. J45.9, M50.0, C34.9, K76.0), y origen_cie10 INFERIDO. Ante una sospecha sin confirmar, codifica lo sospechado o el síntoma (capítulo R).\n- Estudio sin hallazgos patológicos: descripcion \"Sin hallazgos patológicos\" y cie10 null. Nunca uses CIE-9, CIE-11 ni SNOMED; sin diagnóstico explícito, cie10 null.\n\n5. CONTENIDO CLÍNICO (detalle_clinico)\n- Usa SOLO el bloque del tipo elegido (tipo sin bloque: ninguno) más las listas comunes:\n  medicamentos:[{nombre,dosis,frecuencia,via,duracion_tratamiento,cantidad,tipo:(PRESCRITO|ADMINISTRADO)}] de cualquier tipo de documento (receta, indicaciones de alta o de una atención; ADMINISTRADO si se aplicó en urgencias o ambulancia).\n  examenes_solicitados:[{codigo,nombre,categoria:(LABORATORIO|IMAGENOLOGIA|PROCEDIMIENTO|OTRO)}] cuando el documento pide exámenes (codigo: código de prestación si aparece).\n- Si el bloque del tipo es campos_adicionales, usa exactamente esos campos.\n- Laboratorio: un parámetro por fila, con el valor, la unidad y el rango de la MISMA fila; agrúpalos por panel o sección e indica la muestra (sangre, orina). alterado=true si está marcado (*, H, L, flechas, negrita) o fuera del rango. critico=true SOLO si el informe lo marca como valor crítico o de pánico (ej. \"**\"). Omite tablas de interpretación y notas de metodología.\n\n6. PRIORIDAD Y DESTINO\n- Urgente: riesgo vital, valor crítico, triaje rojo o naranjo (C1-C2, ESI 1-2) o hallazgo agudo grave (TEP, neumotórax, hemorragia, masa con compromiso de estructuras vitales).\n- Prioritario: requiere acción en días: sospecha o confirmación de malignidad, fractura, resultados alterados relevantes, triaje amarillo (C3).\n- Rutina: normal, controles, enfermedad crónica estable, certificados, triaje verde o azul.\n- Cola [NOTIFICAR]: notificacion_generada={canal,mensaje (máx. 120 caracteres)}; si no, null. justificacion_enrutamiento: máx. 200 caracteres.\n\n7. AUTOEVALUACIÓN (evaluacion), sé honesto\n- legibilidad: alta (todo lo relevante se lee sin dudas), media (algunas palabras o valores inciertos: manuscrito, escaneo regular), baja (gran parte ilegible).\n- certeza_tipo: alta (título o estructura inequívocos), media (rasgos de dos tipos), baja (no calza bien con ninguno).\n- evidencia_tipo: cita literal breve del título o encabezado que justifica el tipo.\n- campos_dudosos: rutas de los campos cuya lectura no es segura (ej. \"paciente.identificacion.numero\", \"medicamentos[0].dosis\").\n- requiere_auditoria_humana=true si dudas de algún dato clave.\n\nSALIDA\n{\"clasificacion\":{\"tipo_documento\":\"\",\"especialidad\":null,\"nivel_prioridad\":\"Rutina|Prioritario|Urgente\"},\"evaluacion\":{\"legibilidad\":\"alta|media|baja\",\"certeza_tipo\":\"alta|media|baja\",\"evidencia_tipo\":null,\"campos_dudosos\":[],\"documentos_multiples\":false,\"es_documento_clinico\":true},\"datos_generales\":{\"paciente\":{\"nombre\":null,\"identificacion\":{\"tipo\":null,\"numero\":null,\"pais\":null},\"edad\":null,\"fecha_nacimiento\":null,\"sexo\":null,\"numero_ficha\":null},\"profesionales\":[{\"nombre\":\"\",\"identificacion\":null,\"registro_profesional\":null,\"especialidad\":null,\"rol\":\"\"}],\"institucion_emisora\":null,\"fecha_documento\":null,\"diagnosticos\":[{\"descripcion\":\"\",\"cie10\":null,\"tipo\":\"PRINCIPAL|SECUNDARIO\",\"certeza\":\"CONFIRMADO|PRESUNTIVO\",\"origen_cie10\":\"DOCUMENTO|INFERIDO\"}]},\"detalle_clinico\":{},\"decision_enrutamiento\":{\"destino_principal\":\"\",\"requiere_auditoria_humana\":false,\"justificacion_enrutamiento\":\"\",\"notificacion_generada\":null}}`;\n\nfunction armarPrompt(formularios, colas) {\n  const tipos = (formularios && formularios.tipos) || [];\n  return INSTRUCCIONES +\n    '\\n\\nTIPOS\\n' + (tipos.map(lineaTipo).join('\\n') || '(vacío: usa OTRO y requiere_auditoria_humana=true)') +\n    '\\n\\nCOLAS\\n' + ((colas || []).map(lineaCola).join('\\n') || '(vacío: requiere_auditoria_humana=true)') +\n    '\\n\\nDOCUMENTO: ver archivo adjunto.';\n}\n\nfunction armarPeticionGemini(prompt, mime, base64) {\n  return {\n    contents: [{ role: 'user', parts: [{ text: prompt }, { inline_data: { mime_type: mime, data: base64 } }] }],\n    generationConfig: { temperature: 0, responseMimeType: 'application/json', maxOutputTokens: MAX_OUTPUT_TOKENS },\n  };\n}\n\n// --- Ejecución en n8n --------------------------------------------------------\n\nfunction listaDe(nombreNodo) {\n  const items = $(nombreNodo).all();\n  if (items.length === 1 && Array.isArray(items[0].json)) return items[0].json;\n  return items.map((i) => i.json);\n}\n\nconst prep = $('Preparar corrida').first().json;\nconst prompt = armarPrompt($('GET formularios').first().json, listaDe('GET colas activas'));\n\nreturn [{\n  json: {\n    gemini_request: armarPeticionGemini(prompt, prep.archivo_mime, prep.archivo_base64),\n    largo_prompt: prompt.length,\n  },\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -740,
-        -112
+        -520,
+        0
       ],
-      "id": "restaurar-bin-001",
-      "name": "Restaurar binario"
+      "id": "contexto-ia-01",
+      "name": "Contexto para IA"
     },
     {
       "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "loose",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "id": "cond-pdf",
-                    "leftValue": "=={{ JSON.stringify($binary) }}",
-                    "rightValue": "application/pdf",
-                    "operator": {
-                      "type": "string",
-                      "operation": "contains"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "loose",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "id": "cond-img",
-                    "leftValue": "=={{ JSON.stringify($binary) }}",
-                    "rightValue": "image/|png|jpg|jpeg|webp|jfif",
-                    "operator": {
-                      "type": "string",
-                      "operation": "regex"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              }
-            }
-          ]
-        },
-        "looseTypeValidation": true,
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $('Preparar corrida').first().json.modelo_rapido }}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Contexto para IA').first().json.gemini_request) }}",
         "options": {
-          "fallbackOutput": "extra"
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 90000
         }
       },
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        -520,
-        -112
+        -300,
+        0
       ],
-      "id": "switch-tipo-archivo-001",
-      "name": "Tipo de Archivo?"
+      "id": "gemini-rapido-01",
+      "name": "Gemini rápido",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "uoXc6pOzbUGOZEa9",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
     },
     {
       "parameters": {
-        "operation": "pdf",
-        "binaryPropertyName": "={{ Object.keys($binary)[0] || 'data' }}",
-        "options": {}
+        "jsCode": "// Nodos \"Interpretar respuesta rápida\" e \"Interpretar respuesta precisa\" (mismo código; el script\n// de armado reemplaza ETAPA por 'rapida' o 'precisa').\n//\n// Extrae el JSON que devolvió Gemini y decide si hay que ESCALAR: repetir la extracción con el\n// modelo preciso cuando el rápido no está seguro (legibilidad o certeza no \"alta\", campos dudosos,\n// varios documentos en el archivo) o su respuesta no sirve (error HTTP, JSON inválido o cortado).\n// En la etapa precisa, si el modelo preciso falla, se conserva la respuesta del rápido.\n\nconst ETAPA = 'rapida';\n\n/** Texto, motivo de término y error de la respuesta HTTP de generateContent. */\nfunction leerRespuesta(respuesta) {\n  const body = respuesta && respuesta.body !== undefined ? respuesta.body : respuesta;\n  const candidato = body && Array.isArray(body.candidates) ? body.candidates[0] : null;\n  const partes = (candidato && candidato.content && candidato.content.parts) || [];\n  return {\n    texto: partes.map((p) => p.text || '').join(''),\n    fin: candidato ? candidato.finishReason : null,\n    status: respuesta && respuesta.statusCode,\n    error: body && body.error ? body.error.message : null,\n  };\n}\n\nfunction parsearJson(texto) {\n  if (!texto) return null;\n  try {\n    return JSON.parse(texto);\n  } catch {\n    const match = String(texto).match(/\\{[\\s\\S]*\\}/);\n    if (!match) return null;\n    try {\n      return JSON.parse(match[0]);\n    } catch {\n      return null;\n    }\n  }\n}\n\n/** Resultado de la etapa: `llm` es `null` si la respuesta no se pudo usar. */\nfunction interpretar(respuesta) {\n  const { texto, fin, status, error } = leerRespuesta(respuesta);\n  if (status && status >= 400) return { llm: null, fallo: 'Gemini respondió HTTP ' + status + (error ? ': ' + error : '') };\n  if (fin === 'MAX_TOKENS') return { llm: null, fallo: 'La respuesta de Gemini quedó cortada (MAX_TOKENS)' };\n  const llm = parsearJson(texto);\n  if (!llm || typeof llm !== 'object' || !llm.clasificacion) {\n    return { llm: null, fallo: 'Gemini no devolvió un JSON válido' + (fin && fin !== 'STOP' ? ' (' + fin + ')' : '') };\n  }\n  return { llm, fallo: null };\n}\n\n/** Motivos para repetir con el modelo preciso (vacío si la respuesta rápida es confiable). */\nfunction motivosParaEscalar(resultado) {\n  if (!resultado.llm) return [resultado.fallo];\n  const ev = resultado.llm.evaluacion || {};\n  const motivos = [];\n  if (ev.legibilidad !== 'alta') motivos.push('legibilidad ' + (ev.legibilidad || 'sin evaluar'));\n  if (ev.certeza_tipo !== 'alta') motivos.push('certeza del tipo ' + (ev.certeza_tipo || 'sin evaluar'));\n  if (Array.isArray(ev.campos_dudosos) && ev.campos_dudosos.length) motivos.push('campos dudosos');\n  if (ev.documentos_multiples === true) motivos.push('varios documentos en el archivo');\n  return motivos;\n}\n\n// --- Ejecución en n8n --------------------------------------------------------\n\nconst prep = $('Preparar corrida').first().json;\nconst actual = interpretar($input.first().json);\n\nif (ETAPA === 'rapida') {\n  const motivos = prep.modelo_preciso && prep.modelo_preciso !== prep.modelo_rapido ? motivosParaEscalar(actual) : [];\n  return [{\n    json: {\n      llm: actual.llm,\n      fallo: actual.fallo,\n      modelo: prep.modelo_rapido,\n      escalar: motivos.length > 0,\n      motivos_escalamiento: motivos,\n    },\n  }];\n}\n\n// Etapa precisa: se prefiere su respuesta; si falló, la del modelo rápido.\nconst rapida = $('Interpretar respuesta rápida').first().json;\nconst usarPrecisa = Boolean(actual.llm);\nreturn [{\n  json: {\n    llm: usarPrecisa ? actual.llm : rapida.llm,\n    fallo: usarPrecisa ? null : actual.fallo,\n    modelo: usarPrecisa ? prep.modelo_preciso : rapida.modelo,\n    escalado: true,\n    motivos_escalamiento: rapida.motivos_escalamiento,\n  },\n}];\n"
       },
-      "type": "n8n-nodes-base.extractFromFile",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        -300,
-        -220
+        -80,
+        0
       ],
-      "id": "extract-pdf-text-001",
-      "name": "Extract Text from PDF"
+      "id": "interpretar-rapida-01",
+      "name": "Interpretar respuesta rápida"
     },
     {
       "parameters": {
@@ -177,16 +153,16 @@
             "caseSensitive": true,
             "leftValue": "",
             "typeValidation": "strict",
-            "version": 3
+            "version": 2
           },
           "conditions": [
             {
-              "id": "cond-has-text",
-              "leftValue": "=={{ $json.text ? $json.text.trim() : \"\" }}",
-              "rightValue": "",
+              "id": "cond-escalar",
+              "leftValue": "={{ $json.escalar }}",
+              "rightValue": true,
               "operator": {
-                "type": "string",
-                "operation": "notEmpty",
+                "type": "boolean",
+                "operation": "true",
                 "singleValue": true
               }
             }
@@ -196,116 +172,41 @@
         "options": {}
       },
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        -80,
-        -220
-      ],
-      "id": "if-tiene-texto-001",
-      "name": "If (tiene texto?)"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Arma el prompt de triaje (texto o imagen). Todo lo que se agrega aquí se paga en tokens\n// en CADA documento: mantenerlo compacto.\nconst MAX_CHARS = 24000;   // ~6-8k tokens: suficiente para cualquier documento clínico típico\nconst TAIL_CHARS = 4000;   // se conserva el final (conclusiones / indicaciones al alta)\n\nfunction listFrom(name) {\n  try {\n    const items = $(name).all();\n    if (items.length === 1 && Array.isArray(items[0].json)) return items[0].json;\n    return items.map((i) => i.json);\n  } catch {\n    return [];\n  }\n}\n\nfunction limpiarTexto(raw) {\n  const texto = String(raw || '')\n    .replace(/\\r/g, '')\n    .replace(/[ \\t\\u00a0]+/g, ' ')\n    .replace(/ *\\n */g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .trim();\n  if (texto.length <= MAX_CHARS) return texto;\n  return texto.slice(0, MAX_CHARS - TAIL_CHARS) + '\\n[...texto omitido...]\\n' + texto.slice(-TAIL_CHARS);\n}\n\n// Bloque de detalle_clinico de cada tipo semilla (= BLOQUE_POR_TIPO del backend). Solo se\n// envía el de los tipos activos.\nconst BLOQUES = {\n  RECETA: 'medicamentos:[{nombre,dosis,duracion_tratamiento}]',\n  LABORATORIO: 'examenes_y_laboratorio:{estudio_solicitado,conclusiones_o_hallazgos,paneles:[{nombre_panel,parametros:[{nombre,valor,unidad,rango_referencia,alterado}]}]}',\n  IMAGENES: 'informe_imagenologico:{tecnica,antecedentes,hallazgos,impresion_diagnostica}',\n  SOLICITUD_PROCEDIMIENTO: 'solicitud_procedimiento:{procedimiento_solicitado,indicacion_clinica,antecedentes,fecha_solicitud}',\n  EPICRISIS: 'procedimientos_e_internacion:{fecha_ingreso,fecha_alta,resumen_evolucion,antecedentes_relevantes,procedimientos_realizados:[]}',\n  INTERCONSULTA: 'interconsulta:{especialidad_destino,establecimiento_destino,motivo_interconsulta,antecedentes_clinicos}',\n  ANATOMIA_PATOLOGICA: 'anatomia_patologica:{tipo_muestra,descripcion_macroscopica,descripcion_microscopica,diagnostico_histopatologico,malignidad}',\n  PROTOCOLO_OPERATORIO: 'protocolo_operatorio:{fecha_cirugia,cirugia_realizada,diagnostico_preoperatorio,tecnica,hallazgos_intraoperatorios,complicaciones,muestras_enviadas}',\n  NOTA_ATENCION: 'nota_atencion_ambulatoria:{motivo_consulta,antecedentes,anamnesis,examen_fisico,diagnostico_referencia,diagnostico_atencion,indicaciones}',\n};\n\nconst tipos = listFrom('GET tipos activos')\n  .map((t) => '- ' + t.codigo + ' (' + t.nombre + '): ' + t.descripcion +\n    (BLOQUES[t.codigo] ? '\\n  bloque ' + BLOQUES[t.codigo] : '') +\n    (t.campos_extraccion ? '\\n  campos_adicionales ' + JSON.stringify(t.campos_extraccion) : ''))\n  .join('\\n');\nconst colas = listFrom('GET colas activas')\n  .map((c) => '- ' + c.codigo + ' (' + c.nombre + ')' + (c.notificar_inmediato ? ' [NOTIFICAR]' : '') +\n    ': ' + c.descripcion_semantica)\n  .join('\\n');\n\nconst item = $input.first();\nconst esImagen = Boolean(item.json.es_imagen_normalizada);\nconst documento = esImagen ? '(ver imagen adjunta)' : limpiarTexto(item.json.text);\n\nconst prompt = `Eres MediFlow-AI, motor de triaje de documentos clínicos. Responde SOLO un objeto JSON válido, sin markdown.\n\nREGLAS\n- tipo_documento y destino_principal: EXACTAMENTE un \"codigo\" de TIPOS y de COLAS. No inventes valores.\n- No inventes datos: si falta, null. cie10_sugerido solo con evidencia.\n- nivel_prioridad: Rutina | Prioritario | Urgente. Riesgo vital: Urgente.\n- score_confianza_clasificacion (0-1) = tu certeza real. Ilegible, dudoso o sin paciente/tipo: score < 0.7 y requiere_auditoria_humana = true.\n- Cola [NOTIFICAR]: notificacion_generada = {canal, mensaje (máx. 120 caracteres)}; si no, null.\n- detalle_clinico: SOLO el \"bloque\" del tipo elegido (tipo sin bloque: {}); no incluyas otros. Si el tipo trae campos_adicionales (JSON Schema), agrega detalle_clinico.campos_adicionales.\n- Copia valores literalmente; justificacion_enrutamiento en máx. 200 caracteres.\n\nSALIDA\n{\"clasificacion\":{\"tipo_documento\":\"\",\"especialidad\":null,\"nivel_prioridad\":\"\",\"score_confianza_clasificacion\":0},\"datos_generales\":{\"paciente\":{\"rut\":null,\"nombre\":null,\"edad\":null},\"medico_solicitante\":{\"rut\":null,\"nombre\":null,\"matricula\":null},\"diagnostico_principal\":null,\"cie10_sugerido\":null},\"detalle_clinico\":{},\"decision_enrutamiento\":{\"destino_principal\":\"\",\"requiere_auditoria_humana\":false,\"justificacion_enrutamiento\":\"\",\"notificacion_generada\":null}}\n\nTIPOS\n${tipos || '(vacío: usa OTRO, score < 0.7 y requiere_auditoria_humana = true)'}\n\nCOLAS\n${colas || '(vacío: requiere_auditoria_humana = true)'}\n\nDOCUMENTO\n${documento}`;\n\nreturn [{\n  json: { prompt, modo: esImagen ? 'imagen' : 'texto' },\n  binary: esImagen ? item.binary : undefined\n}];\n"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "typeVersion": 2.2,
       "position": [
         140,
-        -112
+        0
       ],
-      "id": "contexto-ia-001",
-      "name": "Contexto para IA"
+      "id": "escalar-01",
+      "name": "¿Escalar?"
     },
     {
       "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.prompt }}"
-      },
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.4,
-      "position": [
-        580,
-        -220
-      ],
-      "id": "triaje-extraccion-ia-001",
-      "name": "Triaje e Extracción IA"
-    },
-    {
-      "parameters": {
-        "modelName": "models/gemini-3.1-flash-lite",
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $('Preparar corrida').first().json.modelo_preciso }}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Contexto para IA').first().json.gemini_request) }}",
         "options": {
-          "temperature": 0,
-          "maxOutputTokens": 4096
-        }
-      },
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1.1,
-      "position": [
-        580,
-        -60
-      ],
-      "id": "gemini-chat-model-text-001",
-      "name": "Google Gemini Chat Model (Texto)",
-      "credentials": {
-        "googlePalmApi": {
-          "id": "uoXc6pOzbUGOZEa9",
-          "name": "Google Gemini(PaLM) Api account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const item = $input.first();\nlet binary = item.binary;\nif (!binary || Object.keys(binary).length === 0) {\n  try {\n    binary = $('Preparar corrida').first().binary;\n  } catch (e) {\n    binary = {};\n  }\n}\nconst binaryKeys = Object.keys(binary || {});\nif (binaryKeys.length === 0) {\n  throw new Error('No se encontró ningún archivo binario en la entrada de imagen.');\n}\nconst binaryPropertyName = binaryKeys[0];\nconst binaryData = binary[binaryPropertyName];\n\nlet mimeType = binaryData.mimeType || 'image/jpeg';\nif (mimeType.includes('jfif') || binaryData.fileExtension === 'jfif') {\n  mimeType = 'image/jpeg';\n}\n\nreturn {\n  json: {\n    ...item.json,\n    es_imagen_normalizada: true,\n    mime_type_detectado: mimeType\n  },\n  binary: {\n    data: {\n      ...binaryData,\n      mimeType: mimeType,\n      fileExtension: mimeType.split('/')[1] || 'jpg'\n    }\n  }\n};\n"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -300,
-        80
-      ],
-      "id": "normalizador-imagenes-001",
-      "name": "Normalizador de imágenes"
-    },
-    {
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.prompt }}",
-        "messages": {
-          "messageValues": [
-            {
-              "type": "HumanMessagePromptTemplate",
-              "messageType": "imageBinary",
-              "binaryImageDataKey": "data"
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
             }
-          ]
+          },
+          "timeout": 90000
         }
       },
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.4,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        580,
-        80
+        360,
+        -140
       ],
-      "id": "agente-ia-vision-001",
-      "name": "Triaje IA Visión"
-    },
-    {
-      "parameters": {
-        "modelName": "models/gemini-3.1-flash-lite",
-        "options": {
-          "temperature": 0,
-          "maxOutputTokens": 4096
-        }
-      },
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1.1,
-      "position": [
-        580,
-        240
-      ],
-      "id": "gemini-chat-model-vision-001",
-      "name": "Google Gemini Chat Model (Visión)",
+      "id": "gemini-preciso-01",
+      "name": "Gemini preciso",
       "credentials": {
         "googlePalmApi": {
           "id": "uoXc6pOzbUGOZEa9",
@@ -315,15 +216,28 @@
     },
     {
       "parameters": {
-        "jsCode": "/**\n * Construye el IngestPayload para FastAPI a partir de la respuesta del LLM.\n * Regla: nunca rellenar con valores inventados; un dato faltante va null y, si es clave,\n * el documento se marca para auditoría humana (el backend decide el estado final).\n */\nfunction parseLlm(raw) {\n  if (raw && typeof raw === 'object' && raw.clasificacion) return raw;\n  const text = typeof raw === 'string' ? raw : raw?.text || raw?.output || '';\n  const match = String(text).match(/\\{[\\s\\S]*\\}/);\n  if (!match) return {};\n  try {\n    return JSON.parse(match[0]);\n  } catch {\n    return {};\n  }\n}\n\nfunction listFrom(nodeName) {\n  try {\n    const items = $(nodeName).all();\n    if (items.length === 1 && Array.isArray(items[0].json)) return items[0].json;\n    return items.map((i) => i.json);\n  } catch {\n    return [];\n  }\n}\n\nconst obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});\n\nconst item = $input.first();\nconst prep = $('Preparar corrida').first();\nconst llm = parseLlm(item.json);\nconst respuestaValida = Object.keys(llm).length > 0;\n\n// 1. Archivo (base64 calculado en 'Preparar corrida')\nconst archivoBase64 = prep.json.archivo_base64 || '';\nif (!archivoBase64) {\n  throw new Error('No hay archivo en base64 desde Preparar corrida');\n}\nconst mime = prep.json.archivo_mime || '';\nconst tipoArchivo = mime.includes('pdf') ? 'PDF' : mime.includes('png') ? 'PNG' : 'JPG';\n\n// 2. Tipo y cola: deben ser códigos del catálogo (se acepta el nombre por tolerancia)\nconst tiposCatalogo = listFrom('GET tipos activos');\nconst colasCatalogo = listFrom('GET colas activas');\nconst clasificacion = obj(llm.clasificacion);\nconst decision = obj(llm.decision_enrutamiento);\n\nconst rawTipo = String(clasificacion.tipo_documento || '').trim();\nconst tipoPorNombre = tiposCatalogo.find((t) => t.nombre === rawTipo);\nlet tipoCodigo = tipoPorNombre ? tipoPorNombre.codigo : rawTipo || 'OTRO';\nif (tiposCatalogo.length && !tiposCatalogo.some((t) => t.codigo === tipoCodigo)) {\n  tipoCodigo = 'OTRO';\n}\n\nlet destino = String(decision.destino_principal || '').trim();\nconst colaPorNombre = colasCatalogo.find((c) => c.nombre === destino);\nif (colaPorNombre) destino = colaPorNombre.codigo;\nlet destinoInvalido = false;\nif (!colasCatalogo.some((c) => c.codigo === destino)) {\n  destinoInvalido = true;\n  destino = colasCatalogo.some((c) => c.codigo === 'Ficha_Clinica')\n    ? 'Ficha_Clinica'\n    : (colasCatalogo[0] && colasCatalogo[0].codigo) || 'Ficha_Clinica';\n}\n\nconst prioridad = ['Rutina', 'Prioritario', 'Urgente'].includes(clasificacion.nivel_prioridad)\n  ? clasificacion.nivel_prioridad\n  : 'Prioritario';\n\n// Sin score explícito se asume 0: un dato ausente nunca debe saltarse la auditoría.\nconst scoreNum = Number(clasificacion.score_confianza_clasificacion);\nconst score = Number.isFinite(scoreNum) ? Math.min(1, Math.max(0, scoreNum)) : 0;\n\n// 3. Datos generales\nconst datos = obj(llm.datos_generales);\nconst pac = obj(datos.paciente);\nconst med = obj(datos.medico_solicitante);\nconst edad = pac.edad != null && Number.isFinite(Number(pac.edad)) ? Math.round(Number(pac.edad)) : null;\n\nconst paciente = { rut: pac.rut || null, nombre: pac.nombre || null, edad };\nconst medico = { rut: med.rut || null, nombre: med.nombre || null, matricula: med.matricula || null };\n\n// 4. Detalle clínico: solo bloques con contenido (objetos o listas)\nconst detalle = {};\nfor (const [key, value] of Object.entries(obj(llm.detalle_clinico))) {\n  if (value && typeof value === 'object') detalle[key] = value;\n}\n\n// 5. Auditoría humana\nconst hitl = Boolean(\n  !respuestaValida ||\n  decision.requiere_auditoria_humana ||\n  score < 0.85 ||\n  tipoCodigo === 'OTRO' ||\n  destinoInvalido ||\n  !paciente.nombre\n);\n\nconst notif = obj(decision.notificacion_generada);\nconst notificacion = notif.canal && notif.mensaje\n  ? { canal: String(notif.canal), mensaje: String(notif.mensaje) }\n  : null;\n\nreturn [{\n  json: {\n    documento_id: String(prep.json.documento_id),\n    archivos: [\n      { tipo_archivo: tipoArchivo, archivo_base64: String(archivoBase64), rol: 'documento_principal' },\n    ],\n    clasificacion: {\n      tipo_documento: tipoCodigo,\n      especialidad: clasificacion.especialidad || null,\n      nivel_prioridad: prioridad,\n      score_confianza_clasificacion: score,\n    },\n    datos_generales: {\n      paciente,\n      medico_solicitante: medico,\n      diagnostico_principal: datos.diagnostico_principal || null,\n      cie10_sugerido: datos.cie10_sugerido || null,\n    },\n    detalle_clinico: detalle,\n    decision_enrutamiento: {\n      destino_principal: destino,\n      requiere_auditoria_humana: hitl,\n      justificacion_enrutamiento: decision.justificacion_enrutamiento ||\n        (respuestaValida ? null : 'La IA no devolvió un JSON válido'),\n      notificacion_generada: notificacion,\n    },\n  },\n}];\n"
+        "jsCode": "// Nodos \"Interpretar respuesta rápida\" e \"Interpretar respuesta precisa\" (mismo código; el script\n// de armado reemplaza ETAPA por 'rapida' o 'precisa').\n//\n// Extrae el JSON que devolvió Gemini y decide si hay que ESCALAR: repetir la extracción con el\n// modelo preciso cuando el rápido no está seguro (legibilidad o certeza no \"alta\", campos dudosos,\n// varios documentos en el archivo) o su respuesta no sirve (error HTTP, JSON inválido o cortado).\n// En la etapa precisa, si el modelo preciso falla, se conserva la respuesta del rápido.\n\nconst ETAPA = 'precisa';\n\n/** Texto, motivo de término y error de la respuesta HTTP de generateContent. */\nfunction leerRespuesta(respuesta) {\n  const body = respuesta && respuesta.body !== undefined ? respuesta.body : respuesta;\n  const candidato = body && Array.isArray(body.candidates) ? body.candidates[0] : null;\n  const partes = (candidato && candidato.content && candidato.content.parts) || [];\n  return {\n    texto: partes.map((p) => p.text || '').join(''),\n    fin: candidato ? candidato.finishReason : null,\n    status: respuesta && respuesta.statusCode,\n    error: body && body.error ? body.error.message : null,\n  };\n}\n\nfunction parsearJson(texto) {\n  if (!texto) return null;\n  try {\n    return JSON.parse(texto);\n  } catch {\n    const match = String(texto).match(/\\{[\\s\\S]*\\}/);\n    if (!match) return null;\n    try {\n      return JSON.parse(match[0]);\n    } catch {\n      return null;\n    }\n  }\n}\n\n/** Resultado de la etapa: `llm` es `null` si la respuesta no se pudo usar. */\nfunction interpretar(respuesta) {\n  const { texto, fin, status, error } = leerRespuesta(respuesta);\n  if (status && status >= 400) return { llm: null, fallo: 'Gemini respondió HTTP ' + status + (error ? ': ' + error : '') };\n  if (fin === 'MAX_TOKENS') return { llm: null, fallo: 'La respuesta de Gemini quedó cortada (MAX_TOKENS)' };\n  const llm = parsearJson(texto);\n  if (!llm || typeof llm !== 'object' || !llm.clasificacion) {\n    return { llm: null, fallo: 'Gemini no devolvió un JSON válido' + (fin && fin !== 'STOP' ? ' (' + fin + ')' : '') };\n  }\n  return { llm, fallo: null };\n}\n\n/** Motivos para repetir con el modelo preciso (vacío si la respuesta rápida es confiable). */\nfunction motivosParaEscalar(resultado) {\n  if (!resultado.llm) return [resultado.fallo];\n  const ev = resultado.llm.evaluacion || {};\n  const motivos = [];\n  if (ev.legibilidad !== 'alta') motivos.push('legibilidad ' + (ev.legibilidad || 'sin evaluar'));\n  if (ev.certeza_tipo !== 'alta') motivos.push('certeza del tipo ' + (ev.certeza_tipo || 'sin evaluar'));\n  if (Array.isArray(ev.campos_dudosos) && ev.campos_dudosos.length) motivos.push('campos dudosos');\n  if (ev.documentos_multiples === true) motivos.push('varios documentos en el archivo');\n  return motivos;\n}\n\n// --- Ejecución en n8n --------------------------------------------------------\n\nconst prep = $('Preparar corrida').first().json;\nconst actual = interpretar($input.first().json);\n\nif (ETAPA === 'rapida') {\n  const motivos = prep.modelo_preciso && prep.modelo_preciso !== prep.modelo_rapido ? motivosParaEscalar(actual) : [];\n  return [{\n    json: {\n      llm: actual.llm,\n      fallo: actual.fallo,\n      modelo: prep.modelo_rapido,\n      escalar: motivos.length > 0,\n      motivos_escalamiento: motivos,\n    },\n  }];\n}\n\n// Etapa precisa: se prefiere su respuesta; si falló, la del modelo rápido.\nconst rapida = $('Interpretar respuesta rápida').first().json;\nconst usarPrecisa = Boolean(actual.llm);\nreturn [{\n  json: {\n    llm: usarPrecisa ? actual.llm : rapida.llm,\n    fallo: usarPrecisa ? null : actual.fallo,\n    modelo: usarPrecisa ? prep.modelo_preciso : rapida.modelo,\n    escalado: true,\n    motivos_escalamiento: rapida.motivos_escalamiento,\n  },\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        820,
-        -112
+        580,
+        -140
       ],
-      "id": "armar-ingest-payload-001",
+      "id": "interpretar-precisa-01",
+      "name": "Interpretar respuesta precisa"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Nodo \"Armar IngestPayload\": construye el payload de POST /documents/ingest (contrato v2) con la\n// respuesta final de la IA.\n//\n// Regla: nunca rellenar con valores inventados; un dato faltante va null. El backend normaliza\n// (identificación, CIE-10, fechas), valida y calcula el puntaje de confianza con la `evaluacion`\n// que hizo el LLM; aquí solo se asegura la forma de los datos y que tipo y cola existan.\n\nconst obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});\nconst lista = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);\n\n/** Código del catálogo: acepta el código o, por tolerancia, el nombre; si no existe, null. */\nfunction codigoDeCatalogo(valor, catalogo) {\n  const texto = String(valor || '').trim();\n  const encontrado = catalogo.find((c) => c.codigo === texto) || catalogo.find((c) => c.nombre === texto);\n  return encontrado ? encontrado.codigo : null;\n}\n\nfunction tipoArchivo(mime) {\n  if (String(mime).includes('pdf')) return 'PDF';\n  return String(mime).includes('png') ? 'PNG' : 'JPG';\n}\n\nfunction armarPayload({ resultado, prep, tipos, colas }) {\n  const llm = obj(resultado.llm);\n  const respuestaValida = Boolean(resultado.llm);\n  const clasificacion = obj(llm.clasificacion);\n  const decision = obj(llm.decision_enrutamiento);\n\n  const tipo = codigoDeCatalogo(clasificacion.tipo_documento, tipos) || 'OTRO';\n  let destino = codigoDeCatalogo(decision.destino_principal, colas);\n  const destinoInvalido = !destino;\n  if (destinoInvalido) destino = colas.some((c) => c.codigo === 'Ficha_Clinica') ? 'Ficha_Clinica' : (colas[0] || {}).codigo || 'Ficha_Clinica';\n\n  const prioridad = ['Rutina', 'Prioritario', 'Urgente'].includes(clasificacion.nivel_prioridad)\n    ? clasificacion.nivel_prioridad\n    : 'Prioritario';\n\n  const datos = obj(llm.datos_generales);\n  const paciente = obj(datos.paciente);\n  const evaluacion = {\n    ...obj(llm.evaluacion),\n    modelo: resultado.modelo || null,\n    escalado: Boolean(resultado.escalado),\n  };\n  const notif = obj(decision.notificacion_generada);\n\n  const justificacion = decision.justificacion_enrutamiento ||\n    (respuestaValida ? null : resultado.fallo || 'La IA no devolvió un JSON válido');\n\n  return {\n    documento_id: String(prep.documento_id),\n    archivos: [{ tipo_archivo: tipoArchivo(prep.archivo_mime), archivo_base64: String(prep.archivo_base64), rol: 'documento_principal' }],\n    clasificacion: {\n      tipo_documento: tipo,\n      especialidad: clasificacion.especialidad || null,\n      nivel_prioridad: prioridad,\n      score_confianza_clasificacion: Number.isFinite(Number(clasificacion.score_confianza_clasificacion))\n        ? Math.min(1, Math.max(0, Number(clasificacion.score_confianza_clasificacion)))\n        : null,\n    },\n    // Sin respuesta válida no hay autoevaluación: el backend la toma como de certeza baja.\n    evaluacion: respuestaValida ? evaluacion : { legibilidad: 'baja', certeza_tipo: 'baja', modelo: evaluacion.modelo, escalado: evaluacion.escalado },\n    datos_generales: {\n      paciente: {\n        nombre: paciente.nombre || null,\n        identificacion: paciente.identificacion && typeof paciente.identificacion === 'object' ? paciente.identificacion : null,\n        edad: paciente.edad ?? null,\n        fecha_nacimiento: paciente.fecha_nacimiento || null,\n        sexo: paciente.sexo || null,\n        numero_ficha: paciente.numero_ficha || null,\n      },\n      profesionales: lista(datos.profesionales),\n      institucion_emisora: datos.institucion_emisora || null,\n      fecha_documento: datos.fecha_documento || null,\n      diagnosticos: lista(datos.diagnosticos),\n    },\n    detalle_clinico: Object.fromEntries(\n      Object.entries(obj(llm.detalle_clinico)).filter(([, valor]) => valor && typeof valor === 'object')\n    ),\n    decision_enrutamiento: {\n      destino_principal: destino,\n      requiere_auditoria_humana: Boolean(!respuestaValida || decision.requiere_auditoria_humana || tipo === 'OTRO' || destinoInvalido),\n      justificacion_enrutamiento: justificacion ? String(justificacion).slice(0, 500) : null,\n      notificacion_generada: notif.canal && notif.mensaje ? { canal: String(notif.canal), mensaje: String(notif.mensaje) } : null,\n    },\n  };\n}\n\n// --- Ejecución en n8n --------------------------------------------------------\n\nfunction listaDe(nombreNodo) {\n  const items = $(nombreNodo).all();\n  if (items.length === 1 && Array.isArray(items[0].json)) return items[0].json;\n  return items.map((i) => i.json);\n}\n\nconst prep = $('Preparar corrida').first().json;\nif (!prep.archivo_base64) {\n  throw new Error('No hay archivo en base64 desde Preparar corrida');\n}\n\nreturn [{\n  json: armarPayload({\n    resultado: $input.first().json,\n    prep,\n    tipos: ($('GET formularios').first().json.tipos || []),\n    colas: listaDe('GET colas activas'),\n  }),\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        0
+      ],
+      "id": "armar-payload-01",
       "name": "Armar IngestPayload"
     },
     {
@@ -336,6 +250,10 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $('Preparar corrida').first().json.access_token }}"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $('Preparar corrida').first().json.request_id }}"
             }
           ]
         },
@@ -355,11 +273,24 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1040,
-        -112
+        1020,
+        0
       ],
-      "id": "post-fastapi-ingest-001",
+      "id": "post-ingest-01",
       "name": "POST FastAPI Ingest"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Traduce la respuesta del backend al contrato del front: el body tal cual si fue 2xx, o\n// { status: 'error', etapa, detalle } con el mismo código HTTP si falló.\nconst res = $input.first().json;\nconst code = Number(res.statusCode) || 502;\nconst body = res.body && typeof res.body === 'object' ? res.body : {};\nif (code >= 200 && code < 300) {\n  return [{ json: { statusCode: code, body } }];\n}\nconst detail = body.detail ?? res.body ?? 'Error desconocido del backend';\nreturn [{\n  json: {\n    statusCode: code,\n    body: {\n      status: 'error',\n      etapa: code === 401 || code === 403 ? 'AUTENTICACION' : 'INGESTA_BACKEND',\n      detalle: typeof detail === 'string' ? detail : JSON.stringify(detail),\n      request_id: $('Preparar corrida').first().json.request_id,\n    },\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        0
+      ],
+      "id": "formatear-respuesta-01",
+      "name": "Formatear respuesta"
     },
     {
       "parameters": {
@@ -372,57 +303,11 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1480,
-        -112
+        1460,
+        0
       ],
-      "id": "responder-json-001",
+      "id": "responder-01",
       "name": "Responder JSON"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "cond-modo-imagen",
-              "leftValue": "={{ $json.modo }}",
-              "rightValue": "imagen",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        360,
-        -112
-      ],
-      "id": "if-modo-imagen-001",
-      "name": "¿Con imagen?"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Traduce la respuesta del backend al contrato del front: el body tal cual si fue 2xx, o\n// { status: 'error', etapa, detalle } con el mismo código HTTP si falló.\nconst res = $input.first().json;\nconst code = Number(res.statusCode) || 502;\nconst body = res.body && typeof res.body === 'object' ? res.body : {};\nif (code >= 200 && code < 300) {\n  return [{ json: { statusCode: code, body } }];\n}\nconst detail = body.detail ?? res.body ?? 'Error desconocido del backend';\nreturn [{\n  json: {\n    statusCode: code,\n    body: {\n      status: 'error',\n      etapa: code === 401 || code === 403 ? 'AUTENTICACION' : 'INGESTA_BACKEND',\n      detalle: typeof detail === 'string' ? detail : JSON.stringify(detail),\n    },\n  },\n}];\n"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1260,
-        -112
-      ],
-      "id": "formatear-respuesta-001",
-      "name": "Formatear respuesta"
     }
   ],
   "connections": {
@@ -441,14 +326,14 @@
       "main": [
         [
           {
-            "node": "GET tipos activos",
+            "node": "GET formularios",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GET tipos activos": {
+    "GET formularios": {
       "main": [
         [
           {
@@ -463,72 +348,7 @@
       "main": [
         [
           {
-            "node": "Restaurar binario",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Restaurar binario": {
-      "main": [
-        [
-          {
-            "node": "Tipo de Archivo?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tipo de Archivo?": {
-      "main": [
-        [
-          {
-            "node": "Extract Text from PDF",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Normalizador de imágenes",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Normalizador de imágenes",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract Text from PDF": {
-      "main": [
-        [
-          {
-            "node": "If (tiene texto?)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "If (tiene texto?)": {
-      "main": [
-        [
-          {
             "node": "Contexto para IA",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Normalizador de imágenes",
             "type": "main",
             "index": 0
           }
@@ -539,26 +359,44 @@
       "main": [
         [
           {
-            "node": "¿Con imagen?",
+            "node": "Gemini rápido",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Google Gemini Chat Model (Texto)": {
-      "ai_languageModel": [
+    "Gemini rápido": {
+      "main": [
         [
           {
-            "node": "Triaje e Extracción IA",
-            "type": "ai_languageModel",
+            "node": "Interpretar respuesta rápida",
+            "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Triaje e Extracción IA": {
+    "Interpretar respuesta rápida": {
       "main": [
+        [
+          {
+            "node": "¿Escalar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Escalar?": {
+      "main": [
+        [
+          {
+            "node": "Gemini preciso",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Armar IngestPayload",
@@ -568,23 +406,23 @@
         ]
       ]
     },
-    "Normalizador de imágenes": {
+    "Gemini preciso": {
       "main": [
         [
           {
-            "node": "Contexto para IA",
+            "node": "Interpretar respuesta precisa",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Google Gemini Chat Model (Visión)": {
-      "ai_languageModel": [
+    "Interpretar respuesta precisa": {
+      "main": [
         [
           {
-            "node": "Triaje IA Visión",
-            "type": "ai_languageModel",
+            "node": "Armar IngestPayload",
+            "type": "main",
             "index": 0
           }
         ]
@@ -612,35 +450,6 @@
         ]
       ]
     },
-    "¿Con imagen?": {
-      "main": [
-        [
-          {
-            "node": "Triaje IA Visión",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Triaje e Extracción IA",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Triaje IA Visión": {
-      "main": [
-        [
-          {
-            "node": "Armar IngestPayload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Formatear respuesta": {
       "main": [
         [
@@ -660,11 +469,11 @@
     "saveDataSuccessExecution": "none",
     "saveManualExecutions": false
   },
-  "versionId": "mediflow-unificado-v2",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "mediflow-production-integration"
   },
   "id": "mediflow-unificado",
+  "versionId": "mediflow-unificado-v3",
   "tags": []
 }

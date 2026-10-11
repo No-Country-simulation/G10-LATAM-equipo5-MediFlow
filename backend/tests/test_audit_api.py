@@ -7,16 +7,27 @@ from app.features.auth.enums import UserRole
 from app.features.documents.models import ClinicalDocument, ClinicalDocumentAttachment
 from tests.conftest import CATALOGO_COLAS, CATALOGO_TIPOS
 
+DATOS_CORREGIDOS = {
+    "paciente": {
+        "nombre": "Carlos Mendes",
+        "identificacion": {"tipo": "RUT", "numero": "12.345.678-5", "pais": "CL"},
+    },
+    "profesionales": [{"nombre": "Dra. Silveira", "identificacion": "9.876.543-2", "rol": "TRATANTE"}],
+    "diagnosticos": [{"descripcion": "Hipertensión", "cie10": "I10", "tipo": "PRINCIPAL"}],
+}
+
 RESOLVE_BODY = {
-    "rut_paciente": "12.345.678-9",
-    "nombre_paciente": "Carlos Mendes",
     "tipo_documento": "RECETA",
     "nivel_prioridad": "Prioritario",
-    "diagnostico_principal": "Hipertensión",
     "destino_enrutamiento": "Farmacia_Hospitalaria",
-    "medico_rut": "9.876.543-2",
+    "datos_generales": DATOS_CORREGIDOS,
     "audit_notes": "Corregido manualmente",
 }
+
+
+def _body(**datos_overrides) -> dict:
+    """RESOLVE_BODY con `datos_generales` modificado."""
+    return {**RESOLVE_BODY, "datos_generales": {**DATOS_CORREGIDOS, **datos_overrides}}
 
 RAW_IA = {
     "documento_id": "DOC-A",
@@ -27,10 +38,12 @@ RAW_IA = {
         "score_confianza_clasificacion": 0.6,
     },
     "datos_generales": {
-        "paciente": {"rut": "12.345.678-?", "nombre": "Carlos Mendes", "edad": None},
-        "medico_solicitante": {"rut": None, "nombre": None, "matricula": None},
-        "diagnostico_principal": "Hipertensión",
-        "cie10_sugerido": None,
+        "paciente": {
+            "nombre": "Carlos Mendes",
+            "identificacion": {"tipo": "RUT", "numero": "12345678-0", "pais": "CL"},
+        },
+        "profesionales": [],
+        "diagnosticos": [{"descripcion": "Hipertensión", "cie10": None, "tipo": "PRINCIPAL"}],
     },
     "detalle_clinico": {
         "medicamentos": [
@@ -57,7 +70,9 @@ def _pending(**kwargs) -> ClinicalDocument:
     fields = dict(
         documento_id="DOC-A",
         estado="PENDIENTE_AUDITORIA",
-        rut_paciente="12.345.678-?",
+        identificacion_paciente="12345678-0",
+        tipo_identificacion="RUT",
+        pais_identificacion="CL",
         nombre_paciente="Carlos Mendes",
         tipo_documento="RECETA",
         especialidad="Medicina Interna",
@@ -133,19 +148,29 @@ async def test_resolve_marks_audited_with_corrected_values_on_top(client, login_
 
     assert r.status_code == 200
     assert r.json()["estado"] == "AUDITADO"
-    assert doc.rut_paciente == "12.345.678-9"
+    assert doc.identificacion_paciente == "12345678-5"  # normalizado
+    assert doc.medico_nombre == "Dra. Silveira"
+    assert doc.cie10_sugerido == "I10"
+    assert doc.cie10_origen == "AUDITOR"  # la IA no lo había propuesto
     assert doc.requiere_auditoria is False
     assert doc.oci_json_path == "procesados/auditados/DOC-A.json"
     assert oci.deleted == ["auditoria_humana/DOC-A.json"]
 
     final = json.loads(oci.uploaded["procesados/auditados/DOC-A.json"])
-    assert final["datos_generales"]["paciente"]["rut"] == "12.345.678-9"
-    assert final["version_ia"]["datos_generales"]["paciente"]["rut"] == "12.345.678-?"
+    assert final["datos_generales"]["paciente"]["identificacion"]["numero"] == "12345678-5"
+    assert final["version_ia"]["datos_generales"]["paciente"]["identificacion"]["numero"] == "12345678-0"
     assert final["triaje"]["estado"] == "AUDITADO"
     assert final["clasificacion"]["nivel_prioridad"] == "Prioritario"
     corregidos = final["auditoria"]["campos_corregidos"]
-    assert set(corregidos) == {"rut_paciente", "nivel_prioridad", "medico_rut"}
-    assert corregidos["rut_paciente"] == {"antes": "12.345.678-?", "despues": "12.345.678-9"}
+    assert set(corregidos) == {
+        "identificacion_paciente",
+        "nivel_prioridad",
+        "medico_nombre",
+        "medico_identificacion",
+        "cie10_sugerido",
+        "cie10_origen",
+    }
+    assert corregidos["identificacion_paciente"] == {"antes": "12345678-0", "despues": "12345678-5"}
     # La BD guarda exactamente el mismo JSON consolidado que OCI.
     assert doc.raw_extracted_json == final
 
@@ -179,10 +204,46 @@ async def test_resolve_rejects_values_outside_catalog(client, login_as, db, oci)
 
 async def test_resolve_changing_type_requires_matching_detail(client, login_as, db, oci):
     _queue_resolve(db, _pending())
-    body = {**RESOLVE_BODY, "tipo_documento": "INTERCONSULTA"}
+    # Los medicamentos son una lista común (válidos en cualquier tipo); un bloque de otro tipo no.
+    body = {
+        **RESOLVE_BODY,
+        "tipo_documento": "INTERCONSULTA",
+        "detalle_clinico": {"examenes_y_laboratorio": {"estudio_solicitado": "Hemograma"}},
+    }
     r = await client.put("/api/v1/audit/DOC-A/resolve", json=body, headers=login_as(UserRole.ADMIN))
     assert r.status_code == 422
     assert "espera ['interconsulta']" in r.json()["detail"][0]
+
+
+async def test_resolve_applies_ingest_validations(client, login_as, db, oci):
+    """El auditor pasa por las mismas validaciones que la IA, pero aquí bloquean (422)."""
+    _queue_resolve(db, _pending())
+    body = _body(
+        paciente={"nombre": None, "identificacion": {"tipo": "RUT", "numero": "12.345.678-9"}},
+        diagnosticos=[{"descripcion": None, "cie10": "XX9", "tipo": "PRINCIPAL"}],
+    )
+    r = await client.put("/api/v1/audit/DOC-A/resolve", json=body, headers=login_as(UserRole.ADMIN))
+
+    assert r.status_code == 422
+    assert r.json()["detail"] == [
+        "El nombre del paciente es obligatorio",
+        "Identificación RUT con formato o dígito verificador inválido",
+        "1 código(s) CIE-10 sin formato válido (ej. J45.9, N47)",
+        "El diagnóstico principal es obligatorio",
+    ]
+    assert oci.uploaded == {}
+
+
+async def test_resolve_keeps_ia_cie10_origin_when_unchanged(client, login_as, db, oci):
+    raw = json.loads(json.dumps(RAW_IA))
+    raw["datos_generales"]["diagnosticos"][0].update(cie10="I10", origen_cie10="DOCUMENTO")
+    doc = _pending(raw_extracted_json=raw)
+    _queue_resolve(db, doc)
+    body = _body(diagnosticos=[{"descripcion": "Hipertensión", "cie10": "i10", "origen_cie10": "DOCUMENTO"}])
+    r = await client.put("/api/v1/audit/DOC-A/resolve", json=body, headers=login_as(UserRole.ADMIN))
+
+    assert r.status_code == 200
+    assert doc.cie10_origen == "DOCUMENTO"
 
 
 async def test_resolve_already_resolved_returns_409(client, login_as, db, oci):

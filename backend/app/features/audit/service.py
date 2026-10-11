@@ -12,7 +12,7 @@ import asyncio
 import copy
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -31,12 +31,14 @@ from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.documents.detail import attachment_fields, create_preview_url
 from app.features.documents.models import ClinicalDocument
-from app.features.documents.schemas import ArchivoPreview, DetalleClinicoExtract
+from app.features.documents.schemas import ArchivoPreview, DatosGeneralesExtract, DetalleClinicoExtract
 from app.features.documents.service import (
     active_document_types,
     active_queue_codes,
     apply_clinical_detail,
+    apply_general_data,
     detalle_reasons,
+    normalizar_datos_generales,
 )
 from app.shared.oci_client import oci_storage_client
 
@@ -48,17 +50,25 @@ ESTADO_PENDIENTE = "PENDIENTE_AUDITORIA"
 ESTADO_AUDITADO = "AUDITADO"
 ESTADO_DESCARTADO = "DESCARTADO"
 
-# Columnas que el auditor puede corregir (nombre en el request == nombre de la columna).
+# Columnas que quedan registradas en `campos_corregidos` cuando el auditor las cambia.
 _CAMPOS_CORREGIBLES = (
-    "rut_paciente",
+    "identificacion_paciente",
+    "tipo_identificacion",
+    "pais_identificacion",
     "nombre_paciente",
     "edad_paciente",
+    "fecha_nacimiento",
+    "sexo",
+    "numero_ficha",
     "medico_nombre",
-    "medico_rut",
+    "medico_identificacion",
+    "institucion_emisora",
+    "fecha_documento",
     "tipo_documento",
     "nivel_prioridad",
     "diagnostico_principal",
     "cie10_sugerido",
+    "cie10_origen",
     "destino_enrutamiento",
     "especialidad",
 )
@@ -212,34 +222,13 @@ async def get_audit_case(documento_id: str, db: AsyncSession) -> AuditDetailResp
         for attachment, url in zip(document.attachments, urls, strict=True)
     ]
 
+    # Las columnas del documento se copian por nombre: la respuesta no se desfasa si cambian.
+    columnas = {campo: getattr(document, campo) for campo in AuditDetailResponse.model_fields if hasattr(document, campo)}
     return AuditDetailResponse(
-        documento_id=document.documento_id,
-        estado=document.estado,
+        **columnas,
         oci_preview_url=archivos[0].url,
         archivos=archivos,
         preview_expira_en_minutos=settings.DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES,
-        motivos_auditoria=document.motivos_auditoria,
-        rut_paciente=document.rut_paciente,
-        nombre_paciente=document.nombre_paciente,
-        edad_paciente=document.edad_paciente,
-        medico_nombre=document.medico_nombre,
-        medico_rut=document.medico_rut,
-        tipo_documento=document.tipo_documento,
-        especialidad=document.especialidad,
-        nivel_prioridad=document.nivel_prioridad,
-        score_confianza=document.score_confianza,
-        diagnostico_principal=document.diagnostico_principal,
-        cie10_sugerido=document.cie10_sugerido,
-        destino_enrutamiento=document.destino_enrutamiento,
-        raw_extracted_json=document.raw_extracted_json,
-        uploaded_by_id=document.uploaded_by_id,
-        asignado_a_id=document.asignado_a_id,
-        asignado_a_username=document.asignado_a_username,
-        asignado_at=document.asignado_at,
-        audited_by_id=document.audited_by_id,
-        audited_at=document.audited_at,
-        audit_notes=document.audit_notes,
-        created_at=document.created_at,
     )
 
 
@@ -255,6 +244,7 @@ async def claim_audit_case(documento_id: str, user: User, db: AsyncSession) -> A
     document.asignado_a_username = user.username
     document.asignado_at = datetime.now(timezone.utc)
     await db.commit()
+    logger.info("Caso %s tomado por %s hasta %s", documento_id, user.username, f"{_claim_expires_at(document):%H:%M} UTC")
 
     return AuditClaimResponse(
         documento_id=document.documento_id,
@@ -275,10 +265,12 @@ async def release_audit_case(documento_id: str, user: User, db: AsyncSession) ->
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo quien tomó el caso o un ADMIN puede liberarlo",
         )
+    previous_owner = document.asignado_a_username
     document.asignado_a_id = None
     document.asignado_a_username = None
     document.asignado_at = None
     await db.commit()
+    logger.info("Caso %s liberado (estaba tomado por %s)", documento_id, previous_owner)
 
 
 # --- Resolver / descartar ----------------------------------------------------
@@ -287,6 +279,7 @@ async def release_audit_case(documento_id: str, user: User, db: AsyncSession) ->
 def _final_audited_json(
     raw: dict[str, Any],
     payload: AuditResolveRequest,
+    datos: DatosGeneralesExtract,
     detalle_final: DetalleClinicoExtract,
     especialidad: str | None,
     auditoria: dict[str, Any],
@@ -297,31 +290,71 @@ def _final_audited_json(
         clave: copy.deepcopy(raw.get(clave))
         for clave in ("clasificacion", "datos_generales", "detalle_clinico", "decision_enrutamiento")
     }
-
-    clasificacion = final.setdefault("clasificacion", {})
-    clasificacion.update(
+    final.setdefault("clasificacion", {}).update(
         tipo_documento=payload.tipo_documento,
         especialidad=especialidad,
         nivel_prioridad=payload.nivel_prioridad,
     )
-    generales = final.setdefault("datos_generales", {})
-    generales.setdefault("paciente", {}).update(
-        rut=payload.rut_paciente, nombre=payload.nombre_paciente, edad=payload.edad_paciente
-    )
-    generales.setdefault("medico_solicitante", {}).update(
-        rut=payload.medico_rut, nombre=payload.medico_nombre
-    )
-    generales.update(
-        diagnostico_principal=payload.diagnostico_principal,
-        cie10_sugerido=payload.cie10_sugerido,
-    )
+    final["datos_generales"] = datos.model_dump(mode="json")
     final["detalle_clinico"] = detalle_final.model_dump(mode="json")
-    final.setdefault("decision_enrutamiento", {})["destino_principal"] = (
-        payload.destino_enrutamiento
-    )
+    final.setdefault("decision_enrutamiento", {})["destino_principal"] = payload.destino_enrutamiento
     final.setdefault("triaje", {})["estado"] = ESTADO_AUDITADO
     final["auditoria"] = auditoria
     return final
+
+
+def _marcar_cie10_del_auditor(datos: DatosGeneralesExtract, raw: dict[str, Any]) -> None:
+    """Los códigos CIE-10 que la IA no había propuesto quedan con origen AUDITOR."""
+    diagnosticos_ia = (raw.get("datos_generales") or {}).get("diagnosticos") or []
+    codigos_ia = {d.get("cie10") for d in diagnosticos_ia if isinstance(d, dict)}
+    for diagnostico in datos.diagnosticos:
+        if diagnostico.cie10 and diagnostico.cie10 not in codigos_ia:
+            diagnostico.origen_cie10 = "AUDITOR"
+
+
+def _errores_de_catalogo(
+    payload: AuditResolveRequest,
+    detalle_final: DetalleClinicoExtract,
+    tipos_activos: dict[str, dict[str, Any] | None],
+    colas_activas: set[str],
+) -> list[str]:
+    errores: list[str] = []
+    if payload.tipo_documento not in tipos_activos:
+        errores.append(
+            f"El tipo de documento '{payload.tipo_documento}' no existe o está inactivo en el catálogo"
+        )
+    else:
+        errores.extend(
+            detalle_reasons(payload.tipo_documento, detalle_final, tipos_activos[payload.tipo_documento])
+        )
+    if payload.destino_enrutamiento not in colas_activas:
+        errores.append(f"La cola '{payload.destino_enrutamiento}' no existe o está inactiva en el catálogo")
+    return errores
+
+
+def _errores_de_datos(
+    datos: DatosGeneralesExtract, problema_identificacion: str | None, cie10_invalidos: int
+) -> list[str]:
+    """Mismas validaciones que la ingesta, pero aquí bloquean: el auditor debe corregirlas."""
+    errores: list[str] = []
+    if not datos.paciente.nombre:
+        errores.append("El nombre del paciente es obligatorio")
+    if problema_identificacion:
+        errores.append(problema_identificacion)
+    if cie10_invalidos:
+        errores.append(f"{cie10_invalidos} código(s) CIE-10 sin formato válido (ej. J45.9, N47)")
+    principal = datos.diagnostico_principal
+    if principal is None or not principal.descripcion:
+        errores.append("El diagnóstico principal es obligatorio")
+    return errores
+
+
+def _valor_json(valor: Any) -> Any:
+    return valor.isoformat() if isinstance(valor, (date, datetime)) else valor
+
+
+def _snapshot(document: ClinicalDocument) -> dict[str, Any]:
+    return {campo: _valor_json(getattr(document, campo)) for campo in _CAMPOS_CORREGIBLES}
 
 
 async def resolve_audit_case(
@@ -330,7 +363,8 @@ async def resolve_audit_case(
     current_user: User,
     db: AsyncSession,
 ) -> ClinicalDocument:
-    """Resuelve un caso: valida la corrección contra los catálogos, consolida y mueve el JSON en OCI."""
+    """Resuelve un caso: valida la corrección (catálogos, identificación, CIE-10, detalle según el
+    tipo), consolida los datos y mueve el JSON en OCI."""
     document = await _get_document_or_404(documento_id, db)
     _ensure_workable(document, current_user)
 
@@ -343,30 +377,27 @@ async def resolve_audit_case(
     especialidad = (
         payload.especialidad if "especialidad" in payload.model_fields_set else document.especialidad
     )
+    datos = payload.datos_generales.model_copy(deep=True)
+    problema_identificacion, cie10_invalidos = normalizar_datos_generales(datos)
+    _marcar_cie10_del_auditor(datos, raw)
 
-    errores: list[str] = []
-    if payload.tipo_documento not in tipos_activos:
-        errores.append(
-            f"El tipo de documento '{payload.tipo_documento}' no existe o está inactivo en el catálogo"
-        )
-    else:
-        errores.extend(
-            detalle_reasons(
-                payload.tipo_documento, detalle_final, tipos_activos[payload.tipo_documento]
-            )
-        )
-    if payload.destino_enrutamiento not in colas_activas:
-        errores.append(
-            f"La cola '{payload.destino_enrutamiento}' no existe o está inactiva en el catálogo"
-        )
+    errores = _errores_de_catalogo(payload, detalle_final, tipos_activos, colas_activas)
+    errores.extend(_errores_de_datos(datos, problema_identificacion, cie10_invalidos))
     if errores:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errores)
 
-    nuevos = {**payload.model_dump(include=set(_CAMPOS_CORREGIBLES)), "especialidad": especialidad}
-    campos_corregidos = {
-        campo: {"antes": getattr(document, campo), "despues": nuevos[campo]}
+    antes = _snapshot(document)
+    document.tipo_documento = payload.tipo_documento
+    document.nivel_prioridad = payload.nivel_prioridad
+    document.destino_enrutamiento = payload.destino_enrutamiento
+    document.especialidad = especialidad
+    apply_general_data(document, datos)
+    despues = _snapshot(document)
+
+    campos_corregidos: dict[str, Any] = {
+        campo: {"antes": antes[campo], "despues": despues[campo]}
         for campo in _CAMPOS_CORREGIBLES
-        if getattr(document, campo) != nuevos[campo]
+        if antes[campo] != despues[campo]
     }
     detalle_cambio = detalle_final.model_dump(mode="json") != detalle_ia.model_dump(mode="json")
     if detalle_cambio:
@@ -374,6 +405,7 @@ async def resolve_audit_case(
             "antes": detalle_ia.model_dump(mode="json"),
             "despues": detalle_final.model_dump(mode="json"),
         }
+        apply_clinical_detail(document, detalle_final)
 
     audited_at = datetime.now(timezone.utc)
     auditoria = {
@@ -384,12 +416,7 @@ async def resolve_audit_case(
         "audit_notes": payload.audit_notes,
         "campos_corregidos": campos_corregidos,
     }
-    final_json = _final_audited_json(raw, payload, detalle_final, especialidad, auditoria)
-
-    for campo, valor in nuevos.items():
-        setattr(document, campo, valor)
-    if detalle_cambio:
-        apply_clinical_detail(document, detalle_final)
+    final_json = _final_audited_json(raw, payload, datos, detalle_final, especialidad, auditoria)
 
     return await _finalize(
         document,

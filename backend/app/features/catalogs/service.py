@@ -23,10 +23,17 @@ from app.features.catalogs.schemas import (
     AreaCreate,
     AreaUpdate,
     DeletionType,
+    DocumentFormsResponse,
+    DocumentTypeForm,
     DocumentTypeCreate,
     DocumentTypeUpdate,
     QueueCreate,
     QueueUpdate,
+)
+from app.features.documents.forms import (
+    esquema_datos_generales,
+    esquemas_listas_comunes,
+    formulario_de_tipo,
 )
 from app.features.documents.models import ClinicalDocument
 
@@ -121,7 +128,9 @@ async def _create(
     )
     db.add(entity)
     _record_history(db, entity, "CREATE", {}, _snapshot(entity), user)
-    return await _persist(db, entity, label)
+    created = await _persist(db, entity, label)
+    logger.info("%s %s creado(a)", label, created.codigo)
+    return created
 
 
 def _ensure_not_system(entity: CatalogEntity, label: str, accion: str) -> None:
@@ -153,7 +162,9 @@ async def _update(
         setattr(entity, field, value)
     entity.updated_by_id = user.id
     _record_history(db, entity, "UPDATE", antes, _snapshot(entity), user)
-    return await _persist(db, entity, label)
+    updated = await _persist(db, entity, label)
+    logger.info("%s %s actualizado(a) (campos: %s)", label, updated.codigo, ", ".join(sorted(updates)) or "ninguno")
+    return updated
 
 
 @dataclass(frozen=True)
@@ -217,7 +228,7 @@ async def _smart_delete(
         )
 
     await db.commit()
-    logger.info("Smart delete de %s '%s': %s", label, entity.codigo, result[0])
+    logger.info("%s %s eliminado(a) (%s)", label, entity.codigo, result[0])
     return result
 
 
@@ -371,3 +382,22 @@ async def smart_delete_area(area_id: UUID, db: AsyncSession, user: User) -> tupl
 
 async def area_history(area_id: UUID, db: AsyncSession) -> list[CatalogHistory]:
     return await _history(db, Area, area_id)
+
+
+async def get_document_forms(db: AsyncSession) -> DocumentFormsResponse:
+    """Formulario (bloque + JSON Schema) de cada tipo activo, para auditoría y para n8n."""
+    tipos = []
+    for doc_type in await get_active_document_types_for_llm(db):
+        bloque, esquema = formulario_de_tipo(doc_type.codigo, doc_type.campos_extraccion)
+        tipos.append(
+            DocumentTypeForm(
+                codigo=doc_type.codigo,
+                nombre=doc_type.nombre,
+                descripcion=doc_type.descripcion,
+                bloque=bloque,
+                esquema=esquema,
+            )
+        )
+    return DocumentFormsResponse(
+        datos_generales=esquema_datos_generales(), comunes=esquemas_listas_comunes(), tipos=tipos
+    )

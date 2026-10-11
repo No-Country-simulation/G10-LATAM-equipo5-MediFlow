@@ -25,7 +25,9 @@ export type TriageStatus = 'procesado' | 'error' | 'en_revision';
 export interface PatientInfo {
   nombre: string | null;
   edad?: number | null;
-  rut?: string | null;
+  identificacion?: string | null;
+  tipo_identificacion?: string | null;
+  numero_ficha?: string | null;
 }
 
 export interface DoctorInfo {
@@ -35,7 +37,7 @@ export interface DoctorInfo {
 
 export interface ExtractedClinicalData {
   paciente: PatientInfo;
-  medico_solicitante?: DoctorInfo | null;
+  profesional?: DoctorInfo | null;
   estudio_realizado?: string | null;
   diagnostico_principal: string | null;
   cie10_sugerido: string | null;
@@ -99,14 +101,16 @@ export function mapDocumentListItemToTriageDoc(
     datos_extraidos: {
       paciente: {
         nombre: item.nombre_paciente ?? null,
-        rut: item.rut_paciente || undefined,
+        identificacion: item.identificacion_paciente || undefined,
+        tipo_identificacion: item.tipo_identificacion ?? undefined,
+        numero_ficha: item.numero_ficha ?? undefined,
         edad: undefined,
       },
-      medico_solicitante: {
-        nombre: null,
+      profesional: {
+        nombre: item.medico_nombre ?? null,
       },
       diagnostico_principal: item.diagnostico_principal ?? null,
-      cie10_sugerido: null,
+      cie10_sugerido: item.cie10_sugerido ?? null,
     },
     decision_enrutamiento: {
       destino_principal: (item.destino_enrutamiento as RoutingDestination) || 'Ficha_Clinica',

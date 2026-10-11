@@ -12,24 +12,9 @@ export type {
 
 import type { NivelPrioridad } from './medical';
 
-export interface PacienteExtract {
-  rut: string | null;
-  nombre: string | null;
-  edad: number | null;
-}
+import type { DatosGenerales } from './medical';
 
-export interface MedicoExtract {
-  rut: string | null;
-  nombre: string | null;
-  matricula: string | null;
-}
-
-export interface DatosGeneralesExtract {
-  paciente: PacienteExtract;
-  medico_solicitante: MedicoExtract;
-  diagnostico_principal: string | null;
-  cie10_sugerido: string | null;
-}
+export type DatosGeneralesExtract = DatosGenerales;
 
 export interface ClasificacionExtract {
   tipo_documento: string;

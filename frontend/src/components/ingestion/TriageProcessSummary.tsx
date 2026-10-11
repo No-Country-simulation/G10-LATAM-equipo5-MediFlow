@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, UserCheck, ArrowRight, Upload, ClipboardCheck } from 'lucide-react';
 import PriorityBadge from '../common/PriorityBadge';
-import type { N8nIngestResponse, N8nPerson } from '../../types/ingestion';
+import type { N8nIngestResponse, N8nProfesional } from '../../types/ingestion';
+import { formatIdentificacion } from '../../utils/identificacion';
 
 interface TriageProcessSummaryProps {
   response: N8nIngestResponse;
@@ -16,15 +17,30 @@ const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   </div>
 );
 
-const personName = (person?: N8nPerson | null) => person?.nome || person?.nombre || '-';
+// Quien informa o atiende el documento antes que quien lo pidió (mismo criterio que el backend).
+const ROLES_RESPONSABLE = ['INFORMANTE', 'TRATANTE', 'SOLICITANTE'];
+
+const indiceRol = (rol?: string | null) => {
+  const indice = ROLES_RESPONSABLE.indexOf(rol ?? '');
+  return indice === -1 ? ROLES_RESPONSABLE.length : indice;
+};
+
+const responsable = (profesionales?: N8nProfesional[] | null) => {
+  const conNombre = (profesionales ?? []).filter((p) => p.nombre);
+  return [...conNombre].sort((a, b) => indiceRol(a.rol) - indiceRol(b.rol))[0]?.nombre || '-';
+};
 
 const TriageProcessSummary = ({ response, onReset }: TriageProcessSummaryProps) => {
   const navigate = useNavigate();
-  const clinicalData = response.datos_extraidos ?? response.datos_generales;
+  const clinicalData = response.datos_generales ?? response.datos_extraidos;
   const paciente = clinicalData?.paciente;
+  const diagnosticos = clinicalData?.diagnosticos ?? [];
+  const principal = diagnosticos.find((d) => d.tipo === 'PRINCIPAL') ?? diagnosticos[0];
   const clasificacion = response.clasificacion;
   const routing = response.decision_enrutamiento;
-  const score = clasificacion?.score_confianza_clasificacion;
+  // El score final lo calcula el backend; el que reporta la IA queda solo como respaldo.
+  const score = response.score_confianza ?? clasificacion?.score_confianza_clasificacion ?? undefined;
+  const ficha = paciente?.numero_ficha ? ` · Ficha ${paciente.numero_ficha}` : '';
 
   const isPending = response.status === 'PENDIENTE_AUDITORIA' || Boolean(routing?.requiere_auditoria_humana);
   const isDiscarded = response.status === 'DESCARTADO' || response.status === 'error';
@@ -60,11 +76,17 @@ const TriageProcessSummary = ({ response, onReset }: TriageProcessSummaryProps) 
           {typeof score === 'number' ? `${Math.round(score * 100)}%` : '-'}
         </Field>
         <Field label="Paciente">
-          {personName(paciente)}
-          {paciente?.rut && <span className="block text-slate-400 font-normal">{paciente.rut}</span>}
+          {paciente?.nombre || '-'}
+          <span className="block text-slate-400 font-normal">
+            {formatIdentificacion(paciente?.identificacion?.numero, paciente?.identificacion?.tipo, '')}
+            {ficha}
+          </span>
         </Field>
-        <Field label="Médico solicitante">{personName(clinicalData?.medico_solicitante)}</Field>
-        <Field label="Diagnóstico principal">{clinicalData?.diagnostico_principal || '-'}</Field>
+        <Field label="Profesional">{responsable(clinicalData?.profesionales)}</Field>
+        <Field label="Diagnóstico principal">
+          {principal?.descripcion || '-'}
+          {principal?.cie10 && <span className="block text-slate-400 font-normal font-mono">CIE-10 {principal.cie10}</span>}
+        </Field>
         <Field label="Cola de destino">{routing?.destino_principal || '-'}</Field>
         <div className="sm:col-span-2">
           <Field label="Justificación del enrutamiento">{routing?.justificacion_enrutamiento || '-'}</Field>

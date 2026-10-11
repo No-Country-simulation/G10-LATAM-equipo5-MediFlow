@@ -24,30 +24,11 @@ export type TipoDocumentoClinico =
   | 'PROTOCOLO_OPERATORIO'
   | 'OTRO';
 
-export interface Paciente {
-  nombre: string | null;
-  edad: number | null;
-  rut: string | null;
-}
-
-export interface Medico {
-  nombre: string | null;
-  rut: string | null;
-}
-
 export interface ClasificacionDocumento {
   tipo_documento: string;
   especialidad: string | null;
   nivel_prioridad: NivelPrioridad;
   score_confianza_clasificacion: number;
-}
-
-export interface DatosExtraidos {
-  paciente: Paciente;
-  medico_solicitante: Medico;
-  estudio_realizado: string | null;
-  diagnostico_principal: string | null;
-  cie10_sugerido: string | null;
 }
 
 export interface DecisionEnrutamiento {
@@ -60,8 +41,14 @@ export interface DecisionEnrutamiento {
 export interface DocumentListItemResponse {
   documento_id: string;
   estado: EstadoDocumento;
-  rut_paciente: string | null;
+  identificacion_paciente: string | null;
+  tipo_identificacion?: string | null;
   nombre_paciente: string | null;
+  numero_ficha?: string | null;
+  medico_nombre?: string | null;
+  cie10_sugerido?: string | null;
+  institucion_emisora?: string | null;
+  fecha_documento?: string | null;
   tipo_documento: string;
   nivel_prioridad: NivelPrioridad;
   score_confianza: number;
@@ -86,7 +73,8 @@ export interface DocumentFilterParams {
   page_size?: number;
   estado?: EstadoDocumento;
   destino?: string;
-  rut?: string;
+  identificacion?: string;
+  numero_ficha?: string;
   prioridad?: NivelPrioridad;
   fecha_desde?: string;
   fecha_hasta?: string;
@@ -107,17 +95,25 @@ export interface AuditDetailResponse {
   archivos: ArchivoPreview[];
   preview_expira_en_minutos: number;
   motivos_auditoria: string[];
-  rut_paciente: string | null;
+  identificacion_paciente: string | null;
+  tipo_identificacion: string | null;
+  pais_identificacion: string | null;
   nombre_paciente: string | null;
   edad_paciente: number | null;
+  fecha_nacimiento: string | null;
+  sexo: string | null;
+  numero_ficha: string | null;
   medico_nombre: string | null;
-  medico_rut: string | null;
+  medico_identificacion: string | null;
+  institucion_emisora: string | null;
+  fecha_documento: string | null;
   tipo_documento: string;
   especialidad: string | null;
   nivel_prioridad: NivelPrioridad;
   score_confianza: number;
   diagnostico_principal: string | null;
   cie10_sugerido: string | null;
+  cie10_origen: string | null;
   destino_enrutamiento: string | null;
   raw_extracted_json: Record<string, unknown>;
   uploaded_by_id: string | null;
@@ -130,18 +126,28 @@ export interface AuditDetailResponse {
   created_at: string;
 }
 
+/** Datos generales de un documento (mismo contrato que la ingesta de n8n). */
+export interface DatosGenerales {
+  paciente: {
+    nombre: string | null;
+    identificacion: { tipo: string | null; numero: string | null; pais: string | null } | null;
+    edad: number | null;
+    fecha_nacimiento: string | null;
+    sexo: string | null;
+    numero_ficha: string | null;
+  };
+  profesionales: Record<string, unknown>[];
+  institucion_emisora: string | null;
+  fecha_documento: string | null;
+  diagnosticos: Record<string, unknown>[];
+}
+
 export interface AuditResolveRequest {
-  rut_paciente: string;
-  nombre_paciente: string;
-  edad_paciente?: number | null;
-  medico_nombre?: string | null;
-  medico_rut?: string | null;
   tipo_documento: string;
   nivel_prioridad: NivelPrioridad;
-  diagnostico_principal: string;
-  cie10_sugerido?: string | null;
   destino_enrutamiento: string;
   especialidad?: string | null;
+  datos_generales: DatosGenerales;
   detalle_clinico?: Record<string, unknown> | null;
   audit_notes: string;
 }

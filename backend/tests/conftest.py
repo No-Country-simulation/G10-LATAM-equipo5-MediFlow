@@ -228,14 +228,25 @@ def ingest_body(
             "score_confianza_clasificacion": score,
         },
         "datos_generales": {
-            "paciente": {"nombre": "Carlos Mendes", "edad": 52, "rut": "12.345.678-9"},
-            "medico_solicitante": {
-                "nombre": "Dra. Silveira",
-                "rut": "9.876.543-2",
-                "matricula": "MED-4321",
+            "paciente": {
+                "nombre": "Carlos Mendes",
+                "edad": 52,
+                "identificacion": {"tipo": "RUT", "numero": "12.345.678-5", "pais": "CL"},
+                "numero_ficha": "43805",
             },
-            "diagnostico_principal": "TEP Agudo",
-            "cie10_sugerido": "I26.9",
+            "profesionales": [
+                {
+                    "nombre": "Dra. Silveira",
+                    "identificacion": "9.876.543-2",
+                    "registro_profesional": "MED-4321",
+                    "rol": "SOLICITANTE",
+                }
+            ],
+            "institucion_emisora": "Hospital Demo",
+            "fecha_documento": "2026-03-10",
+            "diagnosticos": [
+                {"descripcion": "TEP Agudo", "cie10": "I26.9", "tipo": "PRINCIPAL", "certeza": "CONFIRMADO"}
+            ],
         },
         "detalle_clinico": {
             "examenes_y_laboratorio": {

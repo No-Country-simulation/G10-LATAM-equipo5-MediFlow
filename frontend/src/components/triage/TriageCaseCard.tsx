@@ -1,5 +1,6 @@
 import type { DocumentListItemResponse } from '../../types/medical';
 import PriorityBadge from '../common/PriorityBadge';
+import { formatIdentificacion } from '../../utils/identificacion';
 
 interface TriageCaseCardProps {
   doc: DocumentListItemResponse;
@@ -53,7 +54,7 @@ const TriageCaseCard = ({ doc }: TriageCaseCardProps) => {
           <PriorityBadge prioridad={doc.nivel_prioridad} />
         </div>
         <p className="text-xs text-slate-400 font-mono mt-0.5">
-          RUT: {doc.rut_paciente || 'N/A'} • {docCode}
+          {formatIdentificacion(doc.identificacion_paciente, doc.tipo_identificacion)} • {docCode}
         </p>
       </div>
 

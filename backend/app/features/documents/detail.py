@@ -2,7 +2,8 @@
 
 El detalle clínico se arma desde dos fuentes:
 
-- `tablas`: las tablas hijas normalizadas (medicamentos, paneles de laboratorio, procedimientos).
+- `tablas`: las tablas hijas normalizadas (diagnósticos, profesionales, medicamentos, exámenes
+  solicitados, paneles de laboratorio, procedimientos).
 - `campos_relevantes`: los campos de texto del bloque del tipo en `raw_extracted_json`, que no
   tienen tabla propia (hallazgos de imagenología, evolución de una epicrisis, etc.). Para los
   tipos creados desde el mantenedor se usan sus `campos_adicionales`, con la etiqueta tomada del
@@ -29,12 +30,15 @@ from app.features.documents.schemas import (
     ArchivoDocumento,
     CampoRelevante,
     DetalleDocumento,
+    DiagnosticoExtract,
     DocumentDetailResponse,
+    ExamenSolicitadoItem,
     MedicamentoItem,
     PanelLaboratorio,
+    ProfesionalExtract,
     TablasClinicas,
 )
-from app.features.documents.service import BLOQUE_CAMPOS_ADICIONALES
+from app.features.documents.forms import BLOQUE_CAMPOS_ADICIONALES, campos_escalares
 from app.shared.oci_client import STORAGE_ERRORS, oci_storage_client
 
 logger = logging.getLogger(__name__)
@@ -43,65 +47,6 @@ AVISO_ARCHIVOS_NO_DISPONIBLES = (
     "No fue posible generar el enlace de {cantidad} archivo(s) en OCI. "
     "Los datos clínicos están disponibles; intenta abrir los archivos más tarde."
 )
-
-# Campos de texto de cada bloque de `detalle_clinico` que se muestran, en orden, con su
-# etiqueta. Las listas (medicamentos, paneles, procedimientos) no van aquí: salen de las tablas.
-_CAMPOS_RELEVANTES: dict[str, tuple[tuple[str, str], ...]] = {
-    "examenes_y_laboratorio": (
-        ("estudio_solicitado", "Estudio solicitado"),
-        ("conclusiones_o_hallazgos", "Conclusiones o hallazgos"),
-    ),
-    "procedimientos_e_internacion": (
-        ("fecha_ingreso", "Fecha de ingreso"),
-        ("fecha_alta", "Fecha de alta"),
-        ("resumen_evolucion", "Resumen de la evolución"),
-        ("antecedentes_relevantes", "Antecedentes relevantes"),
-    ),
-    "informe_imagenologico": (
-        ("tecnica", "Técnica"),
-        ("antecedentes", "Antecedentes"),
-        ("hallazgos", "Hallazgos"),
-        ("impresion_diagnostica", "Impresión diagnóstica"),
-    ),
-    "nota_atencion_ambulatoria": (
-        ("motivo_consulta", "Motivo de consulta"),
-        ("antecedentes", "Antecedentes"),
-        ("anamnesis", "Anamnesis"),
-        ("examen_fisico", "Examen físico"),
-        ("diagnostico_referencia", "Diagnóstico de referencia"),
-        ("diagnostico_atencion", "Diagnóstico de la atención"),
-        ("indicaciones", "Indicaciones"),
-    ),
-    "solicitud_procedimiento": (
-        ("procedimiento_solicitado", "Procedimiento solicitado"),
-        ("indicacion_clinica", "Indicación clínica"),
-        ("antecedentes", "Antecedentes"),
-        ("fecha_solicitud", "Fecha de solicitud"),
-    ),
-    "interconsulta": (
-        ("especialidad_destino", "Especialidad de destino"),
-        ("establecimiento_destino", "Establecimiento de destino"),
-        ("motivo_interconsulta", "Motivo de la interconsulta"),
-        ("antecedentes_clinicos", "Antecedentes clínicos"),
-    ),
-    "anatomia_patologica": (
-        ("tipo_muestra", "Tipo de muestra"),
-        ("descripcion_macroscopica", "Descripción macroscópica"),
-        ("descripcion_microscopica", "Descripción microscópica"),
-        ("diagnostico_histopatologico", "Diagnóstico histopatológico"),
-        ("malignidad", "Malignidad"),
-    ),
-    "protocolo_operatorio": (
-        ("fecha_cirugia", "Fecha de la cirugía"),
-        ("cirugia_realizada", "Cirugía realizada"),
-        ("diagnostico_preoperatorio", "Diagnóstico preoperatorio"),
-        ("tecnica", "Técnica"),
-        ("hallazgos_intraoperatorios", "Hallazgos intraoperatorios"),
-        ("complicaciones", "Complicaciones"),
-        ("muestras_enviadas", "Muestras enviadas"),
-    ),
-}
-
 
 # --- Archivos originales -----------------------------------------------------
 
@@ -157,9 +102,7 @@ def _humanize(campo: str) -> str:
     return campo.replace("_", " ").strip().capitalize()
 
 
-def _campos_de_bloque(
-    valores: dict[str, Any], definicion: tuple[tuple[str, str], ...]
-) -> list[CampoRelevante]:
+def _campos_de_bloque(valores: dict[str, Any], definicion: list[tuple[str, str]]) -> list[CampoRelevante]:
     return [
         CampoRelevante(campo=campo, etiqueta=etiqueta, valor=valores[campo])
         for campo, etiqueta in definicion
@@ -185,12 +128,14 @@ def _campos_adicionales(
 def build_campos_relevantes(
     detalle_clinico: dict[str, Any], schema_adicionales: dict[str, Any] | None = None
 ) -> list[CampoRelevante]:
-    """Campos de texto no vacíos del detalle clínico, con etiqueta, en el orden de `_CAMPOS_RELEVANTES`."""
+    """Campos de texto no vacíos del detalle clínico, con su etiqueta (el `title` del esquema).
+
+    Las etiquetas salen del mismo esquema que usan el formulario de auditoría y el prompt de n8n.
+    """
     campos: list[CampoRelevante] = []
-    for bloque, definicion in _CAMPOS_RELEVANTES.items():
-        valores = detalle_clinico.get(bloque)
-        if isinstance(valores, dict):
-            campos.extend(_campos_de_bloque(valores, definicion))
+    for bloque, valores in detalle_clinico.items():
+        if isinstance(valores, dict) and bloque != BLOQUE_CAMPOS_ADICIONALES:
+            campos.extend(_campos_de_bloque(valores, campos_escalares(bloque)))
 
     adicionales = detalle_clinico.get(BLOQUE_CAMPOS_ADICIONALES)
     if isinstance(adicionales, dict):
@@ -201,6 +146,13 @@ def build_campos_relevantes(
 def build_tablas(document: ClinicalDocument) -> TablasClinicas:
     """Tablas clínicas del documento, desde las tablas hijas (cargadas con `selectin`)."""
     return TablasClinicas(
+        diagnosticos=[DiagnosticoExtract.model_validate(d, from_attributes=True) for d in document.diagnoses],
+        profesionales=[
+            ProfesionalExtract.model_validate(p, from_attributes=True) for p in document.professionals
+        ],
+        examenes_solicitados=[
+            ExamenSolicitadoItem.model_validate(e, from_attributes=True) for e in document.requested_exams
+        ],
         medicamentos=[
             MedicamentoItem.model_validate(item, from_attributes=True)
             for item in document.medications

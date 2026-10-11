@@ -23,7 +23,7 @@ def _document(detalle_clinico: dict[str, Any] | None = None, **kwargs) -> Clinic
     fields = dict(
         documento_id="DOC-1",
         estado="PROCESADO",
-        rut_paciente="1-9",
+        identificacion_paciente="1-9",
         nombre_paciente="Ana",
         edad_paciente=40,
         medico_nombre="Dra. Silveira",
@@ -123,8 +123,16 @@ async def test_detail_laboratorio_returns_panels_and_text_fields(client, login_a
     assert detalle_resp["tablas"]["paneles_laboratorio"] == [
         {
             "nombre_panel": "Coagulación",
+            "muestra": None,
             "parametros": [
-                {"nombre": "Dímero D", "valor": "1200", "unidad": "ng/mL", "rango_referencia": "< 500", "alterado": True}
+                {
+                    "nombre": "Dímero D",
+                    "valor": "1200",
+                    "unidad": "ng/mL",
+                    "rango_referencia": "< 500",
+                    "alterado": True,
+                    "critico": None,
+                }
             ],
         }
     ]
@@ -146,7 +154,17 @@ async def test_detail_receta_and_epicrisis_tables(client, login_as, db, oci):
     headers = login_as(UserRole.ADMIN)
     tablas = (await client.get(DETAIL_URL, headers=headers)).json()["detalle"]["tablas"]
 
-    assert tablas["medicamentos"] == [{"nombre": "Enoxaparina", "dosis": "60 mg", "duracion_tratamiento": None}]
+    assert tablas["medicamentos"] == [
+        {
+            "nombre": "Enoxaparina",
+            "dosis": "60 mg",
+            "frecuencia": None,
+            "via": None,
+            "duracion_tratamiento": None,
+            "cantidad": None,
+            "tipo": "PRESCRITO",
+        }
+    ]
     assert tablas["procedimientos"] == ["Angio-TAC"]
 
 
@@ -162,7 +180,7 @@ async def test_detail_type_without_tables_returns_relevant_fields(client, login_
     headers = login_as(UserRole.ADMIN)
     data = (await client.get(DETAIL_URL, headers=headers)).json()["detalle"]
 
-    assert data["tablas"] == {"medicamentos": [], "paneles_laboratorio": [], "procedimientos": []}
+    assert all(filas == [] for filas in data["tablas"].values())
     assert [(c["etiqueta"], c["valor"]) for c in data["campos_relevantes"]] == [
         ("Tipo de muestra", "Biopsia gástrica"),
         ("Diagnóstico histopatológico", "Adenocarcinoma"),

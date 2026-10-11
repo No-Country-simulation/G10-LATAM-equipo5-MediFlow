@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     API_V1_PREFIX: str = "/api/v1"
 
+    # Logs: `text` es una línea legible por evento; `json`, una línea JSON (agregadores de logs).
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    LOG_FORMAT: Literal["text", "json"] = "text"
+
     # Base de datos. `DB_ECHO` imprime cada SQL con sus parámetros (datos de pacientes): solo
     # para depurar en local.
     DATABASE_URL: str = ""

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertCircle, X, Loader2 } from 'lucide-react';
 import { useCatalogs } from '../../hooks/useCatalogs';
 import { useAuditDetailForm } from '../../hooks/useAuditDetailForm';
+import { useDocumentForms } from '../../hooks/useDocumentForms';
 import AuditDocumentViewer from './AuditDocumentViewer';
 import AuditClinicalForm from './AuditClinicalForm';
 import AuditActionButtons from './AuditActionButtons';
@@ -12,19 +13,11 @@ interface AuditDetailPanelProps {
 }
 
 const AuditDetailPanel = ({ documentId, onClose }: AuditDetailPanelProps) => {
-  const { queues, documentTypes } = useCatalogs();
+  const { queues } = useCatalogs();
+  const { forms, error: formsError } = useDocumentForms();
   const [discardMode, setDiscardMode] = useState(false);
-  const {
-    detail,
-    loading,
-    error,
-    submitting,
-    formData,
-    handleChange,
-    handleResolve,
-    handleDiscard,
-    handleCancel,
-  } = useAuditDetailForm(documentId, onClose);
+  const audit = useAuditDetailForm(documentId, onClose, forms);
+  const { detail, loading, error, submitting, handleDiscard, handleCancel } = audit;
 
   if (loading) {
     return (
@@ -69,21 +62,28 @@ const AuditDetailPanel = ({ documentId, onClose }: AuditDetailPanelProps) => {
 
         {!discardMode && (
           <AuditClinicalForm
-            formData={formData}
-            handleChange={handleChange}
-            handleResolve={handleResolve}
-            documentTypes={documentTypes}
+            forms={forms}
+            formsError={formsError}
             queues={queues}
             detail={detail}
             error={error}
+            clasificacion={audit.clasificacion}
+            datosGenerales={audit.datosGenerales}
+            detalle={audit.detalle}
+            auditNotes={audit.auditNotes}
+            onClasificacionChange={audit.handleClasificacionChange}
+            onDatosGeneralesChange={audit.setDatosGenerales}
+            onDetalleChange={audit.setCampoDetalle}
+            onAuditNotesChange={audit.setAuditNotes}
+            handleResolve={(e) => void audit.handleResolve(e)}
           />
         )}
 
         <AuditActionButtons
           discardMode={discardMode}
           setDiscardMode={setDiscardMode}
-          motivoDescarte={formData.motivo_descarte}
-          handleChange={handleChange}
+          motivoDescarte={audit.motivoDescarte}
+          handleChange={audit.handleMotivoChange}
           handleDiscard={handleDiscard}
           handleCancel={handleCancel}
           submitting={submitting}

@@ -2,10 +2,20 @@
 #   cp .env.prod.example .env   # y completar
 #   docker compose -f docker-compose.prod.yml up -d --build
 # Solo `web` (Caddy) publica puertos (80/443). Postgres, backend y n8n quedan en la red interna.
+
+# Logs de los contenedores (`docker compose logs`) con rotación: sin límite, el disco de la VM
+# se llena con el tiempo. Se ven con `docker compose -f docker-compose.prod.yml logs -f backend`.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?falta POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
@@ -14,6 +24,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       # Sin seed_dev_users.sql: en producción no hay usuarios con contraseñas conocidas.
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./docker/postgres/init_catalogo.sql:/docker-entrypoint-initdb.d/init_catalogo.sql:ro
     networks: [internal]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
@@ -24,11 +35,15 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       ENVIRONMENT: production
+      # Logs: una línea legible por evento (`text`) o JSON para un agregador (`json`).
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?falta JWT_SECRET_KEY}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
@@ -50,6 +65,7 @@ services:
   n8n:
     image: n8nio/n8n:${N8N_VERSION:-latest}
     restart: unless-stopped
+    logging: *default-logging
     depends_on: [backend]
     ports:
       # Editor solo por túnel SSH: ssh -L 5678:localhost:5678 opc@<ip-vm>
@@ -66,9 +82,20 @@ services:
       N8N_DIAGNOSTICS_ENABLED: "false"
       MEDIFLOW_API_BASE_URL: http://backend:8000
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # Modelos de Gemini: el rápido procesa todo; el preciso repite solo los documentos dudosos
+      # (legibilidad o certeza no "alta"). Google renueva los IDs: ai.google.dev/gemini-api/docs/models
+      GEMINI_MODELO_RAPIDO: ${GEMINI_MODELO_RAPIDO:-gemini-3.1-flash-lite}
+      GEMINI_MODELO_PRECISO: ${GEMINI_MODELO_PRECISO:-gemini-3.8-flash}
       EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: 72
+      # Logs del servidor n8n: consola (`docker compose logs n8n`) y archivo rotado dentro del
+      # volumen n8n_data (/home/node/.n8n/logs/n8n.log). No incluyen los datos de cada ejecución.
+      N8N_LOG_LEVEL: ${N8N_LOG_LEVEL:-info}
+      N8N_LOG_OUTPUT: console,file
+      N8N_LOG_FILE_LOCATION: /home/node/.n8n/logs/n8n.log
+      N8N_LOG_FILE_SIZE_MAX: 16
+      N8N_LOG_FILE_COUNT_MAX: 5
     volumes:
       - n8n_data:/home/node/.n8n
     networks: [internal]
@@ -78,6 +105,7 @@ services:
       context: .
       dockerfile: deploy/web.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     depends_on: [backend, n8n]
     ports:
       - "80:80"

@@ -2,6 +2,7 @@ import { User, Stethoscope, ShieldCheck, XCircle } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import { CATEGORY_LABELS } from '../../types/documents';
 import PriorityBadge from '../common/PriorityBadge';
+import { formatIdentificacion } from '../../utils/identificacion';
 
 interface DocumentsKanbanCardProps {
   doc: DocumentListItemResponse;
@@ -51,9 +52,9 @@ const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
           <span className="font-semibold text-slate-100 truncate">
             {doc.nombre_paciente ?? '—'}
           </span>
-          {doc.rut_paciente && (
+          {doc.identificacion_paciente && (
             <span className="text-[10px] font-mono text-slate-400 shrink-0">
-              ({doc.rut_paciente})
+              ({formatIdentificacion(doc.identificacion_paciente, doc.tipo_identificacion)})
             </span>
           )}
         </div>

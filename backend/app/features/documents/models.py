@@ -8,12 +8,12 @@ libre de baja estructura (hallazgos de imagenología, evolución de una epicrisi
 únicamente en `raw_extracted_json`: no se filtra por él y normalizarlo no simplificaría nada.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,12 +30,25 @@ class ClinicalDocument(Base):
     documento_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     estado: Mapped[str] = mapped_column(String(30), nullable=False)
 
-    rut_paciente: Mapped[str | None] = mapped_column(String(20), index=True)
+    # Identificación de cualquier país (RUT, DNI, CURP, cédula, CPF, pasaporte...), normalizada sin
+    # puntos ni espacios; `pais_identificacion` en ISO 3166-1 alfa-2.
+    identificacion_paciente: Mapped[str | None] = mapped_column(String(30), index=True)
+    tipo_identificacion: Mapped[str | None] = mapped_column(String(15))
+    pais_identificacion: Mapped[str | None] = mapped_column(String(2))
     nombre_paciente: Mapped[str | None] = mapped_column(String(150))
     edad_paciente: Mapped[int | None] = mapped_column(Integer)
+    fecha_nacimiento: Mapped[date | None] = mapped_column(Date)
+    sexo: Mapped[str | None] = mapped_column(String(1))
+    # N° de ficha / historia clínica / expediente: lo asigna cada institución.
+    numero_ficha: Mapped[str | None] = mapped_column(String(50), index=True)
 
+    # Profesional responsable del documento (quien lo informa o firma); el detalle de todos los
+    # profesionales con su rol está en `clinical_document_professionals`.
     medico_nombre: Mapped[str | None] = mapped_column(String(150))
-    medico_rut: Mapped[str | None] = mapped_column(String(20))
+    medico_identificacion: Mapped[str | None] = mapped_column(String(30))
+
+    institucion_emisora: Mapped[str | None] = mapped_column(String(200))
+    fecha_documento: Mapped[date | None] = mapped_column(Date, index=True)
 
     tipo_documento: Mapped[str] = mapped_column(String(80), nullable=False)
     especialidad: Mapped[str | None] = mapped_column(String(100))
@@ -45,6 +58,8 @@ class ClinicalDocument(Base):
 
     diagnostico_principal: Mapped[str | None] = mapped_column(Text)
     cie10_sugerido: Mapped[str | None] = mapped_column(String(10))
+    # DOCUMENTO: el código venía impreso; INFERIDO: lo propuso la IA; AUDITOR: lo fijó un auditor.
+    cie10_origen: Mapped[str | None] = mapped_column(String(10))
     destino_enrutamiento: Mapped[str | None] = mapped_column(String(80))
     justificacion_enrutamiento: Mapped[str | None] = mapped_column(Text)
 
@@ -114,6 +129,24 @@ class ClinicalDocument(Base):
         order_by="ClinicalDocumentProcedure.orden",
         lazy="selectin",
     )
+    diagnoses: Mapped[list["ClinicalDocumentDiagnosis"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="ClinicalDocumentDiagnosis.orden",
+        lazy="selectin",
+    )
+    requested_exams: Mapped[list["ClinicalDocumentRequestedExam"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="ClinicalDocumentRequestedExam.orden",
+        lazy="selectin",
+    )
+    professionals: Mapped[list["ClinicalDocumentProfessional"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="ClinicalDocumentProfessional.orden",
+        lazy="selectin",
+    )
 
     @property
     def motivos_auditoria(self) -> list[str]:
@@ -144,7 +177,7 @@ class ClinicalDocumentAttachment(Base):
 
 
 class ClinicalDocumentMedication(Base):
-    """Ítem de posología (medicamento) extraído de una Receta médica."""
+    """Medicamento prescrito o administrado (receta, indicaciones de alta, urgencias, atención)."""
 
     __tablename__ = "clinical_document_medications"
 
@@ -154,7 +187,11 @@ class ClinicalDocumentMedication(Base):
     )
     nombre: Mapped[str] = mapped_column(String(200), nullable=False)
     dosis: Mapped[str | None] = mapped_column(String(100))
+    frecuencia: Mapped[str | None] = mapped_column(String(100))
+    via: Mapped[str | None] = mapped_column(String(50))
     duracion_tratamiento: Mapped[str | None] = mapped_column(String(100))
+    cantidad: Mapped[str | None] = mapped_column(String(100))
+    tipo: Mapped[str] = mapped_column(String(15), nullable=False, default="PRESCRITO")
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     document: Mapped["ClinicalDocument"] = relationship(back_populates="medications")
@@ -173,6 +210,7 @@ class LabPanel(Base):
         ForeignKey("clinical_documents.id", ondelete="CASCADE"), nullable=False, index=True
     )
     nombre_panel: Mapped[str] = mapped_column(String(150), nullable=False)
+    muestra: Mapped[str | None] = mapped_column(String(50))
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     document: Mapped["ClinicalDocument"] = relationship(back_populates="lab_panels")
@@ -198,10 +236,11 @@ class LabParameter(Base):
         ForeignKey("lab_panels.id", ondelete="CASCADE"), nullable=False, index=True
     )
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
-    valor: Mapped[str | None] = mapped_column(String(50))
-    unidad: Mapped[str | None] = mapped_column(String(30))
-    rango_referencia: Mapped[str | None] = mapped_column(String(50))
+    valor: Mapped[str | None] = mapped_column(String(100))
+    unidad: Mapped[str | None] = mapped_column(String(50))
+    rango_referencia: Mapped[str | None] = mapped_column(String(100))
     alterado: Mapped[bool | None] = mapped_column(Boolean)
+    critico: Mapped[bool | None] = mapped_column(Boolean)
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     panel: Mapped["LabPanel"] = relationship(back_populates="parametros")
@@ -220,3 +259,63 @@ class ClinicalDocumentProcedure(Base):
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     document: Mapped["ClinicalDocument"] = relationship(back_populates="procedures")
+
+
+class ClinicalDocumentDiagnosis(Base):
+    """Diagnóstico del documento (principal o secundario, confirmado o presuntivo).
+
+    Tabla propia para responder rápido "qué documentos tienen el CIE-10 X". `origen_cie10` dice si
+    el código venía impreso (DOCUMENTO), lo propuso la IA (INFERIDO) o lo fijó un auditor (AUDITOR).
+    """
+
+    __tablename__ = "clinical_document_diagnoses"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("clinical_documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    descripcion: Mapped[str | None] = mapped_column(String(300))
+    cie10: Mapped[str | None] = mapped_column(String(10), index=True)
+    tipo: Mapped[str] = mapped_column(String(15), nullable=False, default="SECUNDARIO")
+    certeza: Mapped[str] = mapped_column(String(15), nullable=False, default="PRESUNTIVO")
+    origen_cie10: Mapped[str | None] = mapped_column(String(10))
+    orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    document: Mapped["ClinicalDocument"] = relationship(back_populates="diagnoses")
+
+
+class ClinicalDocumentRequestedExam(Base):
+    """Examen o estudio pedido en una orden médica (laboratorio, imagenología, procedimiento)."""
+
+    __tablename__ = "clinical_document_requested_exams"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("clinical_documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    codigo: Mapped[str | None] = mapped_column(String(30))
+    nombre: Mapped[str] = mapped_column(String(300), nullable=False)
+    categoria: Mapped[str] = mapped_column(String(20), nullable=False, default="OTRO")
+    orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    document: Mapped["ClinicalDocument"] = relationship(back_populates="requested_exams")
+
+
+class ClinicalDocumentProfessional(Base):
+    """Profesional que participa en el documento con su rol: quien solicita, informa, trata o
+    recibe la derivación. El responsable se copia además en `clinical_documents.medico_*`."""
+
+    __tablename__ = "clinical_document_professionals"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("clinical_documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    nombre: Mapped[str] = mapped_column(String(150), nullable=False)
+    identificacion: Mapped[str | None] = mapped_column(String(30))
+    registro_profesional: Mapped[str | None] = mapped_column(String(50))
+    especialidad: Mapped[str | None] = mapped_column(String(100))
+    rol: Mapped[str] = mapped_column(String(20), nullable=False, default="OTRO")
+    orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    document: Mapped["ClinicalDocument"] = relationship(back_populates="professionals")

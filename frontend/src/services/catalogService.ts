@@ -1,6 +1,7 @@
 import { api } from './api';
 import { FASTAPI_ENDPOINTS } from '@/config/api';
 import type { AreaSummary } from '../types/auth';
+import type { DocumentForms } from '../types/forms';
 import type {
   AreaRecord,
   CatalogPayload,
@@ -30,4 +31,5 @@ export const catalogService = {
   queues: createCatalogApi<QueueRecord>(FASTAPI_ENDPOINTS.catalogs.queues),
   areas: createCatalogApi<AreaRecord>(FASTAPI_ENDPOINTS.catalogs.areas),
   getActiveAreas: () => api.get<AreaSummary[]>(FASTAPI_ENDPOINTS.catalogs.areasActive),
+  getDocumentForms: () => api.get<DocumentForms>(FASTAPI_ENDPOINTS.catalogs.documentTypeForms),
 };

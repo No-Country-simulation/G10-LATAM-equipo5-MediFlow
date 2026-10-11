@@ -2,6 +2,7 @@ import { FileText, User, Stethoscope, ArrowRight, ShieldCheck, AlertTriangle, XC
 import type { DocumentListItemResponse } from '../../types/medical';
 import { DESTINATION_LABELS, CATEGORY_LABELS } from '../../types/documents';
 import PriorityBadge from '../common/PriorityBadge';
+import { formatIdentificacion } from '../../utils/identificacion';
 
 interface DocumentRepositoryCardProps {
   doc: DocumentListItemResponse;
@@ -80,7 +81,7 @@ const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
             {doc.nombre_paciente ?? '—'}
           </div>
           <div className="text-[11px] text-slate-400 font-mono">
-            RUT: {doc.rut_paciente ?? 'S/N'}
+            {formatIdentificacion(doc.identificacion_paciente, doc.tipo_identificacion)}
           </div>
         </div>
 

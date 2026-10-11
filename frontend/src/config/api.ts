@@ -36,6 +36,7 @@ export const FASTAPI_ENDPOINTS = {
     documentTypesActive: "/catalogs/document-types/active",
     queuesActive: "/catalogs/queues/active",
     areasActive: "/catalogs/areas/active",
+    documentTypeForms: "/catalogs/document-types/forms",
     documentTypes: "/catalogs/document-types",
     queues: "/catalogs/queues",
     areas: "/catalogs/areas",

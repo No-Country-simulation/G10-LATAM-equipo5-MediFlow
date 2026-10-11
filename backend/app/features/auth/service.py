@@ -1,5 +1,6 @@
 """Lógica de negocio de autenticación y gestión de usuarios."""
 
+import logging
 import math
 from datetime import datetime, timezone
 from uuid import UUID
@@ -22,6 +23,8 @@ from app.features.auth.schemas import (
     UserAdminUpdateRequest,
     UserCreateRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def revoke_token(db: AsyncSession, jti: str, expires_at: datetime) -> None:
@@ -94,6 +97,7 @@ async def update_profile(user: User, payload: ProfileUpdateRequest, db: AsyncSes
 
     await db.commit()
     await db.refresh(user)
+    logger.info("Usuario %s actualizó su perfil (campos: %s)", user.username, ", ".join(sorted(updates)) or "ninguno")
     return user
 
 
@@ -107,6 +111,7 @@ async def change_password(user: User, payload: PasswordChangeRequest, db: AsyncS
 
     user.hashed_password = get_password_hash(payload.new_password)
     await db.commit()
+    logger.info("Usuario %s cambió su contraseña", user.username)
 
 
 def _ensure_can_grant_role(requesting_user: User, role: UserRole) -> None:
@@ -156,6 +161,7 @@ async def create_user(payload: UserCreateRequest, db: AsyncSession, requesting_u
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    logger.info("Usuario %s creado con rol %s en el área %s", user.username, user.role.value, area.codigo)
     return user
 
 
@@ -218,6 +224,7 @@ async def delete_user(
             "(documentos o cambios de catálogos) que deben conservar su autoría",
         )
     await db.commit()
+    logger.info("Usuario %s eliminado (%s): %d registro(s) de actividad", user.username, result[0], activity)
     return result
 
 
@@ -234,6 +241,7 @@ async def admin_update_user(
     if "email" in updates and updates["email"] != user.email:
         await _ensure_email_not_taken(db, updates["email"], user.id)
 
+    changed_fields = sorted(updates)
     # Se asigna la relación (no solo el FK) para que la respuesta traiga el área nueva.
     if "area_id" in updates:
         user.area = await _get_assignable_area(db, updates.pop("area_id"))
@@ -243,6 +251,7 @@ async def admin_update_user(
 
     await db.commit()
     await db.refresh(user)
+    logger.info("Usuario %s actualizado (campos: %s)", user.username, ", ".join(changed_fields) or "ninguno")
     return user
 
 

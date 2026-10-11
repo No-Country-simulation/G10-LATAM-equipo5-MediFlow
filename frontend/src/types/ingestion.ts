@@ -4,24 +4,38 @@ import type {
   AlmacenamientoOci,
 } from './document';
 
-// n8n may spell the name key in Portuguese-style (`nome`) or Spanish (`nombre`).
+// Datos generales tal como los devuelve el backend tras normalizarlos (contrato v2).
 export interface N8nPerson {
-  rut?: string | null;
-  edad?: number | null;
-  nome?: string | null;
   nombre?: string | null;
+  edad?: number | null;
+  identificacion?: { tipo?: string | null; numero?: string | null } | null;
+  numero_ficha?: string | null;
 }
 
-// n8n sends `datos_extraidos`; older payloads used `datos_generales`.
+export interface N8nProfesional {
+  nombre?: string | null;
+  rol?: string | null;
+}
+
+export interface N8nDiagnostico {
+  descripcion?: string | null;
+  cie10?: string | null;
+  tipo?: string | null;
+}
+
 export interface N8nClinicalData {
   paciente?: N8nPerson | null;
-  medico_solicitante?: N8nPerson | null;
-  diagnostico_principal?: string | null;
+  profesionales?: N8nProfesional[] | null;
+  diagnosticos?: N8nDiagnostico[] | null;
+  institucion_emisora?: string | null;
+  fecha_documento?: string | null;
 }
 
 export interface N8nIngestResponse {
   status?: string;
   documento_id?: string;
+  score_confianza?: number;
+  motivos_auditoria?: string[];
   clasificacion?: Partial<ClasificacionExtract> | null;
   datos_extraidos?: N8nClinicalData | null;
   datos_generales?: N8nClinicalData | null;
@@ -33,6 +47,8 @@ export interface N8nErrorResponse {
   status: 'error';
   etapa: string;
   detalle: string;
+  /** ID de seguimiento de la ingesta (el mismo que registran el front y el backend). */
+  request_id?: string;
 }
 
 export class IngestionError extends Error {

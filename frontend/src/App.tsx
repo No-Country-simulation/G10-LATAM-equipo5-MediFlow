@@ -11,6 +11,7 @@ import UsersPage from './pages/UsersPage';
 import CatalogsPage from './pages/CatalogsPage';
 import TriagePage from './pages/TriagePage';
 import { RoleRoute } from './components/auth/RoleRoute';
+import { RouteLogger } from './components/common/RouteLogger';
 import { useAuth } from './hooks/useAuth';
 import {
   AUDIT_ACCESS_ROLES,
@@ -36,6 +37,7 @@ const App = () => {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <RouteLogger />
         <Routes>
           <Route path="/login" element={<Login />} />
 

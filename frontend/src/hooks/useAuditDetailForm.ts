@@ -1,105 +1,124 @@
 import { useState, useEffect } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { documentService } from '../services/documentService';
-import type { AuditDetailResponse, NivelPrioridad } from '../types/medical';
+import type { AuditDetailResponse, DatosGenerales, NivelPrioridad } from '../types/medical';
+import type { DocumentForms, JsonObject, JsonValue } from '../types/forms';
+import { datosGeneralesDesdeJson, detalleParaTipo, validarAuditoria } from '../utils/auditForm';
+import { errorMessage } from '../utils/errors';
+import { createLogger, describeError } from '../utils/logger';
 
-export const useAuditDetailForm = (documentId: string, onClose: () => void) => {
+const log = createLogger('auditoria');
+
+export interface ClasificacionForm {
+  tipo_documento: string;
+  nivel_prioridad: NivelPrioridad;
+  destino_enrutamiento: string;
+  especialidad: string;
+}
+
+const CLASIFICACION_VACIA: ClasificacionForm = {
+  tipo_documento: '',
+  nivel_prioridad: 'Rutina',
+  destino_enrutamiento: '',
+  especialidad: '',
+};
+
+/**
+ * Estado del formulario de auditoría. Usa la misma estructura que la ingesta (`datos_generales` y
+ * `detalle_clinico`): el auditor corrige exactamente lo que extrajo la IA, con los campos del tipo
+ * elegido (ver GET /catalogs/document-types/forms).
+ */
+export const useAuditDetailForm = (documentId: string, onClose: () => void, forms: DocumentForms | null) => {
   const [detail, setDetail] = useState<AuditDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [formData, setFormData] = useState({
-    rut_paciente: '',
-    nombre_paciente: '',
-    edad_paciente: '' as string | number,
-    medico_nombre: '',
-    medico_rut: '',
-    tipo_documento: '',
-    nivel_prioridad: 'Rutina' as NivelPrioridad,
-    diagnostico_principal: '',
-    cie10_sugerido: '',
-    destino_enrutamiento: '',
-    especialidad: '',
-    audit_notes: '',
-    motivo_descarte: '',
-  });
+  const [clasificacion, setClasificacion] = useState<ClasificacionForm>(CLASIFICACION_VACIA);
+  const [datosGenerales, setDatosGenerales] = useState<JsonObject>({});
+  const [detalle, setDetalle] = useState<JsonObject>({});
+  const [auditNotes, setAuditNotes] = useState('');
+  const [motivoDescarte, setMotivoDescarte] = useState('');
 
   useEffect(() => {
-    const fetchDetail = async () => {
-      try {
-        const data = await documentService.getAuditDetail(documentId);
+    let cancelled = false;
+    documentService
+      .getAuditDetail(documentId)
+      .then((data) => {
+        if (cancelled) return;
+        const raw = data.raw_extracted_json ?? {};
         setDetail(data);
-        setFormData({
-          rut_paciente: data.rut_paciente || '',
-          nombre_paciente: data.nombre_paciente || '',
-          edad_paciente: data.edad_paciente || '',
-          medico_nombre: data.medico_nombre || '',
-          medico_rut: data.medico_rut || '',
+        setClasificacion({
           tipo_documento: data.tipo_documento,
           nivel_prioridad: data.nivel_prioridad,
-          diagnostico_principal: data.diagnostico_principal || '',
-          cie10_sugerido: data.cie10_sugerido || '',
           destino_enrutamiento: data.destino_enrutamiento || '',
           especialidad: data.especialidad || '',
-          audit_notes: '',
-          motivo_descarte: '',
         });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al cargar el detalle');
-      } finally {
-        setLoading(false);
-      }
+        setDatosGenerales(datosGeneralesDesdeJson(raw));
+        setDetalle((raw.detalle_clinico as JsonObject | undefined) ?? {});
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(errorMessage(err, 'Error al cargar el detalle'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-    fetchDetail();
   }, [documentId]);
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleClasificacionChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setClasificacion((prev) => ({ ...prev, [name]: value }));
+    // Al cambiar de tipo cambian sus campos: el bloque del tipo anterior se descarta.
+    if (name === 'tipo_documento') setDetalle((prev) => detalleParaTipo(prev, value, forms));
   };
+
+  const setCampoDetalle = (bloque: string, valor: JsonValue) => setDetalle((prev) => ({ ...prev, [bloque]: valor }));
+
+  const handleMotivoChange = (e: ChangeEvent<HTMLTextAreaElement>) => setMotivoDescarte(e.target.value);
 
   const handleResolve = async (e: FormEvent) => {
     e.preventDefault();
-    if (!formData.audit_notes.trim()) {
-      setError('Las notas de auditoría son obligatorias.');
+    const problema = validarAuditoria(datosGenerales, auditNotes);
+    if (problema) {
+      setError(problema);
       return;
     }
+    setError(null);
     setSubmitting(true);
     try {
       await documentService.resolveAudit(documentId, {
-        rut_paciente: formData.rut_paciente,
-        nombre_paciente: formData.nombre_paciente,
-        edad_paciente: formData.edad_paciente ? Number(formData.edad_paciente) : null,
-        medico_nombre: formData.medico_nombre,
-        medico_rut: formData.medico_rut,
-        tipo_documento: formData.tipo_documento,
-        nivel_prioridad: formData.nivel_prioridad,
-        diagnostico_principal: formData.diagnostico_principal,
-        cie10_sugerido: formData.cie10_sugerido,
-        destino_enrutamiento: formData.destino_enrutamiento,
-        especialidad: formData.especialidad,
-        audit_notes: formData.audit_notes,
+        tipo_documento: clasificacion.tipo_documento,
+        nivel_prioridad: clasificacion.nivel_prioridad,
+        destino_enrutamiento: clasificacion.destino_enrutamiento,
+        especialidad: clasificacion.especialidad || null,
+        datos_generales: datosGenerales as unknown as DatosGenerales,
+        detalle_clinico: detalleParaTipo(detalle, clasificacion.tipo_documento, forms),
+        audit_notes: auditNotes,
       });
+      log.info('Caso resuelto', { documentId, tipo: clasificacion.tipo_documento });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al resolver el caso');
+      setError(errorMessage(err, 'Error al resolver el caso'));
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDiscard = async () => {
-    if (!formData.motivo_descarte.trim()) {
+    if (!motivoDescarte.trim()) {
       setError('El motivo de descarte es obligatorio.');
       return;
     }
     setSubmitting(true);
     try {
-      await documentService.discardAudit(documentId, { motivo: formData.motivo_descarte });
+      await documentService.discardAudit(documentId, { motivo: motivoDescarte });
+      log.info('Caso descartado', { documentId });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al descartar el caso');
+      setError(errorMessage(err, 'Error al descartar el caso'));
     } finally {
       setSubmitting(false);
     }
@@ -109,10 +128,28 @@ export const useAuditDetailForm = (documentId: string, onClose: () => void) => {
     try {
       await documentService.releaseAuditCase(documentId);
     } catch (err) {
-      console.error('Error liberando el caso', err);
+      log.warn('No se pudo liberar el caso al cancelar', { documentId, error: describeError(err) });
     }
     onClose();
   };
 
-  return { detail, loading, error, submitting, formData, handleChange, handleResolve, handleDiscard, handleCancel };
+  return {
+    detail,
+    loading,
+    error,
+    submitting,
+    clasificacion,
+    datosGenerales,
+    detalle,
+    auditNotes,
+    motivoDescarte,
+    handleClasificacionChange,
+    setDatosGenerales,
+    setCampoDetalle,
+    setAuditNotes,
+    handleMotivoChange,
+    handleResolve,
+    handleDiscard,
+    handleCancel,
+  };
 };

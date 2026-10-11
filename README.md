@@ -51,7 +51,7 @@ flowchart LR
 
 **Regla de triaje:** el backend deja un documento en `PENDIENTE_AUDITORIA` si se cumple **cualquiera** de estas condiciones; si no se cumple ninguna, queda `PROCESADO`:
 
-- score de confianza **menor a 0.85**;
+- score de confianza **menor a 0.85** (lo calcula el backend con la autoevaluación de la IA y validaciones propias: identificación, CIE-10, datos faltantes);
 - el workflow marca `requiere_auditoria_humana`;
 - el tipo es `OTRO` (no clasificable);
 - el tipo o la cola no existen (o están inactivos) en las tablas maestras;
@@ -79,7 +79,7 @@ Los archivos originales se guardan en `recibidos/<id>/<n>.<extensión>` (un docu
 ├── frontend/                # Interfaz web en React + Vite (detalle en frontend/README.md)
 ├── workflow/                # Workflow de n8n (MediFlow_unificado.json) y su README
 ├── docker/
-│   └── postgres/            # init.sql (tablas, índices, maestras) + seed_dev_users.sql (solo dev)
+│   └── postgres/            # init.sql (tablas, índices) + init_catalogo.sql (tipos y colas) + seed_dev_users.sql (solo dev)
 ├── deploy/                  # Caddyfile + imagen del front (producción)
 ├── docker-compose.yml       # Desarrollo: PostgreSQL 16 + n8n
 ├── docker-compose.prod.yml  # Producción en OCI: Caddy + front + backend + n8n + PostgreSQL
@@ -135,11 +135,11 @@ Todos los comandos se ejecutan desde la **raíz del repositorio**, salvo que se 
    docker compose ps
    ```
 
-**¿Qué pasa la primera vez?** Docker crea el volumen `postgres_data` y ejecuta automáticamente `docker/postgres/init.sql`, que:
+**¿Qué pasa la primera vez?** Docker crea el volumen `postgres_data` y ejecuta automáticamente, en orden, `docker/postgres/init.sql`, `init_catalogo.sql` y `seed_dev_users.sql`, que:
 
 - crea todas las tablas e índices (usuarios, documentos clínicos y sus tablas hijas, tokens revocados, tablas maestras);
 - crea **un usuario de prueba por rol** (ver [Usuarios de prueba](#usuarios-de-prueba));
-- carga las **tablas maestras semilla**: 10 tipos de documento y 6 colas de enrutamiento.
+- carga las **tablas maestras semilla**: 13 tipos de documento y 6 colas de enrutamiento.
 
 > ⚠️ `init.sql` se ejecuta **solo cuando el volumen está vacío** (primera vez). Si ya tenías la base creada de antes, no se vuelve a ejecutar solo: ver [Actualizar una base existente](#actualizar-una-base-existente).
 
@@ -213,6 +213,7 @@ Con el contenedor levantado (`docker compose up -d`), ejecuta el script que ya e
 
 ```bash
 docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/init.sql
+docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/init_catalogo.sql
 docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/seed_dev_users.sql
 ```
 
@@ -259,8 +260,8 @@ Definen las opciones que el workflow de IA puede elegir. n8n las lee desde la AP
 
 | Maestra | Registros semilla |
 |---|---|
-| **Tipos de documento** | Receta Médica · Informe de Laboratorio · Informe de Estudio por Imágenes · Solicitud de Procedimiento · Epicrisis / Informe de Alta · Interconsulta / Derivación · Informe de Anatomía Patológica · Protocolo Operatorio · Nota de Atención Ambulatoria · Otro / No clasificable |
-| **Colas de enrutamiento** | Urgencias · Farmacia Hospitalaria · Procedimientos y Quirófano · Interconsultas y Derivaciones · Oncología · Ficha Clínica (destino por defecto) |
+| **Tipos de documento** | Receta Médica · Informe de Laboratorio · Informe de Estudio por Imágenes · Solicitud de Exámenes · Solicitud de Procedimiento · Epicrisis / Informe de Alta · Interconsulta / Derivación · Informe de Anatomía Patológica · Protocolo Operatorio · Nota de Atención Ambulatoria · Atención de Urgencia / Prehospitalaria · Certificado / Licencia Médica · Otro / No clasificable |
+| **Colas de enrutamiento** | Urgencias · Farmacia Hospitalaria · Procedimientos y Exámenes · Interconsultas y Derivaciones · Oncología · Ficha Clínica (destino por defecto) |
 
 Cada registro trae una descripción que el LLM usa para decidir; los tipos pueden definir además campos propios a extraer (`campos_extraccion`, un JSON Schema). Cada cambio queda en un historial, y `OTRO` y `Ficha_Clinica` están protegidos porque el sistema depende de ellos. Al **eliminar**, el backend aplica *Smart Delete*: si ningún documento clínico usa el registro lo borra físicamente; si alguno lo usa, solo lo desactiva para no dejar documentos huérfanos. Detalle en [`backend/README.md`](backend/README.md#tablas-maestras-catálogos).
 
@@ -289,6 +290,7 @@ Prefijo: `/api/v1`. Salvo `health`, `login` y `refresh`, todos requieren `Author
 | [`frontend/README.md`](frontend/README.md) | Frontend: stack, scripts y qué endpoints usa cada pantalla |
 | [`workflow/README.md`](workflow/README.md) | Workflow de n8n: flujo, configuración y reglas de uso de tokens |
 | [`docs/DESPLIEGUE_OCI.md`](docs/DESPLIEGUE_OCI.md) | Despliegue en Oracle Cloud y checklist de seguridad |
+| [`docs/LOGS.md`](docs/LOGS.md) | Dónde están los logs (front, n8n, backend) y cómo seguir una operación con el ID de seguimiento |
 | Swagger (`/docs` con la API levantada, solo fuera de producción) | Probar los endpoints y ver los esquemas exactos |
 
 ---

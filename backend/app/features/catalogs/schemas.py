@@ -7,6 +7,8 @@ from uuid import UUID
 from jsonschema import Draft202012Validator, SchemaError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.shared.schema_order import con_orden
+
 DeletionType = Literal["HARD_DELETE", "SOFT_DELETE"]
 CatalogAction = Literal["CREATE", "UPDATE", "HARD_DELETE", "SOFT_DELETE"]
 
@@ -28,7 +30,8 @@ def _validate_campos_extraccion(schema: dict[str, Any] | None) -> dict[str, Any]
         raise ValueError(f"campos_extraccion no es un JSON Schema válido: {exc.message}") from exc
     if schema.get("type") != "object":
         raise ValueError('campos_extraccion debe ser un JSON Schema con "type": "object"')
-    return schema
+    # JSONB reordena las claves: el orden de los campos se guarda aparte (ver schema_order).
+    return con_orden(schema)
 
 
 def _reject_null(value: Any) -> Any:
@@ -216,3 +219,27 @@ class CatalogHistoryResponse(BaseModel):
     cambios: dict[str, Any]
     changed_by_id: UUID | None
     changed_at: datetime
+
+
+# --- Formularios por tipo de documento --------------------------------------
+
+
+class DocumentTypeForm(BaseModel):
+    """Campos de un tipo de documento: el bloque de `detalle_clinico` y su JSON Schema.
+
+    `bloque` es `None` (y `esquema` también) si el tipo no tiene campos propios (RECETA, OTRO).
+    """
+
+    codigo: str
+    nombre: str
+    descripcion: str
+    bloque: str | None
+    esquema: dict[str, Any] | None
+
+
+class DocumentFormsResponse(BaseModel):
+    """Formularios de los tipos activos, las listas comunes y los datos generales de todo documento."""
+
+    datos_generales: dict[str, Any]
+    comunes: dict[str, dict[str, Any]]
+    tipos: list[DocumentTypeForm]

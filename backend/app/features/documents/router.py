@@ -59,14 +59,17 @@ async def ingest(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
         ) from exc
 
+    # Se responde con lo guardado (normalizado por el backend), no con el payload recibido.
+    guardado = document.raw_extracted_json
     return IngestResponse(
         status=document.estado,
         documento_id=document.documento_id,
-        motivos_auditoria=document.raw_extracted_json["triaje"]["motivos_auditoria"],
-        clasificacion=payload.clasificacion,
-        datos_generales=payload.datos_generales,
-        detalle_clinico=payload.detalle_clinico,
-        decision_enrutamiento=payload.decision_enrutamiento,
+        score_confianza=float(document.score_confianza),
+        motivos_auditoria=guardado["triaje"]["motivos_auditoria"],
+        clasificacion=guardado["clasificacion"],
+        datos_generales=guardado["datos_generales"],
+        detalle_clinico=guardado["detalle_clinico"],
+        decision_enrutamiento=guardado["decision_enrutamiento"],
         almacenamiento_oci=AlmacenamientoOci(
             bucket=document.oci_bucket_name,
             ruta_objeto=document.oci_json_path,
@@ -88,7 +91,10 @@ async def list_documents(
     destino: str | None = Query(
         None, description="Filtrar por cola: Cola_Emergencia_Medica, Farmacia_Hospitalaria, etc."
     ),
-    rut: str | None = Query(None, description="Filtrar por RUT de paciente"),
+    identificacion: str | None = Query(
+        None, max_length=40, description="Filtrar por identificación del paciente (RUT, DNI, cédula...)"
+    ),
+    numero_ficha: str | None = Query(None, max_length=50, description="Filtrar por N° de ficha clínica"),
     prioridad: str | None = Query(None, description="Rutina, Prioritario, Urgente"),
     fecha_desde: datetime | None = Query(None),
     fecha_hasta: datetime | None = Query(None),
@@ -105,7 +111,8 @@ async def list_documents(
         page_size=page_size,
         estado=estado,
         destino=destino,
-        rut=rut,
+        identificacion=identificacion,
+        numero_ficha=numero_ficha,
         prioridad=prioridad,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,

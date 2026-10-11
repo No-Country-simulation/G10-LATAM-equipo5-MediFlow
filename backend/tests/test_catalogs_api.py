@@ -373,3 +373,53 @@ async def test_history_endpoint_is_admin_only(client, login_as, db):
         headers=login_as(UserRole.AUDITOR_CLINICO),
     )
     assert r.status_code == 403
+
+
+# --- Formularios por tipo ----------------------------------------------------
+
+
+async def test_document_forms_publica_bloque_y_esquema_por_tipo(client, login_as, db):
+    licencia = make_doc_type(
+        codigo="CERTIFICADO_MEDICO",
+        nombre="Certificado",
+        campos_extraccion={"type": "object", "properties": {"dias_reposo": {"type": ["integer", "null"]}}},
+    )
+    db.queue([make_doc_type(codigo="IMAGENES", nombre="Imágenes"), make_doc_type(), licencia])
+    headers = login_as(UserRole.AUDITOR_CLINICO)
+    r = await client.get("/api/v1/catalogs/document-types/forms", headers=headers)
+
+    assert r.status_code == 200
+    data = r.json()
+    assert set(data["comunes"]) == {"medicamentos", "examenes_solicitados"}
+    generales = data["datos_generales"]["properties"]
+    assert generales["paciente"]["properties"]["identificacion"]["properties"]["tipo"]["enum"][0] == "RUT"
+    assert generales["diagnosticos"]["items"]["properties"]["origen_cie10"]["readOnly"] is True
+    assert data["comunes"]["medicamentos"]["items"]["properties"]["frecuencia"]["title"] == "Frecuencia"
+    tipos = {t["codigo"]: t for t in data["tipos"]}
+    imagenes = tipos["IMAGENES"]
+    assert imagenes["bloque"] == "informe_imagenologico"
+    assert imagenes["esquema"]["properties"]["hallazgos"] == {
+        "type": "string",
+        "maxLength": 4000,
+        "title": "Hallazgos",
+    }
+    assert "$ref" not in str(imagenes["esquema"])  # esquema plano, listo para el formulario
+    assert (tipos["RECETA"]["bloque"], tipos["RECETA"]["esquema"]) == (None, None)
+    assert tipos["CERTIFICADO_MEDICO"]["bloque"] == "campos_adicionales"
+
+
+async def test_campos_extraccion_guarda_el_orden_de_los_campos(client, login_as, db):
+    headers = login_as(UserRole.ADMIN)
+    body = {
+        "codigo": "PLAN_KINE",
+        "nombre": "Plan",
+        "descripcion": "Plan de kinesiología",
+        "campos_extraccion": {"type": "object", "properties": {"objetivo": {"type": "string"}, "sesiones": {"type": "integer"}}},
+    }
+    r = await client.post("/api/v1/catalogs/document-types", json=body, headers=headers)
+    assert r.status_code == 201
+    assert r.json()["campos_extraccion"]["propertyOrdering"] == ["objetivo", "sesiones"]
+
+
+async def test_document_forms_requiere_token(client):
+    assert (await client.get("/api/v1/catalogs/document-types/forms")).status_code == 401

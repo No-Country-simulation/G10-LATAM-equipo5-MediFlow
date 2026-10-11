@@ -17,6 +17,7 @@ from app.features.catalogs.schemas import (
     AreaUpdate,
     CatalogHistoryResponse,
     DeleteResponse,
+    DocumentFormsResponse,
     DocumentTypeActiveForLLM,
     DocumentTypeCreate,
     DocumentTypeResponse,
@@ -128,6 +129,20 @@ async def list_active_document_types_for_llm(
     """Tipos de documento activos en formato compacto para el prompt de n8n. Requiere autenticación."""
     doc_types = await service.get_active_document_types_for_llm(db)
     return [DocumentTypeActiveForLLM.model_validate(t) for t in doc_types]
+
+
+@router.get("/document-types/forms", response_model=DocumentFormsResponse)
+async def get_document_forms(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DocumentFormsResponse:
+    """Campos de cada tipo activo (bloque de `detalle_clinico` y su JSON Schema) y las listas
+    comunes a todos los tipos.
+
+    Lo usan el formulario de auditoría (muestra los campos del tipo elegido) y n8n (arma el
+    prompt con los mismos campos). Requiere autenticación.
+    """
+    return await service.get_document_forms(db)
 
 
 @router.get("/document-types", response_model=list[DocumentTypeResponse])
