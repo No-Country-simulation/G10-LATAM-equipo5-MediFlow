@@ -60,7 +60,9 @@ const AuditClinicalForm = ({
   const tipoDesconocido = Boolean(forms) && !tipo && clasificacion.tipo_documento;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
+    // `relative`: los elementos posicionados del formulario quedan contenidos en este scroll (si no,
+    // se ubican respecto a la página y la estiran). Solo scroll vertical.
+    <div className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-5">
       {(error || formsError) && (
         <div role="alert" className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold">
           {error || formsError}
@@ -71,7 +73,7 @@ const AuditClinicalForm = ({
         <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
           <span className="font-bold text-amber-400 mb-1 block">Motivos de Auditoría:</span>
           <ul className="list-disc pl-4 text-amber-300/80 space-y-0.5">
-            {detail.motivos_auditoria.map((motivo) => <li key={motivo}>{motivo}</li>)}
+            {detail.motivos_auditoria.map((motivo) => <li key={motivo} className="break-words">{motivo}</li>)}
           </ul>
         </div>
       ) : null}
@@ -138,7 +140,7 @@ const AuditClinicalForm = ({
         )}
 
         <Seccion titulo="Notas de auditoría">
-          <label htmlFor="audit-notas" className="sr-only">Notas de auditoría (obligatorio)</label>
+          <label htmlFor="audit-notas" className={LABEL}>Justificación de las correcciones (obligatorio)</label>
           <textarea
             id="audit-notas"
             value={auditNotes}

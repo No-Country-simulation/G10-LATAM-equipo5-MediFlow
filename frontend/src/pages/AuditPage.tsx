@@ -40,7 +40,7 @@ const AuditPage = () => {
 
   if (activeDocId) {
     return (
-      <div className="max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-4 animate-fade-in">
+      <div className="w-full p-4 sm:p-6 space-y-4 animate-fade-in">
         <AuditDetailPanel documentId={activeDocId} onClose={handleCloseDetail} />
       </div>
     );

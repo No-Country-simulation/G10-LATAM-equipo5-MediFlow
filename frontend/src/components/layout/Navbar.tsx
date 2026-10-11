@@ -27,13 +27,13 @@ const Navbar = () => {
   const canIngest = !isGestor && canAccessRoute(user?.role, INGEST_ACCESS_ROLES);
 
   return (
-    <header className="h-16 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
+    <header className="h-16 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-2 sm:px-6 gap-2 flex items-center justify-between sticky top-0 z-20">
       <div className="flex items-center gap-3">
         <Link to={isGestor ? '/usuarios' : '/dashboard'} className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20">
             <Activity className="w-5 h-5" />
           </div>
-          <div>
+          <div className="hidden sm:block">
             <span className="font-bold text-base text-white tracking-tight">MediFlow</span>
             <span className="hidden sm:inline-block ml-2 text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
               Sesión Activa
@@ -64,7 +64,7 @@ const Navbar = () => {
         })}
       </nav>
 
-      <div className="flex items-center gap-3 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
         {canIngest && (
           <button
             type="button"
@@ -73,11 +73,11 @@ const Navbar = () => {
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3.5 py-1.5 rounded-lg text-xs shadow-md shadow-emerald-950/40 border border-emerald-400/30 flex items-center gap-2 transition-all cursor-pointer"
           >
             <Sparkles className="w-4 h-4 text-emerald-100" />
-            <span className="hidden md:inline">Procesar Documento IA</span>
+            <span className="hidden lg:inline">Procesar Documento IA</span>
           </button>
         )}
 
-        <div className="hidden sm:flex items-center gap-2 text-right">
+        <div className="hidden lg:flex items-center gap-2 text-right">
           <div>
             <div className="text-xs font-semibold text-slate-200">{user?.full_name}</div>
             <div className="text-[10px] text-slate-400 font-mono flex items-center justify-end gap-1">

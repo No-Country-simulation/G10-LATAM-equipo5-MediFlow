@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Mismo fondo que el layout: si algo crece más que la pantalla, no aparece una franja blanca. */
+body {
+  background-color: var(--color-slate-950);
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

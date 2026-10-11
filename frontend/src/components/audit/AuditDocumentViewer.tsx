@@ -7,14 +7,14 @@ interface AuditDocumentViewerProps {
 
 const AuditDocumentViewer = ({ detail }: AuditDocumentViewerProps) => {
   return (
-    <div className="flex flex-col rounded-2xl bg-slate-900/50 border border-slate-800 overflow-hidden">
+    <div className="flex flex-col min-h-0 min-w-0 rounded-2xl bg-slate-900/50 border border-slate-800 overflow-hidden">
       <div className="p-3 border-b border-slate-800/80 bg-slate-900 flex justify-between items-center">
         <div className="text-sm font-bold text-white flex items-center gap-2">
           <FileText className="w-4 h-4 text-slate-400" />
           Documento Original
         </div>
       </div>
-      <div className="flex-1 p-2 overflow-auto bg-slate-950 flex flex-col items-center">
+      <div className="flex-1 min-h-0 p-2 overflow-y-auto overflow-x-hidden bg-slate-950 flex flex-col items-center">
         {detail?.archivos?.map((archivo, i) => (
           <div key={i} className="w-full mb-4 border border-slate-800 rounded-lg overflow-hidden">
             <div className="bg-slate-900 px-3 py-2 text-xs font-mono text-slate-400 flex justify-between">

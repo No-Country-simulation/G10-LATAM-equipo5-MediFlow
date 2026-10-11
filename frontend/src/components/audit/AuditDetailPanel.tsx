@@ -41,10 +41,12 @@ const AuditDetailPanel = ({ documentId, onClose }: AuditDetailPanelProps) => {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-8rem)]">
+    // En pantallas anchas el panel ocupa el alto disponible (pantalla - navbar - márgenes) y cada
+    // columna tiene su propio scroll vertical; en pantallas angostas se apila con su alto natural.
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:h-[calc(100vh-10rem)] lg:min-h-[32rem]">
       <AuditDocumentViewer detail={detail} />
 
-      <div className="flex flex-col rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
+      <div className="flex flex-col min-h-0 min-w-0 rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
         <div className="p-4 border-b border-slate-800/80 bg-slate-800/30 flex justify-between items-center">
           <div>
             <h3 className="text-base font-bold text-white">Corrección y Validación</h3>

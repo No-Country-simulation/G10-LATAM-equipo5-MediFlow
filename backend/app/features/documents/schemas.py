@@ -107,7 +107,7 @@ class ProfesionalExtract(BaseModel):
     """Profesional que participa en el documento, con su rol (quién solicita, informa, etc.)."""
 
     nombre: TextoCorto = Field(None, title="Nombre")
-    identificacion: texto_de(30) = Field(None, title="Identificación (RUT, cédula, ...)")
+    identificacion: texto_de(30) = Field(None, title="Identificación")
     registro_profesional: texto_de(50) = Field(None, title="Registro / matrícula / cédula profesional")
     especialidad: texto_de(100) = Field(None, title="Especialidad")
     rol: RolProfesional = Field("OTRO", title="Rol")

@@ -17,7 +17,7 @@ import {
  *
  * - texto: una línea o área de texto según `maxLength`; `format: date` -> selector de fecha
  * - `enum` -> lista de opciones; `boolean` -> Sí / No / Sin dato; números
- * - objeto -> grupo de campos; lista de objetos simples -> tabla; lista con sublistas -> tarjetas
+ * - objeto -> grupo de campos; lista de objetos -> una tarjeta por fila (sin scroll horizontal)
  */
 
 const INPUT = 'w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-white focus:border-indigo-500/80 focus:outline-none disabled:opacity-60';
@@ -119,7 +119,7 @@ const ScalarInput = ({ schema, value, onChange, path, label }: FieldProps) => {
 };
 
 const ScalarField = (props: FieldProps) => (
-  <div className={esMultilinea(props.schema) ? 'sm:col-span-2' : undefined}>
+  <div className={esMultilinea(props.schema) ? 'sm:col-span-2 min-w-0' : 'min-w-0'}>
     <label htmlFor={props.path} className={LABEL}>
       {props.label}
     </label>
@@ -131,7 +131,7 @@ const ObjectField = ({ schema, value, onChange, path, label }: FieldProps) => {
   const objeto = comoObjeto(value);
   const cambiar = (campo: string, nuevo: JsonValue) => onChange({ ...objeto, [campo]: nuevo } as JsonObject);
   const campos = (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
       {propiedadesDe(schema).map(([campo, hijo]) => (
         <SchemaField
           key={campo}
@@ -146,56 +146,55 @@ const ObjectField = ({ schema, value, onChange, path, label }: FieldProps) => {
   );
   if (!label) return campos;
   return (
-    <fieldset className="sm:col-span-2 rounded-xl border border-slate-800 p-3">
+    // `min-w-0`: un fieldset tiene por defecto min-width: min-content y desbordaría el panel.
+    <fieldset className="sm:col-span-2 min-w-0 rounded-xl border border-slate-800 p-3">
       <legend className="px-1 text-[11px] font-semibold text-slate-300 uppercase">{label}</legend>
       {campos}
     </fieldset>
   );
 };
 
-const TablaDeObjetos = ({ schema, value, onChange, path }: FieldProps & { items: JsonSchema }) => {
+/**
+ * Filas de una lista de objetos simples (parámetros, medicamentos, diagnósticos...). Cada fila es una
+ * tarjeta compacta cuyos campos se reacomodan solos al ancho disponible: nunca hay scroll horizontal.
+ */
+const FilasCompactas = ({ value, onChange, path, items }: FieldProps & { items: JsonSchema }) => {
   const filas = comoLista(value);
-  const columnas = propiedadesDe(schema.items ?? {});
+  const campos = propiedadesDe(items);
   const cambiar = (indice: number, campo: string, nuevo: JsonValue) =>
     onChange(filas.map((fila, i) => (i === indice ? { ...comoObjeto(fila), [campo]: nuevo } : fila)));
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-800">
-      <table className="w-full text-xs">
-        <thead className="bg-slate-950/70 text-[10px] uppercase text-slate-400">
-          <tr>
-            {columnas.map(([campo, hijo]) => (
-              <th key={campo} className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
-                {etiquetaDe(campo, hijo)}
-              </th>
+    <div className="space-y-2">
+      {filas.map((fila, indice) => (
+        // El orden de las filas solo cambia al agregar al final o quitar: el índice es estable.
+        <div key={indice} className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+          <span className="mt-6 w-5 shrink-0 text-center text-[10px] font-semibold text-slate-500">{indice + 1}</span>
+          <div className="grid flex-1 min-w-0 gap-2 grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))]">
+            {campos.map(([campo, hijo]) => (
+              <div key={campo} className={esMultilinea(hijo) ? 'col-span-full min-w-0' : 'min-w-0'}>
+                <label htmlFor={`${path}.${indice}.${campo}`} className="block text-[10px] leading-tight font-semibold text-slate-500 uppercase mb-0.5 break-words">
+                  {etiquetaDe(campo, hijo)}
+                </label>
+                <ScalarInput
+                  schema={hijo}
+                  value={comoObjeto(fila)[campo]}
+                  onChange={(nuevo) => cambiar(indice, campo, nuevo)}
+                  path={`${path}.${indice}.${campo}`}
+                />
+              </div>
             ))}
-            <th className="w-8" aria-label="Acciones" />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-800/70">
-          {filas.map((fila, indice) => (
-            // El orden de las filas solo cambia al agregar al final o quitar: el índice es estable.
-            <tr key={indice}>
-              {columnas.map(([campo, hijo]) => (
-                <td key={campo} className="px-1.5 py-1 min-w-28">
-                  <ScalarInput
-                    schema={hijo}
-                    value={comoObjeto(fila)[campo]}
-                    onChange={(nuevo) => cambiar(indice, campo, nuevo)}
-                    path={`${path}.${indice}.${campo}`}
-                    label={`${etiquetaDe(campo, hijo)} (fila ${indice + 1})`}
-                  />
-                </td>
-              ))}
-              <td className="px-1">
-                <button type="button" onClick={() => onChange(filas.filter((_, i) => i !== indice))} aria-label={`Quitar fila ${indice + 1}`} className={BOTON_QUITAR}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange(filas.filter((_, i) => i !== indice))}
+            aria-label={`Quitar fila ${indice + 1}`}
+            className={`${BOTON_QUITAR} mt-5 shrink-0`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 };
@@ -209,10 +208,10 @@ const ArrayField = ({ schema, value, onChange, path, label }: FieldProps) => {
   const filasSimples = tipoDe(items) === 'object' && propiedadesDe(items).every(([, hijo]) => esEscalar(hijo));
 
   const renderFilas = () => {
-    if (filasSimples) return filas.length ? <TablaDeObjetos schema={schema} value={filas} onChange={onChange} path={path} items={items} /> : null;
+    if (filasSimples) return <FilasCompactas schema={schema} value={filas} onChange={onChange} path={path} items={items} />;
     return filas.map((fila, indice) => (
       <div key={indice} className="flex items-start gap-2 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           {esEscalar(items) ? (
             <ScalarInput schema={items} value={fila} onChange={(nuevo) => cambiarFila(indice, nuevo)} path={`${path}.${indice}`} label={`${label} ${indice + 1}`} />
           ) : (
@@ -227,7 +226,7 @@ const ArrayField = ({ schema, value, onChange, path, label }: FieldProps) => {
   };
 
   return (
-    <div className="sm:col-span-2 space-y-2">
+    <div className="sm:col-span-2 min-w-0 space-y-2">
       <div className="flex items-center justify-between">
         <span className={LABEL}>
           {label} {filas.length > 0 && <span className="text-slate-500 normal-case">({filas.length})</span>}
