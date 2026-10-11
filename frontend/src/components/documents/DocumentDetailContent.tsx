@@ -3,6 +3,7 @@ import type { DocumentDetailResponse } from '../../types/medical';
 import { formatIdentificacion } from '../../utils/identificacion';
 import { etiquetaDeCodigo, textoDeValor } from '../../utils/etiquetas';
 import DocumentCorrectionHistory from './DocumentCorrectionHistory';
+import PossibleDuplicatesNotice from './PossibleDuplicatesNotice';
 
 const ETIQUETA = 'text-[10px] font-semibold text-slate-500 uppercase';
 
@@ -166,6 +167,8 @@ const DetalleClinico = ({ detail }: { detail: DocumentDetailResponse }) => {
 /** Datos del documento para leer: paciente, documento, detalle clínico e historial de correcciones. */
 const DocumentDetailContent = ({ detail }: { detail: DocumentDetailResponse }) => (
   <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4">
+    <PossibleDuplicatesNotice duplicados={detail.duplicados ?? []} />
+
     {detail.motivos_auditoria.length > 0 && (
       <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
         <span className="font-bold text-amber-400 mb-1 block">Motivos de auditoría:</span>

@@ -147,6 +147,23 @@ export interface CampoRelevante {
   valor: unknown;
 }
 
+/** Otro documento que podría ser el mismo (detectado al ingerir). */
+export interface DuplicadoDocumento {
+  documento_id: string;
+  tipo: 'ARCHIVO_IDENTICO' | 'CONTENIDO_SIMILAR';
+}
+
+/** Documento ya registrado con un archivo idéntico. Para un OPERADOR, de los documentos ajenos
+ * solo se informa el área y la fecha (`documento_id` y `estado` vienen en `null`). */
+export interface CoincidenciaArchivo {
+  sha256: string;
+  documento_id: string | null;
+  estado: EstadoDocumento | null;
+  created_at: string;
+  area_origen: string | null;
+  propio: boolean;
+}
+
 /** Un valor modificado por una corrección (`campo` es la ruta; `etiqueta`, su texto legible). */
 export interface CambioCorreccion {
   campo: string;
@@ -197,6 +214,7 @@ export interface DocumentDetailResponse extends DocumentListItemResponse {
   datos_generales: Record<string, unknown>;
   detalle_clinico: Record<string, unknown>;
   historial_correcciones: CorreccionHistorial[];
+  duplicados: DuplicadoDocumento[];
 }
 
 export interface AuditDetailResponse {

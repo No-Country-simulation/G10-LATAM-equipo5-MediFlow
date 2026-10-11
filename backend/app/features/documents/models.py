@@ -179,6 +179,8 @@ class ClinicalDocumentAttachment(Base):
     tipo_archivo: Mapped[str] = mapped_column(String(20), nullable=False)
     oci_path: Mapped[str] = mapped_column(String(255), nullable=False)
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Huella SHA-256 (hex) del archivo: detecta cuando se vuelve a subir el mismo archivo.
+    sha256: Mapped[str | None] = mapped_column(String(64), index=True)
 
     document: Mapped["ClinicalDocument"] = relationship(back_populates="attachments")
 

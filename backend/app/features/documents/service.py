@@ -22,6 +22,7 @@ from app.core.config import settings
 from app.features.auth.models import User
 from app.features.catalogs.models import DocumentType, RoutingQueue
 from app.features.documents.forms import BLOQUE_CAMPOS_ADICIONALES, BLOQUE_POR_TIPO
+from app.features.documents.duplicates import detectar_duplicados, huella, motivos_de_duplicados
 from app.features.documents.models import (
     ClinicalDocument,
     ClinicalDocumentAttachment,
@@ -290,7 +291,7 @@ async def _compensate_uploads(object_names: list[str]) -> None:
 
 
 def _build_attachments(
-    archivos: list[ArchivoAdjunto], binary_paths: list[str]
+    archivos: list[ArchivoAdjunto], binary_paths: list[str], huellas: list[str]
 ) -> list[ClinicalDocumentAttachment]:
     """Construye una fila de adjunto por cada archivo del payload, en el orden recibido."""
     return [
@@ -299,8 +300,9 @@ def _build_attachments(
             oci_path=oci_path,
             rol=archivo.rol,
             orden=orden,
+            sha256=sha256,
         )
-        for orden, (archivo, oci_path) in enumerate(zip(archivos, binary_paths, strict=True))
+        for orden, (archivo, oci_path, sha256) in enumerate(zip(archivos, binary_paths, huellas, strict=True))
     ]
 
 
@@ -459,6 +461,7 @@ async def ingest_document(
     except (binascii.Error, ValueError) as exc:
         logger.error("archivo_base64 inválido para el documento %s", payload.documento_id)
         raise InvalidBase64Error("El campo archivo_base64 no contiene un base64 válido") from exc
+    huellas = [huella(contenido) for _, contenido in decoded_archivos]
 
     try:
         result = await db.execute(
@@ -482,7 +485,28 @@ async def ingest_document(
 
     preparada = preparar_extraccion(payload)
     normalizado = preparada.payload
-    motivos_auditoria = _audit_reasons(preparada, tipos_activos, colas_activas)
+    try:
+        duplicados = await detectar_duplicados(
+            db,
+            documento_id=payload.documento_id,
+            huellas=huellas,
+            datos=normalizado.datos_generales,
+            tipo_documento=normalizado.clasificacion.tipo_documento,
+        )
+    except SQLAlchemyError as exc:
+        logger.exception("Fallo al buscar duplicados de %s", payload.documento_id)
+        raise DocumentIngestionError("No fue posible consultar la base de datos") from exc
+    if duplicados:
+        logger.info(
+            "Documento %s: posibles duplicados %s",
+            payload.documento_id,
+            [f"{d.documento_id} ({d.tipo})" for d in duplicados],
+        )
+    # Un posible duplicado va a auditoría: una persona decide si se descarta.
+    motivos_auditoria = [
+        *_audit_reasons(preparada, tipos_activos, colas_activas),
+        *motivos_de_duplicados(duplicados),
+    ]
     estado, json_path, requiere_auditoria = _resolve_routing(preparada, motivos_auditoria)
     logger.info(
         "Documento %s clasificado como %s (score %s, prioridad %s)",
@@ -525,6 +549,7 @@ async def ingest_document(
             "score_detalle": preparada.score.motivos,
             "ajustes": preparada.ajustes,
             "motivos_auditoria": motivos_auditoria,
+            "duplicados": [d.model_dump() for d in duplicados],
             "uploaded_by_id": str(uploaded_by.id) if uploaded_by else None,
             "uploaded_by_username": uploaded_by.username if uploaded_by else None,
             "area_origen_codigo": uploaded_by.area.codigo if uploaded_by and uploaded_by.area else None,
@@ -564,7 +589,7 @@ async def ingest_document(
     try:
         document = ClinicalDocument(documento_id=payload.documento_id, **document_fields)
         db.add(document)
-        document.attachments = _build_attachments(payload.archivos, binary_paths)
+        document.attachments = _build_attachments(payload.archivos, binary_paths, huellas)
         apply_general_data(document, normalizado.datos_generales)
         apply_clinical_detail(document, normalizado.detalle_clinico)
 

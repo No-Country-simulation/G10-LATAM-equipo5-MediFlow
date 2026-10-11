@@ -40,6 +40,7 @@ from app.features.documents.schemas import (
     ProfesionalExtract,
     TablasClinicas,
 )
+from app.features.documents.duplicates import duplicados_visibles
 from app.features.documents.forms import BLOQUE_CAMPOS_ADICIONALES, campos_escalares
 from app.shared.oci_client import STORAGE_ERRORS, oci_storage_client
 
@@ -214,6 +215,7 @@ async def get_document_detail(
         else None
     )
     archivos, aviso = await _build_archivos(document.attachments)
+    duplicados = await duplicados_visibles(db, raw, uploaded_by_id)
 
     return DocumentDetailResponse.model_validate(document).model_copy(
         update={
@@ -225,6 +227,7 @@ async def get_document_detail(
             ),
             "datos_generales": raw.get("datos_generales") or {},
             "detalle_clinico": detalle_clinico,
+            "duplicados": duplicados,
             "historial_correcciones": [
                 CorreccionResponse.model_validate(correccion) for correccion in document.corrections
             ],

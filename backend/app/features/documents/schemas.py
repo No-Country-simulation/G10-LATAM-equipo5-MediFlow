@@ -19,7 +19,15 @@ from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_serializer
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_serializer,
+)
 
 from app.core.config import settings
 from app.features.catalogs.schemas import AreaSummary
@@ -549,6 +557,43 @@ class DetalleDocumento(BaseModel):
     campos_relevantes: list[CampoRelevante] = []
 
 
+TipoDuplicado = Literal["ARCHIVO_IDENTICO", "CONTENIDO_SIMILAR"]
+Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+
+
+class DuplicadoDocumento(BaseModel):
+    """Otro documento que podría ser el mismo: `ARCHIVO_IDENTICO` (misma huella SHA-256) o
+    `CONTENIDO_SIMILAR` (mismo paciente, tipo y fecha, y misma institución o diagnóstico)."""
+
+    documento_id: str
+    tipo: TipoDuplicado
+
+
+class DuplicateCheckRequest(BaseModel):
+    """Huellas SHA-256 (hex en minúsculas) de los archivos que se van a subir."""
+
+    sha256: list[Sha256] = Field(min_length=1, max_length=settings.INGEST_MAX_FILES)
+
+
+class CoincidenciaArchivo(BaseModel):
+    """Un documento ya registrado con un archivo idéntico.
+
+    Un OPERADOR solo ve el detalle de los documentos que subió: para los de otros usuarios
+    `documento_id` y `estado` vienen en `null` y solo se informa el área y la fecha.
+    """
+
+    sha256: str
+    documento_id: str | None
+    estado: str | None
+    created_at: datetime
+    area_origen: str | None
+    propio: bool
+
+
+class DuplicateCheckResponse(BaseModel):
+    coincidencias: list[CoincidenciaArchivo]
+
+
 class CambioCorreccion(BaseModel):
     """Un valor modificado por una corrección. `campo` es la ruta (`paciente.edad`,
     `examenes_y_laboratorio.paneles[0].parametros[1].valor`) y `etiqueta` su texto legible."""
@@ -593,6 +638,8 @@ class DocumentDetailResponse(DocumentListItemResponse):
     datos_generales: dict[str, Any] = {}
     detalle_clinico: dict[str, Any] = {}
     historial_correcciones: list[CorreccionResponse] = []
+    # Documentos que podrían ser el mismo (detectados al ingerir); para un OPERADOR, solo los suyos.
+    duplicados: list[DuplicadoDocumento] = []
 
 
 class PaginatedDocumentResponse(BaseModel):

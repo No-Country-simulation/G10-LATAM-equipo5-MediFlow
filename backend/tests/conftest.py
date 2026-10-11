@@ -11,7 +11,7 @@ os.environ["OCI_BUCKET_NAME"] = "test-bucket"
 
 import base64  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
-from uuid import uuid4  # noqa: E402
+from uuid import UUID, uuid4  # noqa: E402
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
@@ -153,10 +153,14 @@ def make_area(codigo: str = "ADMISION", nombre: str = "Admisión y Recepción", 
 
 
 def make_user(
-    role: UserRole, username: str = "tester", active: bool = True, area: Area | None = None
+    role: UserRole,
+    username: str = "tester",
+    active: bool = True,
+    area: Area | None = None,
+    id: UUID | None = None,  # noqa: A002 - mismo nombre que la columna
 ) -> User:
     return User(
-        id=uuid4(),
+        id=id or uuid4(),
         username=username,
         email=f"{username}@mediflow.cl",
         hashed_password=get_password_hash("password123"),

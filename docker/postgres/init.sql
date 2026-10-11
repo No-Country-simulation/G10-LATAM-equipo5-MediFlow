@@ -123,6 +123,10 @@ CREATE TABLE IF NOT EXISTS clinical_document_attachments (
     oci_path VARCHAR(255) NOT NULL,
     orden INTEGER NOT NULL DEFAULT 0
 );
+-- Huella SHA-256 del archivo: detecta cuando se vuelve a subir exactamente el mismo archivo.
+-- (Los adjuntos ingresados antes de esta columna quedan en NULL y no participan.)
+ALTER TABLE clinical_document_attachments ADD COLUMN IF NOT EXISTS sha256 VARCHAR(64);
+CREATE INDEX IF NOT EXISTS idx_document_attachments_sha256 ON clinical_document_attachments(sha256);
 CREATE INDEX IF NOT EXISTS idx_document_attachments_document_id
 ON clinical_document_attachments(document_id);
 

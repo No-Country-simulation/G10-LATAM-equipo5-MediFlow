@@ -6,6 +6,7 @@ import { useDocumentForms } from '../../hooks/useDocumentForms';
 import DocumentFilesViewer from '../common/DocumentFilesViewer';
 import AuditClinicalForm from './AuditClinicalForm';
 import AuditActionButtons from './AuditActionButtons';
+import { duplicadosDesdeJson } from '../../utils/auditForm';
 
 interface AuditDetailPanelProps {
   documentId: string;
@@ -72,6 +73,7 @@ const AuditDetailPanel = ({ documentId, onClose }: AuditDetailPanelProps) => {
             formsError={formsError}
             queues={queues}
             motivos={detail?.motivos_auditoria}
+            duplicados={duplicadosDesdeJson(detail?.raw_extracted_json)}
             error={error}
             clasificacion={audit.clasificacion}
             datosGenerales={audit.datosGenerales}

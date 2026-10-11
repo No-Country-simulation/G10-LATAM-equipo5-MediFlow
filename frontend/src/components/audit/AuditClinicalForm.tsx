@@ -3,6 +3,8 @@ import type { QueueActiveForLLM } from '../../types/catalog';
 import type { DocumentForms, JsonObject, JsonValue } from '../../types/forms';
 import type { ClasificacionForm } from '../../hooks/useClinicalForm';
 import { SchemaField } from '../common/schema-form/SchemaField';
+import PossibleDuplicatesNotice from '../documents/PossibleDuplicatesNotice';
+import type { DuplicadoDocumento } from '../../types/medical';
 
 interface AuditClinicalFormProps {
   forms: DocumentForms | null;
@@ -10,6 +12,8 @@ interface AuditClinicalFormProps {
   queues: QueueActiveForLLM[];
   /** Motivos por los que el documento fue a auditoría (se muestran arriba del formulario). */
   motivos?: string[];
+  /** Documentos que podrían ser el mismo (para compararlos antes de resolver o descartar). */
+  duplicados?: DuplicadoDocumento[];
   /** `id` del <form>, para que los botones de acción externos lo envíen. */
   formId?: string;
   error: string | null;
@@ -47,6 +51,7 @@ const AuditClinicalForm = ({
   formsError,
   queues,
   motivos = [],
+  duplicados = [],
   formId = 'audit-form',
   error,
   clasificacion,
@@ -71,6 +76,8 @@ const AuditClinicalForm = ({
           {error || formsError}
         </div>
       )}
+
+      <PossibleDuplicatesNotice duplicados={duplicados} />
 
       {motivos.length ? (
         <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">

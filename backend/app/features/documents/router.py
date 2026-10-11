@@ -13,10 +13,13 @@ from app.features.auth.dependencies import require_roles
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.documents.detail import get_document_detail
+from app.features.documents.duplicates import coincidencias_de_archivo
 from app.features.documents.schemas import (
     AlmacenamientoOci,
     DocumentDetailResponse,
     DocumentListItemResponse,
+    DuplicateCheckRequest,
+    DuplicateCheckResponse,
     IngestPayload,
     IngestResponse,
     PaginatedDocumentResponse,
@@ -130,6 +133,29 @@ async def list_documents(
         total_pages=result["total_pages"],
         message="No hay documentos con los filtros utilizados" if result["total"] == 0 else None,
     )
+
+
+@router.post("/duplicates/check", response_model=DuplicateCheckResponse)
+async def check_duplicate_files(
+    payload: DuplicateCheckRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_DOCUMENT_ACCESS_ROLES)),
+) -> DuplicateCheckResponse:
+    """Indica si alguno de los archivos (por su huella SHA-256) ya fue subido.
+
+    El frontend lo consulta antes de enviar el archivo a n8n, para avisar antes de gastar en la
+    IA. Se compara contra todos los documentos; un OPERADOR solo ve el detalle (`documento_id`,
+    `estado`) de los que subió él: de los demás, solo el área y la fecha.
+
+    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR.
+    """
+    coincidencias = await coincidencias_de_archivo(
+        db,
+        payload.sha256,
+        solicitante_id=current_user.id,
+        ver_todo=_own_documents_only(current_user) is None,
+    )
+    return DuplicateCheckResponse(coincidencias=coincidencias)
 
 
 @router.get("/{documento_id}", response_model=DocumentDetailResponse)

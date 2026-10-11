@@ -1,4 +1,5 @@
 import type { DocumentForms, JsonObject, JsonValue } from '../types/forms';
+import type { DuplicadoDocumento } from '../types/medical';
 
 const objeto = (value: unknown): JsonObject =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : {};
@@ -69,4 +70,10 @@ export const validarAuditoria = (datos: JsonObject, notas: string): string | nul
   if (!principal || !texto(principal.descripcion)) return 'Indica al menos el diagnóstico principal.';
   if (!notas.trim()) return 'La justificación de las correcciones es obligatoria.';
   return null;
+};
+
+/** Duplicados detectados al ingerir (`raw_extracted_json.triaje.duplicados`). */
+export const duplicadosDesdeJson = (raw: Record<string, unknown> | null | undefined): DuplicadoDocumento[] => {
+  const triaje = raw?.triaje as { duplicados?: unknown } | undefined;
+  return Array.isArray(triaje?.duplicados) ? (triaje.duplicados as DuplicadoDocumento[]) : [];
 };

@@ -16,7 +16,8 @@ const DocumentDetailProvider = ({ children }: { children: ReactNode }) => {
   return (
     <DocumentDetailContext.Provider value={value}>
       {children}
-      {documentoAbierto && <DocumentDetailModal documentoId={documentoAbierto} onClose={cerrar} />}
+      {/* `key`: al saltar a otro documento (ej. un duplicado) el modal empieza de cero. */}
+      {documentoAbierto && <DocumentDetailModal key={documentoAbierto} documentoId={documentoAbierto} onClose={cerrar} />}
     </DocumentDetailContext.Provider>
   );
 };

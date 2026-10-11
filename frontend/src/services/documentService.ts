@@ -1,6 +1,7 @@
 import { api } from './api';
 import { FASTAPI_ENDPOINTS } from '@/config/api';
 import type {
+  CoincidenciaArchivo,
   AuditDetailResponse,
   AuditClaimResponse,
   AuditDiscardRequest,
@@ -33,6 +34,10 @@ export const documentService = {
 
   correctDocument: (documentoId: string, payload: DocumentCorrectionRequest): Promise<DocumentListItemResponse> =>
     api.put<DocumentListItemResponse>(FASTAPI_ENDPOINTS.documents.detail(documentoId), payload),
+
+  /** Documentos ya registrados con alguno de estos archivos (huellas SHA-256). */
+  checkDuplicateFiles: (sha256: string[]): Promise<{ coincidencias: CoincidenciaArchivo[] }> =>
+    api.post<{ coincidencias: CoincidenciaArchivo[] }>(FASTAPI_ENDPOINTS.documents.duplicatesCheck, { sha256 }),
 
   getAuditDetail: (documentoId: string): Promise<AuditDetailResponse> =>
     api.get<AuditDetailResponse>(FASTAPI_ENDPOINTS.audit.detail(documentoId)),
