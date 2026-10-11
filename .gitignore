@@ -197,5 +197,3 @@ documentacion_temp.html
 # Ambientes locales y credenciales
 .env.local
 secrets/
-
-docs/Documentos Médicos/

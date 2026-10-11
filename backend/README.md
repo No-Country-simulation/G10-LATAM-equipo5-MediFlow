@@ -1,53 +1,53 @@
 # MediFlow API — Backend
 
-API REST de **MediFlow** construida con **FastAPI**. Recibe los documentos clínicos ya procesados por el workflow de IA (n8n), los respalda en Oracle Cloud (OCI Object Storage), los registra en PostgreSQL y ofrece endpoints para consultarlos y auditarlos. También expone las **tablas maestras** (tipos de documento y colas de enrutamiento) que n8n usa para armar el prompt del LLM.
+API REST de **MediFlow** construida con **FastAPI**. Recibe los documentos clínicos procesados por el workflow de IA (n8n), los normaliza y valida, calcula su score de confianza, detecta duplicados, los respalda en **OCI Object Storage** y los registra en **PostgreSQL**. También ofrece la bandeja, el detalle de cada documento, la auditoría humana con corrección e historial, y las **tablas maestras** que n8n usa para armar el prompt.
 
-Sigue una **arquitectura por feature (Vertical Slice)**: cada funcionalidad agrupa su propio `router` (endpoints), `service` (lógica), `schemas` (formatos de entrada/salida) y `models` (tablas).
+**Índice:** [Estructura](#estructura-del-proyecto) · [Instalación](#instalación-local) · [Variables](#variables-de-entorno) · [Autenticación](#autenticación-y-roles) · [Endpoints](#endpoints) · [Documentos](#documentos) · [Auditoría y corrección](#auditoría-y-corrección-human-in-the-loop) · [Catálogos](#tablas-maestras-catálogos) · [OCI](#almacenamiento-en-oci) · [Base de datos](#base-de-datos) · [Logs](#logs) · [Pruebas](#pruebas-y-calidad-de-código) · [Problemas comunes](#problemas-comunes)
+
+---
 
 ## Estructura del proyecto
+
+Arquitectura **por feature (Vertical Slice)**: cada funcionalidad agrupa su `router` (endpoints), `service` (lógica), `schemas` (entrada/salida) y `models` (tablas).
 
 ```
 backend/
 ├── app/
-│   ├── main.py                # Crea la app FastAPI, CORS y registra los routers
-│   ├── core/
-│   │   ├── config.py          # Variables de entorno (Pydantic Settings)
-│   │   ├── database.py        # Conexión asíncrona a PostgreSQL
-│   │   └── security.py        # Hash de contraseñas y creación/validación de JWT
-│   ├── shared/
-│   │   └── oci_client.py      # Cliente de OCI Object Storage
+│   ├── main.py                  # App FastAPI, CORS, logs por petición y routers
+│   ├── cli.py                   # `python -m app.cli create-admin` (primer ADMIN en producción)
+│   ├── core/                    # config (variables), database, security (bcrypt/JWT),
+│   │                            # rate_limit (bloqueo de login), log_config y request_logging
+│   ├── shared/                  # oci_client (Object Storage) y schema_order (orden de JSON Schema)
 │   └── features/
-│       ├── health/            # Estado de la API, la base de datos y OCI
-│       ├── auth/              # Login, perfil propio y gestión de usuarios (roles)
-│       ├── documents/         # Ingesta de documentos y bandeja con filtros
-│       ├── audit/             # Revisión humana (Human-in-the-Loop)
-│       └── catalogs/          # Tablas maestras: tipos de documento y colas (CRUD + Smart Delete)
-├── tests/                     # Pruebas con pytest (no requieren Postgres ni OCI)
-├── secrets/                   # Aquí va la clave privada de OCI (.pem, no se sube a git)
-├── .env.example               # Plantilla de backend/.env
-├── pytest.ini
-├── requirements.txt
-└── README.md
+│       ├── health/              # Estado de la API, la base y OCI
+│       ├── auth/                # Login, refresh, perfil y gestión de usuarios
+│       ├── documents/           # Ingesta, bandeja, detalle y duplicados:
+│       │   ├── fields.py        #   tipos de campo tolerantes ("NO DISPONIBLE" → null, recortes...)
+│       │   ├── normalization.py #   identificación por país, CIE-10, país ISO
+│       │   ├── scoring.py       #   score de confianza con motivos
+│       │   ├── forms.py         #   esquema de campos por tipo (auditoría y n8n)
+│       │   ├── detail.py        #   detalle con URLs pre-firmadas
+│       │   └── duplicates.py    #   archivo idéntico y contenido similar
+│       ├── audit/               # Tomar, resolver, descartar y corregir (changes.py arma el historial)
+│       └── catalogs/            # Tipos de documento, colas y áreas (CRUD + Smart Delete + historial)
+├── tests/                       # pytest (no requieren Postgres ni OCI)
+├── secrets/                     # Clave privada de OCI (.pem, ignorada por git)
+├── .env.example
+└── requirements.txt / requirements-dev.txt
 ```
 
-## Requisitos previos
-
-- **Python 3.11 o superior.**
-- **PostgreSQL en ejecución.** Lo más simple es levantarlo con Docker desde la **raíz** del repo (paso 1 del [README principal](../README.md#paso-1--levantar-la-base-de-datos-docker)):
-  ```bash
-  cp .env.example .env     # en la raíz del repo
-  docker compose up -d
-  ```
-- **Credenciales de OCI** con acceso a un bucket de Object Storage. *Opcional para empezar*: sin ellas la API arranca, pero la ingesta de documentos falla y `/health` responde `503`.
+---
 
 ## Instalación local
 
-Todos los comandos de esta sección se ejecutan **dentro de la carpeta `backend/`**.
+Requisitos: **Python 3.11+** y **PostgreSQL** en ejecución (lo más simple: `docker compose up -d` desde la raíz, ver el [README principal](../README.md#paso-1--base-de-datos-y-n8n-docker)). Las credenciales de OCI son *opcionales para empezar*.
 
-### 1. Crear y activar un entorno virtual
+Todos los comandos se ejecutan **dentro de `backend/`**.
+
+### 1. Entorno virtual
 
 ```powershell
-# Windows (PowerShell) — usa el lanzador "py"
+# Windows (PowerShell)
 py -3.12 -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
@@ -58,181 +58,180 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-> - En Windows, `python`/`pip` pueden no estar en el PATH. El [launcher `py`](https://docs.python.org/3/using/windows.html#launcher) siempre está disponible (`py -0p` lista las versiones instaladas; usa la que tengas, 3.11 o superior).
-> - Si PowerShell bloquea `Activate.ps1` por la política de ejecución, ejecuta una vez `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
-> - Con el entorno activado verás `(.venv)` al inicio de la línea y ya puedes usar `pip` y `python` directamente. Debes activarlo **cada vez** que abras una terminal nueva.
+> - En Windows, si `python` no está en el PATH, usa el [launcher `py`](https://docs.python.org/3/using/windows.html#launcher) (`py -0p` lista las versiones).
+> - Si PowerShell bloquea `Activate.ps1`: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+> - Activa el entorno **cada vez** que abras una terminal (verás `(.venv)` al inicio de la línea).
 
-### 2. Instalar dependencias
+### 2. Dependencias
 
 ```bash
 pip install -r requirements-dev.txt
 ```
 
-### 3. Configurar variables de entorno
+### 3. Variables de entorno
 
 ```bash
-cp .env.example .env          # Linux / macOS / Git Bash
-```
-```powershell
-Copy-Item .env.example .env   # Windows PowerShell
+cp .env.example .env          # PowerShell: Copy-Item .env.example .env
 ```
 
-Para desarrollo local con el Postgres de Docker, **los valores del ejemplo ya funcionan** siempre que no hayas cambiado el `.env` de la raíz. Si lo cambiaste, ajusta `DATABASE_URL` para que use el mismo usuario, contraseña y base (ver tabla siguiente).
+Con el Postgres de Docker, **los valores del ejemplo ya funcionan** si no cambiaste el `.env` de la raíz.
 
 ### 4. Configurar OCI (opcional para empezar)
 
-1. Guarda tu clave privada de API Key como `backend/secrets/oci_api_key.pem` (o ajusta `OCI_KEY_FILE_PATH`). Los `.pem` están ignorados por git.
-2. Completa en `backend/.env` las variables `OCI_*` con los datos de tu API Key, bucket y compartimento.
+1. Guarda tu clave privada como `backend/secrets/oci_api_key.pem` (o ajusta `OCI_KEY_FILE_PATH`).
+2. Completa las variables `OCI_*` de `backend/.env`.
 
-Puedes saltarte este paso para trabajar con login, usuarios y tablas maestras.
+Sin OCI funcionan login, usuarios y catálogos; fallan la ingesta y el detalle de documentos.
 
-### 5. Levantar la API
+### 5. Levantar y comprobar
 
 ```bash
 uvicorn app.main:app --reload --port 8000
-```
-
-- API: <http://localhost:8000>
-- Swagger UI (probar endpoints desde el navegador): <http://localhost:8000/docs>
-- ReDoc: <http://localhost:8000/redoc>
-
-Al arrancar, la API crea las tablas `revoked_tokens`, `routing_queues`, `document_types` y `areas` si no existen. **No agrega columnas nuevas a tablas existentes ni carga los datos semilla**: si tu base es anterior, vuelve a ejecutar `init.sql` e `init_catalogo.sql` (ver [Base de datos](#base-de-datos)); si no, fallarán los endpoints que usan las columnas nuevas.
-
-### 6. Comprobar que funciona
-
-```bash
 curl http://localhost:8000/api/v1/health
 ```
 
-Devuelve `200 OK` si la base de datos y OCI funcionan, o `503 Service Unavailable` si alguno falla; los campos `database_status` y `oci_status` indican cuál. Luego inicia sesión con `admin_user` / `admin123` en `/docs` (botón **Authorize**).
+- Swagger UI: <http://localhost:8000/docs> (botón **Authorize** con `admin_user` / `admin123`) · ReDoc: <http://localhost:8000/redoc>
+- `/health` responde `200` si la base y OCI funcionan y `503` si alguno falla (`database_status` y `oci_status` dicen cuál).
 
-### Variables de entorno
+> Al arrancar, la API crea algunas tablas si no existen, pero **no agrega columnas ni carga semillas**. Con una base anterior, vuelve a ejecutar `init.sql` e `init_catalogo.sql` (ver [Base de datos](#base-de-datos)).
 
-| Variable | Descripción |
-|---|---|
-| `PROJECT_NAME` | Nombre de la API (por defecto `MediFlow API`) |
-| `ENVIRONMENT` | `development`, `production`, etc. |
-| `DATABASE_URL` | Conexión a Postgres con driver async: `postgresql+asyncpg://usuario:clave@localhost:5432/mediflow_db`. Debe coincidir con el `.env` de la raíz |
-| `JWT_SECRET_KEY` | Clave secreta para firmar tokens. **Cámbiala** (`openssl rand -hex 32`) |
-| `JWT_ALGORITHM` | Algoritmo del JWT (`HS256`) |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Vida del access token en minutos (30 por defecto) |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | Vida del refresh token en días (7 por defecto): pasado ese plazo sin renovarse, hay que volver a iniciar sesión |
-| `OCI_USER_OCID`, `OCI_TENANCY_OCID`, `OCI_FINGERPRINT`, `OCI_REGION` | Datos de tu API Key de OCI |
-| `OCI_KEY_FILE_PATH` | Ruta a la clave privada `.pem` |
-| `OCI_BUCKET_NAME`, `OCI_COMPARTMENT_OCID` | Bucket y compartimento donde se guardan los documentos |
-| `DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES` | Vigencia en minutos de las URLs pre-firmadas de los archivos originales (15 por defecto) |
-| `BACKEND_CORS_ORIGINS` | Orígenes permitidos por CORS, separados por coma (también acepta lista JSON). Por defecto `http://localhost:3000,http://localhost:5173` |
-| `BACKEND_CORS_ORIGIN_REGEX` | Opcional. Regex para orígenes variables, ej. `https://mediflow-.*\.vercel\.app` |
+---
+
+## Variables de entorno
+
+| Variable | Por defecto | Descripción |
+|---|---|---|
+| `PROJECT_NAME`, `ENVIRONMENT` | `MediFlow API`, `development` | Con `ENVIRONMENT=production` se desactivan Swagger/OpenAPI y se exige un `JWT_SECRET_KEY` fuerte |
+| `DATABASE_URL` | — | `postgresql+asyncpg://usuario:clave@localhost:5432/mediflow_db` (igual al `.env` de la raíz) |
+| `JWT_SECRET_KEY`, `JWT_ALGORITHM` | —, `HS256` | Clave para firmar tokens. **Cámbiala** (`openssl rand -hex 32`, mínimo 32 caracteres en producción) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Vida del access token |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Vida del refresh token; pasado ese plazo sin renovarse, hay que volver a iniciar sesión |
+| `LOGIN_MAX_ATTEMPTS`, `LOGIN_LOCKOUT_MINUTES` | `5`, `15` | Tras N fallos seguidos (mismo usuario e IP) el login responde `429` durante esos minutos |
+| `INGEST_MAX_FILE_MB`, `INGEST_MAX_FILES` | `10`, `10` | Tamaño máximo por archivo y cantidad de archivos por documento |
+| `DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES` | `15` | Vigencia de las URLs pre-firmadas de los archivos originales |
+| `OCI_AUTH_MODE` | `api_key` | `api_key` (desarrollo, con `.pem`) o `instance_principal` (VM de OCI, sin llaves) |
+| `OCI_USER_OCID`, `OCI_TENANCY_OCID`, `OCI_FINGERPRINT`, `OCI_REGION`, `OCI_KEY_FILE_PATH` | — | Datos de la API Key de OCI |
+| `OCI_BUCKET_NAME`, `OCI_COMPARTMENT_OCID` | — | Bucket y compartimento de los documentos |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Orígenes permitidos, separados por coma (o lista JSON) |
+| `BACKEND_CORS_ORIGIN_REGEX` | — | Opcional, para orígenes variables (ej. `https://mediflow-.*\.vercel\.app`) |
+| `LOG_LEVEL`, `LOG_FORMAT` | `INFO`, `text` | Nivel y formato (`text` o `json`) de los logs |
+
+---
 
 ## Autenticación y roles
 
-La API usa **JWT**. Flujo:
+La API usa **JWT** con *refresh token* rotativo:
 
-1. Inicia sesión con `POST /api/v1/auth/login` (`{"username": "...", "password": "..."}`). Devuelve `access_token` y los datos del usuario.
-2. Envía el token en cada petición: `Authorization: Bearer <access_token>`.
-
-Usuarios de desarrollo creados por `docker/postgres/seed_dev_users.sql` (uno por rol). **Cámbialos o desactívalos fuera de desarrollo.**
-
-| Usuario | Contraseña | Rol |
-|---|---|---|
-| `admin_user` | `admin123` | `ADMIN` |
-| `gestor_user` | `gestor123` | `GESTOR_USUARIOS` |
-| `auditor_user` | `auditor123` | `AUDITOR_CLINICO` |
-| `operador_user` | `operador123` | `OPERADOR` |
+1. `POST /auth/login` con `{"username", "password"}` → `access_token` (30 min), `refresh_token` (7 días) y los datos del usuario.
+2. Cada petición lleva `Authorization: Bearer <access_token>`.
+3. Al vencer el access token, `POST /auth/refresh` con el refresh token entrega un par nuevo. Cada refresh token es de **un solo uso**.
+4. El rol y el estado activo se leen de la base en cada petición: un cambio de rol o una desactivación aplica de inmediato.
 
 | Rol | Acceso |
 |---|---|
-| `ADMIN` | Todos los endpoints, incluida la escritura de tablas maestras |
-| `GESTOR_USUARIOS` | Gestión de usuarios (`/users`) |
-| `AUDITOR_CLINICO` | Documentos y auditoría |
-| `OPERADOR` | Ingesta y bandeja de documentos (solo los que subió); sin auditoría |
+| `ADMIN` | Todo |
+| `AUDITOR_CLINICO` | Documentos (todos), auditoría y corrección |
+| `OPERADOR` | Ingesta y documentos **que subió**; sin auditoría ni corrección |
+| `GESTOR_USUARIOS` | Usuarios y áreas; sin documentos |
 
-Cualquier usuario autenticado puede **consultar** las tablas maestras.
+Cualquier usuario autenticado puede **consultar** los catálogos. Sin token válido → `401`; sin el rol requerido → `403`. Usuarios de desarrollo: ver el [README principal](../README.md#usuarios-de-prueba).
 
-Sin token válido → `401`. Con token pero sin el rol requerido → `403`.
+---
 
 ## Endpoints
 
 Todos con prefijo `/api/v1`.
 
 ### Salud
+
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
-| GET | `/health` | Estado de la base de datos y OCI | Público |
+| GET | `/health` | Estado de la base de datos y OCI (`200` o `503`) | Público |
+| GET | `/health/live` | Liveness: `{"status": "alive"}` sin tocar dependencias | Público |
 
 ### Autenticación y perfil
+
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
-| POST | `/auth/login` | Inicia sesión y devuelve `access_token` (vida corta) y `refresh_token` (vida larga) | Público |
-| POST | `/auth/refresh` | Body `{"refresh_token": "..."}`. Devuelve un par nuevo de tokens. El refresh token es de **un solo uso** (rotación): el usado queda revocado. `401` si es inválido, expiró, ya se usó o el usuario está inactivo. Un refresh token no sirve como `Authorization: Bearer` | Público (con refresh token) |
-| POST | `/auth/logout` | Cierra la sesión: invalida el access token actual y, si se envía en el body `{"refresh_token": "..."}`, también el refresh token (quedan en la tabla `revoked_tokens` hasta que expiran). Responde `204`. El frontend debe además borrar los tokens guardados | Autenticado |
-| GET | `/auth/me` | Datos básicos del usuario autenticado | Autenticado |
-| GET | `/users/me` | Perfil completo propio | Autenticado |
-| PATCH | `/users/me` | Editar propio `full_name` y/o `email` | Autenticado |
-| POST | `/users/me/change-password` | Cambiar contraseña (pide la actual; nueva de mínimo 8 caracteres). Responde `204` | Autenticado |
+| POST | `/auth/login` | Devuelve `access_token` y `refresh_token`. `429` si el usuario está bloqueado por intentos fallidos | Público |
+| POST | `/auth/refresh` | Body `{"refresh_token"}` → par nuevo. El usado queda revocado; reusarlo, uno vencido o de un usuario inactivo → `401` | Público |
+| POST | `/auth/logout` | Revoca el access token y, si se envía, el refresh token (`204`) | Autenticado |
+| GET | `/auth/me` | Datos del usuario autenticado | Autenticado |
+| GET · PATCH | `/users/me` | Ver y editar el propio `full_name` y `email` | Autenticado |
+| POST | `/users/me/change-password` | Cambiar la contraseña (pide la actual; nueva de 8+ caracteres) → `204` | Autenticado |
 
 ### Gestión de usuarios
+
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
-| GET | `/users` | Lista paginada de usuarios | `ADMIN`, `GESTOR_USUARIOS` |
-| POST | `/users` | Crea un usuario (`username`, `email`, `password`, `full_name`, `role`, `area_id`; rol por defecto `AUDITOR_CLINICO`). `area_id` es **obligatorio** y debe ser un [área](#áreas) activa (`422` si no) | `ADMIN`, `GESTOR_USUARIOS` |
-| PATCH | `/users/{user_id}` | Cambia nombre, email, rol, área (`area_id`, debe estar activa) o activa/desactiva | `ADMIN`, `GESTOR_USUARIOS` |
-| DELETE | `/users/{user_id}` | Smart Delete: borrado físico si el usuario no tiene actividad; si subió, auditó o tomó documentos, o cambió catálogos, solo se desactiva para conservar la autoría. `409` si es tu propia cuenta; `403` si un no-ADMIN intenta eliminar a un ADMIN | `ADMIN`, `GESTOR_USUARIOS` |
+| GET | `/users` | Lista paginada | `ADMIN`, `GESTOR_USUARIOS` |
+| POST | `/users` | Crea un usuario (`username`, `email`, `password`, `full_name`, `role`, `area_id` **obligatorio** y activo) | `ADMIN`, `GESTOR_USUARIOS` |
+| PATCH | `/users/{user_id}` | Cambia nombre, email, rol, área o estado | `ADMIN`, `GESTOR_USUARIOS` |
+| DELETE | `/users/{user_id}` | Smart Delete: borrado físico si el usuario no tiene actividad; si subió, auditó o tomó documentos, o cambió catálogos, solo se desactiva (el historial de correcciones conserva su username aunque se borre). `409` si es tu propia cuenta; `403` si un no-ADMIN elimina a un ADMIN | `ADMIN`, `GESTOR_USUARIOS` |
 
-Las respuestas de usuario (`/auth/login`, `/auth/me`, `/users`, ...) incluyen `area: {id, codigo, nombre}` (`null` en usuarios creados antes de existir las áreas). El usuario no puede cambiar su propia área desde `PATCH /users/me`.
+Solo un ADMIN puede otorgar el rol ADMIN. Las respuestas de usuario incluyen `area: {id, codigo, nombre}`.
 
 ### Documentos
+
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
-| POST | `/documents/ingest` | Recibe un documento procesado por n8n, lo sube a OCI y lo registra. Responde `201` | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
-| GET | `/documents` | Bandeja central paginada con filtros, incluido `area_origen_id` (un `OPERADOR` solo ve los que subió). Cada ítem trae diagnóstico, CIE-10, especialidad, médico y `area_origen` | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
-| GET | `/documents/{documento_id}` | Detalle completo del caso: datos, `area_origen`, archivos originales con **URL pre-firmada** y detalle clínico (tablas y campos relevantes). Un `OPERADOR` solo ve los que subió (`404` para los demás) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| POST | `/documents/ingest` | Recibe el documento procesado por n8n (`201`) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| GET | `/documents` | Bandeja paginada con filtros | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| GET | `/documents/{documento_id}` | Detalle completo: archivos con URL pre-firmada, detalle clínico, duplicados e historial | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| PUT | `/documents/{documento_id}` | Corrige un documento `PROCESADO` o `AUDITADO` (ver [Corrección](#corrección-de-documentos-ya-procesados)) | `ADMIN`, `AUDITOR_CLINICO` |
+| POST | `/documents/duplicates/check` | ¿Alguno de estos archivos ya fue subido? (por huella SHA-256) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 
-**Área de origen.** Al ingerir, el documento guarda en `area_origen_id` el área del usuario que lo subió. Es una copia: si después el usuario cambia de área, el documento conserva el área de la que salió.
+Un `OPERADOR` solo ve los documentos que subió: los ajenos responden `404` (no `403`, para no revelar qué existe).
 
-**Detalle (`GET /documents/{documento_id}`).** Además de todos los campos del listado:
+### Auditoría
 
-- `archivos[]`: `{orden, tipo_archivo, rol, url, visualizable}`, con una URL de solo lectura por archivo, válida por `preview_expira_en_minutos` (`DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES`, 15 por defecto). Las URLs **no** se incluyen en el listado: cada una es una llamada a OCI, y generarlas para toda una página sería lento y crearía enlaces a datos de pacientes que nadie va a abrir.
-- Si OCI no puede generar alguna URL, el detalle se entrega igual: ese archivo queda con `url: null` y `aviso_archivos` lo explica, para que el caso se pueda revisar con los datos clínicos.
-- `detalle.tablas`: `diagnosticos`, `profesionales`, `medicamentos`, `examenes_solicitados`, `paneles_laboratorio` (con sus `parametros`) y `procedimientos`, leídos de las tablas normalizadas.
-- `detalle.campos_relevantes`: lista de `{campo, etiqueta, valor}` con los campos de texto no vacíos del bloque del tipo (ej. `hallazgos` e `impresion_diagnostica` en IMAGENES). La etiqueta es el `title` del esquema del tipo: la misma que ve el auditor y que usa n8n.
-- Tras una auditoría, tanto las tablas como los campos muestran la versión corregida.
+| Método | Ruta | Descripción | Acceso |
+|---|---|---|---|
+| GET | `/audit/{documento_id}` | Caso con `raw_extracted_json`, motivos, asignación y una URL pre-firmada por archivo | `ADMIN`, `AUDITOR_CLINICO` |
+| POST · DELETE | `/audit/{documento_id}/claim` | Tomar (o renovar) el caso por 30 min · liberarlo (quien lo tomó o un ADMIN) | `ADMIN`, `AUDITOR_CLINICO` |
+| PUT | `/audit/{documento_id}/resolve` | Guarda la corrección → `AUDITADO` | `ADMIN`, `AUDITOR_CLINICO` |
+| PUT | `/audit/{documento_id}/discard` | Descarta con `motivo` obligatorio → `DESCARTADO` | `ADMIN`, `AUDITOR_CLINICO` |
 
-**Ingesta (contrato v2).** n8n reenvía el token Bearer del usuario que subió el documento (rol `ADMIN`, `AUDITOR_CLINICO` u `OPERADOR`); ese usuario queda en `uploaded_by_id`. El payload sigue el patrón **Envelope**:
+### Catálogos
 
-- `clasificacion`: `tipo_documento` (el `codigo` de un tipo activo), `especialidad`, `nivel_prioridad` y, opcional, el `score_confianza_clasificacion` que reportó la IA.
-- `evaluacion`: autoevaluación de la IA, con la que el backend **calcula el score** (ver abajo): `legibilidad` y `certeza_tipo` (`alta` / `media` / `baja`), `evidencia_tipo`, `campos_dudosos`, `documentos_multiples`, `es_documento_clinico`, más `modelo` y `escalado` (los agrega n8n).
-- `datos_generales`, comunes a todo tipo:
-  - `paciente`: `nombre`, `identificacion` `{tipo, numero, pais}` (tipo `RUT`, `DNI`, `CURP`, `CEDULA`, `CPF`, `PASAPORTE` u `OTRO`; país ISO alfa-2), `edad`, `fecha_nacimiento`, `sexo` (`F`/`M`/`X`), `numero_ficha` (ficha, historia clínica o expediente).
-  - `profesionales`: lista de `{nombre, identificacion, registro_profesional, especialidad, rol}`, con rol `INFORMANTE`, `SOLICITANTE`, `TRATANTE`, `DESTINATARIO` u `OTRO`. El responsable (informante > tratante > solicitante) se copia en `medico_nombre` / `medico_identificacion`.
-  - `institucion_emisora`, `fecha_documento`.
-  - `diagnosticos`: lista de `{descripcion, cie10, tipo (PRINCIPAL|SECUNDARIO), certeza (CONFIRMADO|PRESUNTIVO), origen_cie10 (DOCUMENTO|INFERIDO|AUDITOR)}`. El principal se copia en `diagnostico_principal` / `cie10_sugerido` / `cie10_origen`.
-- `detalle_clinico`: las **listas comunes** a todos los tipos (`medicamentos`, `examenes_solicitados`) más, como máximo, **un bloque propio del tipo**.
-- `decision_enrutamiento`: `destino_principal` (el `codigo` de una cola activa), `requiere_auditoria_humana`, `justificacion_enrutamiento`, `notificacion_generada`.
+| Método | Ruta | Descripción | Acceso |
+|---|---|---|---|
+| GET | `/catalogs/document-types/forms` | Campos de cada tipo activo (bloque y JSON Schema), listas comunes y esquema de `datos_generales`. Lo usan n8n y el formulario de auditoría | Autenticado |
+| GET | `/catalogs/{document-types \| queues \| areas}/active` | Registros activos en formato compacto | Autenticado |
+| GET | `/catalogs/{...}` · `/catalogs/{...}/{id}` | Listar (filtro `?is_active=`) u obtener un registro | Autenticado |
+| GET | `/catalogs/{...}/{id}/history` | Historial de cambios (aunque el registro se haya eliminado) | `ADMIN` (áreas: también `GESTOR_USUARIOS`) |
+| POST · PUT · DELETE | `/catalogs/{...}` · `/catalogs/{...}/{id}` | Crear, modificar (solo los campos enviados) o eliminar (Smart Delete) | `ADMIN` (áreas: también `GESTOR_USUARIOS`) |
 
-| `codigo` del tipo | Bloque propio en `detalle_clinico` |
+---
+
+## Documentos
+
+### Ingesta (contrato v2)
+
+n8n reenvía el token del usuario que subió el documento, que queda en `uploaded_by_id`; su área se copia en `area_origen_id`. El payload sigue el patrón **Envelope**:
+
+| Bloque | Contenido |
 |---|---|
-| `LABORATORIO` | `examenes_y_laboratorio` (`estudio_solicitado`, `conclusiones_o_hallazgos`, `paneles` de `{nombre_panel, muestra, parametros}`; cada parámetro con `alterado` y `critico`) |
-| `IMAGENES` | `informe_imagenologico` (`estudio_realizado`, `modalidad`, `region_anatomica`, `tecnica`, `antecedentes`, `hallazgos`, `impresion_diagnostica`) |
-| `SOLICITUD_PROCEDIMIENTO` | `solicitud_procedimiento` |
-| `EPICRISIS` | `procedimientos_e_internacion` (fechas, evolución, condición e indicaciones al alta, controles, `procedimientos_realizados`) |
-| `INTERCONSULTA` | `interconsulta` |
-| `ANATOMIA_PATOLOGICA` | `anatomia_patologica` |
-| `PROTOCOLO_OPERATORIO` | `protocolo_operatorio` |
-| `NOTA_ATENCION` | `nota_atencion_ambulatoria` |
-| `RECETA`, `OTRO` | ninguno: el contenido de una receta son los `medicamentos` (lista común) |
+| `documento_id`, `archivos[]` | ID generado por n8n (`DOC-<uuid>`, solo `A-Z a-z 0-9 _ -`) y archivos en base64 (`PDF`, `PNG`, `JPG`, `TIFF`, `DCM`; el **primero** es el principal y debe ser PDF, PNG o JPG) |
+| `clasificacion` | `tipo_documento` (código de un tipo activo), `especialidad`, `nivel_prioridad` (`Rutina` / `Prioritario` / `Urgente`) |
+| `evaluacion` | Autoevaluación de la IA: `legibilidad` y `certeza_tipo` (`alta`/`media`/`baja`), `evidencia_tipo`, `campos_dudosos`, `documentos_multiples`, `es_documento_clinico`, `modelo`, `escalado` |
+| `datos_generales` | `paciente` (nombre, `identificacion {tipo, numero, pais}`, edad, fecha de nacimiento, sexo, `numero_ficha`), `profesionales[]` (con rol), `institucion_emisora`, `fecha_documento`, `diagnosticos[]` (con CIE-10, tipo, certeza y origen) |
+| `detalle_clinico` | Listas comunes (`medicamentos`, `examenes_solicitados`) más **un solo bloque** propio del tipo |
+| `decision_enrutamiento` | `destino_principal` (código de una cola activa), `requiere_auditoria_humana`, `justificacion_enrutamiento`, `notificacion_generada` |
+
+| Tipo | Bloque propio en `detalle_clinico` |
+|---|---|
+| `LABORATORIO` | `examenes_y_laboratorio` (paneles con parámetros; cada parámetro con `alterado` y `critico`) |
+| `IMAGENES` | `informe_imagenologico` (modalidad, región, técnica, hallazgos, impresión diagnóstica) |
+| `EPICRISIS` | `procedimientos_e_internacion` |
+| `SOLICITUD_PROCEDIMIENTO` · `INTERCONSULTA` · `ANATOMIA_PATOLOGICA` · `PROTOCOLO_OPERATORIO` · `NOTA_ATENCION` | `solicitud_procedimiento` · `interconsulta` · `anatomia_patologica` · `protocolo_operatorio` · `nota_atencion_ambulatoria` |
+| `RECETA`, `OTRO` | Ninguno (una receta son sus `medicamentos`) |
 | `SOLICITUD_EXAMENES`, `ATENCION_URGENCIA`, `CERTIFICADO_MEDICO` y cualquier tipo con `campos_extraccion` | `campos_adicionales`, validado contra el JSON Schema del tipo |
 
-El esquema exacto de cada bloque (con etiquetas, opciones y largos máximos) lo publica `GET /catalogs/document-types/forms`. Los textos son tolerantes: "NO DISPONIBLE", "NO APLICA", plantillas vacías (`[[...]]`) o fechas no interpretables quedan en `null`, un texto demasiado largo se recorta y una opción desconocida toma su valor por defecto, en vez de rechazar el documento completo.
+El esquema exacto (etiquetas, opciones, largos) lo publica `GET /catalogs/document-types/forms`. Los campos son **tolerantes**: "NO DISPONIBLE", plantillas vacías o fechas ilegibles quedan en `null`, un texto largo se recorta y una opción desconocida toma su valor por defecto, en vez de rechazar el documento.
 
-**Normalización.** Antes de guardar, el backend:
-
-- normaliza la identificación (sin puntos ni espacios: `12345678-5`) y **valida el dígito verificador** del RUT, CPF y DNI español; reconoce un RUT aunque venga rotulado como `OTRO`;
-- normaliza el país a ISO alfa-2 (`México` → `MX`) y el CIE-10 a su forma canónica (`j459` → `J45.9`), descartando los códigos sin formato válido;
-- deja un solo diagnóstico `PRINCIPAL`;
-- eleva la prioridad a `Urgente` si algún parámetro de laboratorio viene marcado como `critico`.
-
-**Score de confianza.** Un LLM califica mal su propia certeza con un número, así que el backend lo calcula (`app/features/documents/scoring.py`): base según `certeza_tipo` (alta 0.95, media 0.8, baja 0.6) × factor de `legibilidad` (alta 1, media 0.92, baja 0.75), menos descuentos por nombre ausente, identificación y ficha ausentes, identificación inválida, CIE-10 inválido, campos dudosos o contenido mínimo faltante (ej. una receta sin medicamentos), con tope si el archivo trae varios documentos o no es clínico. Cada descuento queda como motivo. Sin `evaluacion` (contrato anterior) se usa el score que reportó la IA.
+<details>
+<summary>Ejemplo de payload</summary>
 
 ```json
 {
@@ -254,180 +253,183 @@ El esquema exacto de cada bloque (con etiquetas, opciones y largos máximos) lo 
   },
   "detalle_clinico": {
     "examenes_y_laboratorio": {
-      "paneles": [
-        {
-          "nombre_panel": "Electrolitos",
-          "muestra": "Sangre",
-          "parametros": [{ "nombre": "Sodio", "valor": "146", "unidad": "mEq/L", "rango_referencia": "136 - 145", "alterado": true, "critico": false }]
-        }
-      ]
+      "paneles": [{
+        "nombre_panel": "Electrolitos", "muestra": "Sangre",
+        "parametros": [{ "nombre": "Sodio", "valor": "146", "unidad": "mEq/L", "rango_referencia": "136 - 145", "alterado": true, "critico": false }]
+      }]
     }
   },
   "decision_enrutamiento": { "destino_principal": "Ficha_Clinica", "requiere_auditoria_humana": false, "justificacion_enrutamiento": "Alteración leve", "notificacion_generada": null }
 }
 ```
+</details>
 
-**Archivos.** `archivos` es una lista: un documento puede traer varios binarios (`PDF`, `PNG`, `JPG`, `TIFF` o `DCM`). El **primero** es el principal (vista previa en auditoría) y debe ser `PDF`, `PNG` o `JPG`.
+**Respuesta (`201`):** los datos **normalizados**, `status` (`PROCESADO` o `PENDIENTE_AUDITORIA`), `score_confianza` (el calculado), `motivos_auditoria` y `almacenamiento_oci`. Errores: `400` base64 inválido · `409` `documento_id` repetido · `422` estructura inválida · `500` falla de OCI o de la base (con compensación: se borra lo ya subido).
 
-**Respuesta (`201`)**: los datos **normalizados** (no los recibidos), `status` (`PROCESADO` o `PENDIENTE_AUDITORIA`), `score_confianza` (el calculado), `motivos_auditoria` y `almacenamiento_oci`.
+### Normalización y score
 
-**Persistencia.** El payload normalizado se guarda íntegro en `raw_extracted_json` (y en OCI), sin el base64 de los archivos y con un bloque `triaje`: `estado`, `score_confianza`, `score_ia`, `score_detalle` (motivos de cada descuento), `ajustes` (ej. prioridad elevada por valor crítico), `motivos_auditoria` y quién lo subió. Lo que se consulta en conjunto vive además en tablas propias:
+Antes de guardar, el backend:
 
-| Tabla | Contenido |
+- normaliza la identificación (`12.345.678-5` → `12345678-5`) y **valida el dígito verificador** del RUT, CPF y DNI español (también CURP); reconoce un RUT aunque venga rotulado como `OTRO`;
+- normaliza el país a ISO alfa-2 (`México` → `MX`) y el CIE-10 a su forma canónica (`j459` → `J45.9`), descartando los inválidos;
+- deja un solo diagnóstico `PRINCIPAL` y copia el profesional responsable (informante > tratante > solicitante) en `medico_*`;
+- eleva la prioridad a `Urgente` si algún parámetro de laboratorio viene marcado como `critico`.
+
+**Score de confianza** (`scoring.py`): base según `certeza_tipo` (alta 0.95, media 0.80, baja 0.60) × factor de `legibilidad` (alta 1, media 0.92, baja 0.75), menos descuentos por nombre o identificación ausente, identificación o CIE-10 inválidos, campos dudosos o contenido mínimo faltante, con tope si el archivo trae varios documentos o no es clínico. Cada descuento queda como motivo.
+
+### Regla de triaje
+
+El documento queda en `PENDIENTE_AUDITORIA` si se cumple **cualquiera** de estas condiciones (si no, `PROCESADO`):
+
+| Condición | Motivo registrado (ejemplo) |
 |---|---|
-| `clinical_documents` | Paciente (identificación, ficha, nacimiento, sexo), profesional responsable, institución, fecha del documento, clasificación, diagnóstico principal y CIE-10, triaje y enrutamiento |
-| `clinical_document_attachments` | Un binario por fila |
-| `clinical_document_diagnoses` | Todos los diagnósticos con su CIE-10 y su origen |
-| `clinical_document_professionals` | Profesionales con su rol |
-| `clinical_document_medications` | Medicamentos de cualquier tipo de documento (prescritos o administrados) |
-| `clinical_document_requested_exams` | Exámenes pedidos en una orden |
-| `lab_panels` + `lab_parameters` | Paneles y parámetros de laboratorio (`alterado`, `critico`) |
-| `clinical_document_procedures` | Procedimientos realizados (epicrisis) |
-
-Un `documento_id` no se puede reingresar (`409`). Errores: `422` si la estructura es inválida (ej. falta `clasificacion` o `tipo_archivo` no es válido), `400` si el base64 es inválido, `500` si falla OCI o la base de datos.
-
-**Regla de triaje:** el documento queda en `PENDIENTE_AUDITORIA` si se cumple **cualquiera** de estas condiciones (si no, `PROCESADO`):
-
-| Condición | Motivo registrado |
-|---|---|
-| Score calculado `< 0.85` | `Score de confianza 0.644 menor al umbral 0.85`, seguido de cada descuento (ej. `Identificación RUT con formato o dígito verificador inválido`) |
+| Score `< 0.85` | `Score de confianza 0.644 menor al umbral 0.85`, más cada descuento |
 | `requiere_auditoria_humana = true` | `El workflow solicitó auditoría humana` |
-| `tipo_documento = "OTRO"` | `Documento no clasificable (tipo OTRO)` |
-| El tipo o la cola no existen o están inactivos | `El tipo de documento 'X' no existe o está inactivo en el catálogo` |
-| `detalle_clinico` trae un bloque que no es del tipo | `detalle_clinico trae ['interconsulta'] pero el tipo 'RECETA' espera ningún bloque propio` |
-| `campos_adicionales` no cumple el `campos_extraccion` del tipo | `campos_adicionales no cumple el esquema del tipo 'X': ...` |
+| Tipo `OTRO` | `Documento no clasificable (tipo OTRO)` |
+| Tipo o cola inexistente o inactiva | `El tipo de documento 'X' no existe o está inactivo en el catálogo` |
+| Bloque de detalle que no es del tipo | `detalle_clinico trae ['interconsulta'] pero el tipo 'RECETA' espera ...` |
+| `campos_adicionales` fuera del esquema | `campos_adicionales no cumple el esquema del tipo 'X': ...` |
+| Archivo idéntico a otro documento | `Archivo idéntico a otro documento ya registrado (posible duplicado)` |
+| Mismo contenido que otro documento | `Posible duplicado: mismo paciente, tipo y fecha que otro documento ya registrado` |
 
-**Filtros de `GET /documents`** (todos opcionales, combinables):
+### Duplicados
+
+Dos niveles (`duplicates.py`), que se complementan:
+
+| Nivel | Cómo se detecta | Cuándo |
+|---|---|---|
+| **Archivo idéntico** | Misma huella SHA-256 de alguno de los archivos (`clinical_document_attachments.sha256`) | Antes de subir (`POST /documents/duplicates/check`, lo llama el front) y al ingerir |
+| **Contenido similar** | Misma identificación del paciente + mismo tipo + misma fecha del documento, y además la misma institución, CIE-10 o diagnóstico principal (sin distinguir mayúsculas ni espacios). Sin identificación o sin fecha no se marca nada; se ignoran los documentos descartados | Al ingerir |
+
+- Un posible duplicado **no se rechaza**: va a auditoría. Los IDs de los documentos relacionados quedan en `raw_extracted_json.triaje.duplicados` y el detalle los entrega en `duplicados[]` (`{documento_id, tipo}`).
+- **Privacidad:** se compara contra todos los documentos, pero un OPERADOR solo ve el detalle de los suyos. En `duplicates/check`, de un documento ajeno recibe solo el área y la fecha (`documento_id` y `estado` en `null`); en el detalle, `duplicados[]` solo trae los suyos. Los motivos de auditoría no nombran el otro documento.
+- Los adjuntos ingresados antes de existir la huella quedan con `sha256 = NULL`: el nivel por archivo no los detecta, el de contenido sí.
+
+### Filtros de `GET /documents`
 
 | Parámetro | Descripción |
 |---|---|
-| `page`, `page_size` | Paginación (por defecto 1 y 20; máximo 100 por página) |
+| `page`, `page_size` | Paginación (por defecto 1 y 20; máximo 100) |
 | `estado` | `PENDIENTE_AUDITORIA`, `PROCESADO`, `AUDITADO` o `DESCARTADO` |
-| `destino` | Cola de destino |
+| `destino`, `prioridad` | Código de cola; `Rutina`, `Prioritario` o `Urgente` |
 | `identificacion` | Identificación del paciente, con o sin formato (`12.345.678-5` o `12345678-5`) |
 | `numero_ficha` | N° de ficha clínica |
-| `prioridad` | `Rutina`, `Prioritario` o `Urgente` |
 | `area_origen_id` | Área de quien subió el documento |
 | `fecha_desde`, `fecha_hasta` | Rango de fecha de creación |
 
-Si no hay resultados, la respuesta trae `items: []` y un `message`. Un `OPERADOR` solo ve los documentos que subió.
+Cada fila trae diagnóstico, CIE-10, médico, `area_origen`, `motivos_auditoria` y quién tiene el caso tomado. Sin resultados: `items: []` y un `message`.
 
-### Auditoría (Human-in-the-Loop)
-| Método | Ruta | Descripción | Acceso |
-|---|---|---|---|
-| GET | `/audit/{documento_id}` | Detalle del caso: datos extraídos, `motivos_auditoria`, asignación y una **URL pre-firmada** (15 min) por cada archivo en `archivos[]` (`oci_preview_url` = la del principal) | `ADMIN`, `AUDITOR_CLINICO` |
-| POST | `/audit/{documento_id}/claim` | "Tomar caso" (o renovar) por 30 minutos | `ADMIN`, `AUDITOR_CLINICO` |
-| DELETE | `/audit/{documento_id}/claim` | Liberar el caso (quien lo tomó o un `ADMIN`). Responde `204` | `ADMIN`, `AUDITOR_CLINICO` |
-| PUT | `/audit/{documento_id}/resolve` | Guarda la corrección humana y marca el documento como `AUDITADO` | `ADMIN`, `AUDITOR_CLINICO` |
-| PUT | `/audit/{documento_id}/discard` | Descarta el caso (no clínico, duplicado, ilegible) con `motivo` obligatorio → `DESCARTADO` | `ADMIN`, `AUDITOR_CLINICO` |
+### Detalle (`GET /documents/{documento_id}`)
 
-**Resolver.** El auditor envía la **misma estructura que la ingesta**: `tipo_documento`, `nivel_prioridad`, `destino_enrutamiento`, `especialidad` (opcional), `datos_generales` y `detalle_clinico` (opcional: si no se envía, se conserva el de la IA), más `audit_notes` (obligatorio). El formulario del frontend dibuja los campos desde `GET /catalogs/document-types/forms`: al elegir otro tipo, muestra los campos de ese tipo.
+Además de los campos del listado:
 
-- Pasa por las mismas normalizaciones que la ingesta, pero aquí los problemas **bloquean** (`422` con la lista): paciente sin nombre, identificación con dígito verificador inválido, CIE-10 sin formato válido, sin diagnóstico principal, tipo o cola fuera del catálogo, o un bloque de `detalle_clinico` que no corresponde al tipo final.
-- Los CIE-10 que la IA no había propuesto quedan con origen `AUDITOR`.
-- El JSON consolidado lleva **los valores corregidos arriba**, la extracción original en `version_ia`, `triaje.estado = AUDITADO` y un bloque `auditoria` con `campos_corregidos` (`{campo: {antes, despues}}`). Se guarda en OCI (`procesados/auditados/<id>.json`) y en `raw_extracted_json`.
+| Campo | Contenido |
+|---|---|
+| `archivos[]` | `{orden, tipo_archivo, rol, url, visualizable}` con una URL de solo lectura válida por `preview_expira_en_minutos`. Si OCI no puede generar alguna, el detalle se entrega igual con `url: null` y el motivo en `aviso_archivos` |
+| `detalle.tablas` | Diagnósticos, profesionales, medicamentos, exámenes solicitados, paneles de laboratorio y procedimientos, desde las tablas normalizadas |
+| `detalle.campos_relevantes` | `{campo, etiqueta, valor}` de los campos de texto del bloque del tipo (ej. `hallazgos`), con la etiqueta del esquema |
+| `datos_generales`, `detalle_clinico` | Valores vigentes en el formato de la ingesta (precargan el formulario de corrección) |
+| `duplicados[]` | Posibles duplicados detectados al ingerir |
+| `historial_correcciones[]` | `{origen, justificacion, cambios[], corrected_by_username, corrected_at}`, del más reciente al más antiguo |
 
-**Reglas comunes a resolver y descartar:** solo sobre documentos `PENDIENTE_AUDITORIA` (si no → `409`), y no si otro auditor tiene el caso tomado y vigente (`409` con "en revisión por X"). Al cerrar el caso se libera la asignación. El JSON nuevo se sube primero, luego se hace el commit y al final se borra el JSON de `auditoria_humana/`.
+Las URLs **no** van en el listado: cada una es una llamada a OCI y crearía enlaces a datos de pacientes que nadie va a abrir.
 
-`GET /documents` incluye en cada fila `motivos_auditoria` y la asignación (`asignado_a_id`, `asignado_a_username`, `asignado_at`), para armar la bandeja sin abrir cada caso.
+---
 
-### Tablas maestras (catálogos)
+## Auditoría y corrección (Human-in-the-Loop)
 
-Tres maestras independientes, cada una con su CRUD (las áreas se describen en [su propia sección](#áreas)):
+### Resolver un caso pendiente
 
-- **Tipos de documento** (`document_types`): qué clases de documento clínico acepta el pipeline. `descripcion` (obligatoria) explica al LLM cuándo usar el tipo; `campos_extraccion` (opcional) es un JSON Schema con campos adicionales a extraer.
-- **Colas de enrutamiento** (`routing_queues`): a qué área se puede derivar un documento. `descripcion_semantica` explica al LLM cuándo usar y cuándo no usar la cola; `notificar_inmediato` marca las colas que requieren aviso inmediato.
+El auditor envía la **misma estructura que la ingesta**: `tipo_documento`, `nivel_prioridad`, `destino_enrutamiento`, `especialidad` (opcional), `datos_generales`, `detalle_clinico` (opcional: si no se envía se conserva el vigente) y `audit_notes` (obligatorio).
 
-| Método | Ruta | Descripción | Acceso |
-|---|---|---|---|
-| GET | `/catalogs/queues/active` | Colas activas en formato compacto (`codigo`, `nombre`, `descripcion_semantica`, `notificar_inmediato`) para el prompt de n8n | Autenticado |
-| GET | `/catalogs/queues` | Todas las colas; filtro opcional `?is_active=true\|false` | Autenticado |
-| GET | `/catalogs/queues/{id}` | Detalle de una cola | Autenticado |
-| GET | `/catalogs/queues/{id}/history` | Historial de cambios de la cola (aunque ya se haya eliminado) | `ADMIN` |
-| POST | `/catalogs/queues` | Crea una cola (`codigo`, `nombre`, `descripcion_semantica`, `notificar_inmediato`). Responde `201` | `ADMIN` |
-| PUT | `/catalogs/queues/{id}` | Modifica solo los campos enviados (`nombre`, `descripcion_semantica`, `notificar_inmediato`, `is_active`) | `ADMIN` |
-| DELETE | `/catalogs/queues/{id}` | Smart Delete (ver abajo) | `ADMIN` |
-| GET | `/catalogs/document-types/forms` | Campos de cada tipo activo (`bloque` de `detalle_clinico` y su JSON Schema), las listas comunes y el esquema de `datos_generales`. Lo usan el formulario de auditoría y n8n | Autenticado |
-| GET | `/catalogs/document-types/active` | Tipos activos en formato compacto (`codigo`, `nombre`, `descripcion`, `campos_extraccion`) para el prompt de n8n | Autenticado |
-| GET | `/catalogs/document-types` | Todos los tipos; filtro opcional `?is_active=true\|false` | Autenticado |
-| GET | `/catalogs/document-types/{id}` | Detalle de un tipo | Autenticado |
-| GET | `/catalogs/document-types/{id}/history` | Historial de cambios del tipo | `ADMIN` |
-| POST | `/catalogs/document-types` | Crea un tipo (`codigo`, `nombre`, `descripcion`, `campos_extraccion`). Responde `201` | `ADMIN` |
-| PUT | `/catalogs/document-types/{id}` | Modifica solo los campos enviados (`nombre`, `descripcion`, `campos_extraccion`, `is_active`) | `ADMIN` |
-| DELETE | `/catalogs/document-types/{id}` | Smart Delete (ver abajo) | `ADMIN` |
+- Pasa por las mismas normalizaciones que la ingesta, pero aquí los problemas **bloquean** (`422` con la lista): paciente sin nombre, dígito verificador inválido, CIE-10 sin formato, sin diagnóstico principal, tipo o cola fuera del catálogo, o un bloque que no corresponde al tipo.
+- Los CIE-10 nuevos quedan con origen `AUDITOR`.
+- El JSON consolidado lleva los valores corregidos arriba, la extracción original en `version_ia` y un bloque `auditoria` con `campos_corregidos`. Se guarda en `procesados/auditados/<id>.json`.
+- **Reglas:** solo sobre documentos `PENDIENTE_AUDITORIA` (si no, `409`) y no si otro auditor tiene el caso tomado (`409` "en revisión por X"). El JSON nuevo se sube primero, luego se hace el commit y al final se borra el de `auditoria_humana/`.
 
-#### Áreas
+### Corrección de documentos ya procesados
 
-Áreas o servicios del hospital (Urgencias, Admisión, Laboratorio, ...). Cada usuario pertenece a una y cada documento guarda el área de quien lo subió. A diferencia de las otras maestras, no viajan en el prompt del LLM y se referencian por id (FK), no por `codigo`. Las gestionan quienes registran usuarios.
+`PUT /documents/{documento_id}` con el mismo cuerpo que *resolver*, pero con `justificacion` (obligatoria) en lugar de `audit_notes`:
 
-| Método | Ruta | Descripción | Acceso |
-|---|---|---|---|
-| GET | `/catalogs/areas/active` | Áreas activas en formato compacto (`id`, `codigo`, `nombre`), para el selector del registro de usuarios | Autenticado |
-| GET | `/catalogs/areas` | Todas las áreas; filtro opcional `?is_active=true\|false` | Autenticado |
-| GET | `/catalogs/areas/{id}` | Detalle de un área | Autenticado |
-| GET | `/catalogs/areas/{id}/history` | Historial de cambios del área | `ADMIN`, `GESTOR_USUARIOS` |
-| POST | `/catalogs/areas` | Crea un área (`codigo` con formato `^[A-Z0-9_]+$`, `nombre`, `descripcion` opcional). Responde `201` | `ADMIN`, `GESTOR_USUARIOS` |
-| PUT | `/catalogs/areas/{id}` | Modifica solo los campos enviados (`nombre`, `descripcion`, `is_active`) | `ADMIN`, `GESTOR_USUARIOS` |
-| DELETE | `/catalogs/areas/{id}` | Smart Delete: físico si ningún usuario ni documento la usa; si no, la desactiva | `ADMIN`, `GESTOR_USUARIOS` |
+- Solo para `PROCESADO` o `AUDITADO` (los pendientes se corrigen en auditoría; los descartados no): si no, `409`.
+- Mismas validaciones que *resolver* (`422`), y además `422` si la corrección **no cambia ningún valor**.
+- El documento **conserva su estado**. Si cambian el tipo, la prioridad o el destino, queda enrutado a la nueva cola.
+- El JSON se sobrescribe en su misma ruta de OCI. `version_ia` se guarda la primera vez que alguien corrige y no se vuelve a pisar; cada corrección se agrega a `correcciones[]`. Si falla el commit, se restaura el JSON anterior en OCI.
 
-**Reglas:**
+### Historial de correcciones
 
-- El `codigo` es único (duplicado → `409`) y **no se puede modificar**, porque los documentos ya guardados lo referencian. Formato: tipos `^[A-Z0-9_]+$` (ej. `LICENCIA`), colas `^[A-Za-z0-9_]+$` (ej. `Gestion_GES`); otro formato → `422`.
-- En un `PUT`, los campos de texto y `is_active` no admiten `null` (`422`). `campos_extraccion: null` sí: elimina el esquema del tipo.
-- `campos_extraccion` debe ser un JSON Schema válido con `"type": "object"` (`422` si no). El LLM llena esos campos en `detalle_clinico.campos_adicionales` y el backend los valida en la ingesta: si no cumplen el esquema, el documento va a auditoría.
-- **Desactivar / reactivar:** `PUT` con `{"is_active": false}` o `{"is_active": true}`. Un registro inactivo deja de aparecer en `/active` y, por lo tanto, en el prompt de n8n.
-- **Smart Delete (`DELETE`):** el backend cuenta lo que usa el registro: documentos clínicos con `destino_enrutamiento = cola.codigo` o `tipo_documento = tipo.codigo`; para un área, usuarios (`area_id`) y documentos (`area_origen_id`).
-  - Si no hay ninguno → **borrado físico**; responde `{"deletion_type": "HARD_DELETE", ...}`.
-  - Si hay alguno → **borrado lógico** (`is_active = false`) para no dejar documentos huérfanos; responde `{"deletion_type": "SOFT_DELETE", ...}`.
-- **Registros de sistema** (`es_sistema = true`): el tipo `OTRO` (comodín de la IA) y la cola `Ficha_Clinica` (destino por defecto). Se pueden editar, pero no eliminar ni desactivar (`409`).
-- **Trazabilidad:** cada alta, cambio o borrado guarda quién lo hizo (`updated_by_id`, `updated_at`) y una entrada en `catalog_history` con solo los campos modificados (`{campo: {antes, despues}}`).
-- Id inexistente → `404`.
+Cada resolución de auditoría (`AUDITORIA`, aunque no cambie nada) y cada corrección posterior (`CORRECCION`) agrega una fila a `clinical_document_corrections` con quién, cuándo, la justificación y los `cambios`: una lista `{campo, etiqueta, antes, despues}` con **cada valor modificado**, incluso dentro de listas. Por ejemplo, `examenes_y_laboratorio.paneles[0].parametros[1].valor` con la etiqueta `Paneles 1 › Parámetros 2 › Valor`. Las etiquetas salen de los `title` del esquema, y las diferencias de formato (clave ausente vs `null`, RUT con puntos) no cuentan como cambio.
 
-**Uso desde n8n:** antes del nodo del LLM, el workflow llama a `GET /catalogs/document-types/active` y `GET /catalogs/queues/active` (con el token Bearer del usuario, reenviado por el front) e inyecta ambas listas en el prompt. El LLM debe devolver **exactamente** el `codigo` del tipo de documento y el `codigo` de la cola, ya que así se guardan en `clinical_documents` y así los busca el Smart Delete.
+---
+
+## Tablas maestras (catálogos)
+
+| Maestra | Tabla | Notas |
+|---|---|---|
+| Tipos de documento | `document_types` | `descripcion` (la lee el LLM para decidir) y `campos_extraccion` opcional (JSON Schema de campos propios) |
+| Colas de enrutamiento | `routing_queues` | `descripcion_semantica` (cuándo usar y cuándo no) y `notificar_inmediato` |
+| Áreas | `areas` | Área de cada usuario y origen de cada documento. No va al prompt y se referencia por id. La gestionan también los `GESTOR_USUARIOS` |
+
+**Reglas comunes:**
+
+- El `codigo` es único (`409`) e **inmutable**, porque los documentos lo guardan. Formato: tipos y áreas `^[A-Z0-9_]+$`, colas `^[A-Za-z0-9_]+$` (`422` si no).
+- En un `PUT` solo cambian los campos enviados; los textos e `is_active` no admiten `null`. `campos_extraccion: null` elimina el esquema y, si se envía, debe ser un JSON Schema válido con `"type": "object"`.
+- **Desactivar:** `PUT {"is_active": false}`. Un registro inactivo sale de `/active` y, por lo tanto, del prompt.
+- **Smart Delete:** si nada lo usa (documentos para tipos y colas; usuarios y documentos para áreas) → borrado físico (`HARD_DELETE`); si algo lo usa → desactivación (`SOFT_DELETE`).
+- **Registros de sistema:** el tipo `OTRO` y la cola `Ficha_Clinica` se pueden editar pero no eliminar ni desactivar (`409`).
+- **Trazabilidad:** cada cambio guarda quién y cuándo, y una entrada en `catalog_history` con los campos modificados (`{campo: {antes, despues}}`).
+
+**Uso desde n8n:** antes de llamar al LLM, el workflow lee `GET /catalogs/document-types/forms` y `GET /catalogs/queues/active` con el token del usuario. El LLM debe devolver **exactamente** los `codigo`.
+
+---
 
 ## Almacenamiento en OCI
 
 | Ruta en el bucket | Contenido |
 |---|---|
-| `recibidos/<id>/<n>.<ext>` | Archivos originales (`n` = posición en la lista `archivos`: `0`, `1`, ...) |
-| `procesados/<prioridad>/<id>.json` | Resultado estructurado de casos automáticos |
-| `auditoria_humana/<id>.json` | Resultado de casos pendientes de revisión |
-| `procesados/auditados/<id>.json` | Resultado corregido por un auditor |
-| `descartados/<id>.json` | Casos descartados por un auditor (con el motivo) |
+| `recibidos/<id>/<n>.<ext>` | Archivos originales (nunca se modifican) |
+| `procesados/<prioridad>/<id>.json` | Resultado de los casos automáticos |
+| `auditoria_humana/<id>.json` | Casos pendientes de revisión |
+| `procesados/auditados/<id>.json` | Casos resueltos por un auditor |
+| `descartados/<id>.json` | Casos descartados (con el motivo) |
+
+El JSON de cada documento es el mismo que queda en `raw_extracted_json`. Una corrección posterior lo sobrescribe en su ruta actual.
+
+---
 
 ## Base de datos
 
-El esquema lo crea `docker/postgres/init.sql` y el catálogo semilla (tipos de documento y colas) `docker/postgres/init_catalogo.sql`; Docker los ejecuta **solo la primera vez** que arranca el contenedor (con el volumen vacío), en orden alfabético.
+El esquema lo crea `docker/postgres/init.sql`; los tipos y colas semilla, `init_catalogo.sql`; los usuarios de desarrollo, `seed_dev_users.sql`. Docker los ejecuta **solo la primera vez** (volumen vacío).
 
 | Tabla | Contenido |
 |---|---|
-| `users` | Usuarios, contraseña hasheada (bcrypt), rol, área (`area_id`) y estado activo |
-| `areas` | Tabla maestra de áreas del hospital |
-| `revoked_tokens` | Tokens JWT invalidados por logout o refresh tokens ya canjeados, hasta su expiración |
-| `clinical_documents` | Paciente y médico, clasificación, prioridad, score de confianza, diagnóstico/CIE-10, destino, rutas en OCI, JSON consolidado (`raw_extracted_json`), quién lo subió (`uploaded_by_id`) y desde qué área (`area_origen_id`), asignación del caso (`asignado_a_*`) y campos de auditoría |
-| `clinical_document_attachments`, `clinical_document_medications`, `lab_panels`, `lab_parameters`, `clinical_document_procedures` | Detalle clínico normalizado (ver [Documentos](#documentos)) |
-| `document_types` | Tabla maestra de tipos de documento |
-| `routing_queues` | Tabla maestra de colas de enrutamiento |
-| `catalog_history` | Historial de cambios de las tablas maestras (quién, cuándo y qué cambió) |
+| `users` · `areas` | Usuarios (bcrypt, rol, área, activo) y maestra de áreas |
+| `revoked_tokens` | Tokens invalidados por logout o refresh tokens ya canjeados, hasta su expiración |
+| `clinical_documents` | Paciente, profesional responsable, institución, fecha, clasificación, score, diagnóstico y CIE-10, destino, rutas en OCI, JSON consolidado, quién lo subió y desde qué área, asignación y auditoría |
+| `clinical_document_attachments` | Un archivo por fila, con su huella `sha256` |
+| `clinical_document_diagnoses` · `clinical_document_professionals` | Todos los diagnósticos (con CIE-10 y origen) y profesionales (con rol) |
+| `clinical_document_medications` · `clinical_document_requested_exams` | Medicamentos (prescritos o administrados) y exámenes solicitados |
+| `lab_panels` + `lab_parameters` · `clinical_document_procedures` | Laboratorio (`alterado`, `critico`) y procedimientos de una epicrisis |
+| `clinical_document_corrections` | Historial de correcciones humanas (`AUDITORIA` o `CORRECCION`) |
+| `document_types` · `routing_queues` · `catalog_history` | Maestras de tipos y colas, e historial de las tres maestras |
 
-**Datos semilla:** 12 áreas (`init.sql`), 13 tipos de documento y 6 colas de enrutamiento (`init_catalogo.sql`; re-ejecutarlo **actualiza** el nombre, la descripción y los campos de los registros semilla), y un usuario por rol con su área (`seed_dev_users.sql`, solo desarrollo): `admin_user` y `gestor_user` → `ADMINISTRACION`, `auditor_user` → `AUDITORIA_MEDICA`, `operador_user` → `ADMISION` (ver [Autenticación y roles](#autenticación-y-roles)). El tipo `OTRO` y la cola `Ficha_Clinica` quedan marcados como registros de sistema.
+**Datos semilla:** 12 áreas (`init.sql`), 13 tipos y 6 colas (`init_catalogo.sql`; re-ejecutarlo **actualiza** nombre, descripción y campos de los registros semilla) y un usuario por rol con su área (`seed_dev_users.sql`, solo desarrollo).
 
-**¿Tu base es anterior y le faltan tablas, columnas o datos?** `init.sql` se puede volver a ejecutar sin riesgo: crea lo que falta, agrega las columnas nuevas (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) y no duplica registros. Está probado tanto en una base nueva como sobre una base creada con la versión anterior. Desde la **raíz** del repo, con el contenedor levantado:
+### Actualizar una base existente
+
+`init.sql` es **re-ejecutable**: crea lo que falta, agrega columnas nuevas (`ADD COLUMN IF NOT EXISTS`), migra nombres antiguos (`rut_paciente` → `identificacion_paciente`) y no duplica datos. Desde la **raíz**, con el contenedor levantado:
 
 ```bash
 docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/init.sql
 docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/init_catalogo.sql
-# En desarrollo, además: asigna el área a los usuarios semilla que aún no la tienen
-docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/seed_dev_users.sql
+docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/seed_dev_users.sql   # solo desarrollo
 ```
 
-> **Obligatorio tras actualizar al contrato v2 de documentos:** `init.sql` renombra `rut_paciente` → `identificacion_paciente` y `medico_rut` → `medico_identificacion` (conservando los datos) y crea las tablas de diagnósticos, profesionales y exámenes solicitados; sin eso fallan la bandeja y la ingesta.
+> ⚠️ Hazlo **después de cada actualización del código**. Si no, fallan los endpoints que usan las columnas o tablas nuevas (por ejemplo, con áreas el login falla; sin `clinical_document_corrections`, el detalle y la auditoría fallan).
 
-> **Obligatorio tras actualizar a la versión con áreas:** el modelo `User` ahora lee `users.area_id`, así que con una base anterior **fallan el login y todos los endpoints autenticados** hasta ejecutar `init.sql`.
+En Git Bash antepón `MSYS_NO_PATHCONV=1 `. No hay Alembic: si cambias una tabla, actualiza **a la vez** `models.py` e `init.sql`, usando siempre `IF NOT EXISTS` / `ON CONFLICT` para que el script siga siendo re-ejecutable.
 
-(En Git Bash, antepón `MSYS_NO_PATHCONV=1 `.) La alternativa `docker compose down -v` también funciona, pero **borra todos los datos**.
-
-> No hay herramienta de migraciones (Alembic). Si agregas o cambias una tabla, actualiza **a la vez** el modelo en `models.py` e `init.sql`, usando siempre `IF NOT EXISTS` / `ON CONFLICT DO NOTHING` para que el script siga siendo re-ejecutable.
+---
 
 ## Logs
 
@@ -437,49 +439,47 @@ Cada línea lleva hora, nivel, **ID de seguimiento** (`X-Request-ID`) y usuario:
 2026-10-09 21:14:03 INFO    [a1b2c3d4e5f6 admin_user] http: POST /api/v1/users -> 201 (35 ms)
 ```
 
-Se configura con `LOG_LEVEL` y `LOG_FORMAT` (`text` o `json`). El formato está en `app/core/log_config.py` y la línea por petición en `app/core/request_logging.py`. Qué se registra, cómo seguir una operación del navegador a n8n y al backend, y las reglas para no registrar datos de pacientes: [`docs/LOGS.md`](../docs/LOGS.md).
+Se configura con `LOG_LEVEL` y `LOG_FORMAT`. Qué se registra, cómo seguir una operación del navegador a n8n y al backend, y las reglas para no registrar datos de pacientes: [`docs/LOGS.md`](../docs/LOGS.md).
+
+---
 
 ## Pruebas y calidad de código
 
-Desde `backend/`, con el entorno virtual activado:
+Desde `backend/`, con el entorno activado:
 
 ```bash
-pytest          # ejecuta todas las pruebas
-pytest -v       # con el detalle de cada prueba
+pytest          # 302 pruebas
 ruff check .    # linter
 ```
 
-Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión de base de datos y un cliente OCI simulados (ver `tests/conftest.py`), y fijan sus propias variables de entorno, así que tampoco dependen de tu `.env`.
+Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión y un cliente OCI simulados (`tests/conftest.py`) y fijan sus propias variables de entorno.
 
 | Archivo | Qué verifica |
 |---|---|
-| `test_security.py` | Hash de contraseñas y tokens JWT (`exp`, `jti` único) |
-| `test_ingest_service.py` | Regla de triaje (umbral 0.85, tipo OTRO, catálogos, bloque vs. tipo, `campos_adicionales` vs. JSON Schema), formatos de archivo, `documento_id` repetido, quién subió el documento, JSON sin base64, subida a OCI, compensación ante fallos de OCI o base de datos, contrato v2 (score con autoevaluación, identificación y CIE-10 inválidos, valor crítico, medicamentos de cualquier tipo, origen del CIE-10, profesional responsable, paciente sin identificación nacional) |
-| `test_documents_api.py` | Ingesta (401/403/400/409/500, rol OPERADOR, motivos de auditoría, solo el bloque poblado), JSON completo de respuesta para React, listado paginado y filtros |
-| `test_auth_api.py` | Login, token inválido, usuario inactivo, logout, token revocado, refresh token (rotación, reúso, expiración, tipo de token, logout), restricción por rol, área obligatoria y activa al crear/editar usuarios, Smart Delete de usuarios (físico/lógico, propia cuenta, ADMIN) |
-| `test_areas_api.py` | Mantenedor de áreas: permisos (ADMIN y GESTOR_USUARIOS escriben), formato de `codigo`, actualización parcial, Smart Delete según usuarios y documentos asociados, historial |
-| `test_normalization.py` | Identificación por país (RUT, DNI, CURP, CPF, cédula, pasaporte) con dígito verificador, CIE-10 y país |
-| `test_scoring.py` | Cálculo del score: base, legibilidad, descuentos con su motivo, topes |
-| `test_extraction_fields.py` | Campos tolerantes: "NO DISPONIBLE", plantillas, fechas, edades, sinónimos, listas |
-| `test_schema_order.py` | Orden de los campos de un JSON Schema guardado en JSONB |
-| `test_logging.py` | Formato y contexto de los logs, ID de seguimiento (recibido o generado), query sin valores, sondas de salud silenciadas, `500` JSON con código de seguimiento, login fallido sin inyección de líneas |
-| `test_document_detail_api.py` | Detalle de documento: acceso (404 para documentos ajenos del OPERADOR), URL por archivo, tablas por tipo, campos relevantes (incluidos los de tipos personalizados), detalle sin URLs si OCI falla; área de origen en la ingesta y en el listado |
-| `test_audit_api.py` | Detalle con URL por archivo y motivos, resolución con valores corregidos arriba y `version_ia`, corrección de `detalle_clinico`, validación contra catálogos, descarte, tomar/liberar caso, errores (404/409/422/500) |
-| `test_health_api.py` | `200` si todo funciona, `503` si falla alguna dependencia |
-| `test_catalogs_api.py` | CRUD de tablas maestras, permisos (401/403), `409` por código duplicado, `404`, Smart Delete físico y lógico, rutas `/active`, formato de `codigo`, `descripcion` obligatoria, `campos_extraccion`, registros de sistema e historial |
+| `test_ingest_service.py` · `test_documents_api.py` | Regla de triaje, formatos, `documento_id` repetido, compensación ante fallos, contrato v2, respuesta para el front, listado y filtros |
+| `test_normalization.py` · `test_scoring.py` · `test_extraction_fields.py` | Identificación por país con dígito verificador, CIE-10, país; cálculo del score; campos tolerantes |
+| `test_document_detail_api.py` | Detalle: acceso del OPERADOR, URL por archivo, tablas y campos por tipo, detalle sin URLs si OCI falla, área de origen |
+| `test_duplicates.py` | Huella SHA-256, consulta previa y privacidad del OPERADOR, archivo idéntico y contenido similar al ingerir, duplicados en el detalle |
+| `test_audit_api.py` | Tomar/liberar, resolver (valores arriba, `version_ia`, detalle clínico, catálogos), descartar, errores |
+| `test_document_correction_api.py` | Corrección: roles, estados, validaciones, sin cambios, re-enrutamiento, historial campo a campo, `version_ia` estable, fallos de OCI y de la base |
+| `test_auth_api.py` · `test_security.py` · `test_hardening.py` | Login, refresh (rotación y reúso), logout, roles, usuarios y su área, Smart Delete; JWT y bcrypt; bloqueo de login, secreto JWT en producción, `documento_id` seguro, liveness |
+| `test_catalogs_api.py` · `test_areas_api.py` · `test_schema_order.py` | CRUD de las tres maestras, permisos, Smart Delete, registros de sistema, historial; orden de los JSON Schema |
+| `test_logging.py` · `test_health_api.py` | Formato y contexto de los logs, ID de seguimiento, `500` con código; `200`/`503` de salud |
 
-> Las pruebas usan datos simulados, así que no detectan errores de SQL real (por ejemplo, un nombre de columna incorrecto). Para eso hace falta probar contra el Postgres de `docker compose`: si cambias un modelo, recrea la base (o vuelve a ejecutar `init.sql`) y prueba el flujo desde Swagger.
+> Al usar datos simulados, las pruebas no detectan errores de SQL real (ej. una columna mal escrita). Si cambias un modelo, prueba también contra el Postgres de `docker compose`.
+
+---
 
 ## Problemas comunes
 
 | Síntoma | Causa probable |
 |---|---|
-| `/health` responde `503` | Mira `database_status` / `oci_status`. Base: Postgres apagado (`docker compose up -d`) o `DATABASE_URL` incorrecta. OCI: credenciales o clave `.pem` inválidas o sin configurar |
-| `ConnectionRefusedError` o `password authentication failed` al usar la API | Postgres no está levantado, o el usuario/contraseña/base de `DATABASE_URL` no coinciden con el `.env` de la raíz |
-| `ModuleNotFoundError` al ejecutar `uvicorn` | El entorno virtual no está activado, o `uvicorn` se ejecutó fuera de `backend/` |
-| `401` en un endpoint | Falta el header `Authorization: Bearer ...` o el token expiró |
+| `/health` responde `503` | Mira `database_status` / `oci_status`: Postgres apagado o `DATABASE_URL` incorrecta; credenciales o `.pem` de OCI inválidos o sin configurar |
+| `ConnectionRefusedError` o `password authentication failed` | Postgres no está levantado, o `DATABASE_URL` no coincide con el `.env` de la raíz |
+| `ModuleNotFoundError` al ejecutar `uvicorn` | El entorno virtual no está activado, o faltan dependencias (`pip install -r requirements-dev.txt`) |
+| `401` en un endpoint | Falta `Authorization: Bearer ...` o el token expiró (el front lo renueva solo con el refresh token) |
 | `403` en un endpoint | Tu rol no tiene permiso para ese recurso |
-| El login del usuario semilla falla, o `/catalogs/.../active` devuelve `[]` | El volumen de Postgres ya existía y `init.sql` no se ejecutó; vuelve a ejecutarlo (ver [Base de datos](#base-de-datos)) |
-| `500` con `column ... does not exist` (ej. `es_sistema`, `uploaded_by_id`, `asignado_a_id`) | Tu base es de una versión anterior: vuelve a ejecutar `init.sql` para agregar las columnas nuevas |
-| `ModuleNotFoundError: No module named 'jsonschema'` | Falta reinstalar dependencias: `pip install -r requirements-dev.txt` |
-| El puerto `5432` está ocupado al hacer `docker compose up` | Ya tienes otro PostgreSQL local corriendo; detenlo o cambia el puerto publicado en `docker-compose.yml` (y en `DATABASE_URL`) |
+| `429` en el login | Demasiados intentos fallidos: espera `LOGIN_LOCKOUT_MINUTES` |
+| El login del usuario semilla falla, o `/catalogs/.../active` devuelve `[]` | El volumen ya existía y los scripts no se ejecutaron: ver [Actualizar una base existente](#actualizar-una-base-existente) |
+| `500` con `column ... does not exist` o `relation ... does not exist` | Base de una versión anterior: vuelve a ejecutar `init.sql` |
+| El puerto `5432` está ocupado | Hay otro PostgreSQL local; detenlo o cambia el puerto en `docker-compose.yml` y en `DATABASE_URL` |

@@ -36,13 +36,15 @@ Para leer el archivo de n8n: `docker exec mediflow-n8n tail -f /home/node/.n8n/l
 Qué registra el backend:
 
 - **Una línea por petición**: método, ruta, código HTTP y duración. De la query solo van los *nombres* de
-  los parámetros (`/documents?page,rut`), nunca sus valores. Los preflight `OPTIONS` y la sonda
+  los parámetros (`/documents?page,identificacion`), nunca sus valores. Los preflight `OPTIONS` y la sonda
   `/health/live` no se registran.
 - **Seguridad**: login correcto y fallido, bloqueo por intentos (`429`), refresh rechazado (incluida la
   posible reutilización de un refresh token), cierre de sesión.
 - **Cambios**: alta, edición (qué campos) y eliminación de usuarios, áreas, tipos de documento y colas;
-  cambio de contraseña; tomar/liberar/resolver/descartar casos de auditoría.
-- **Ingesta**: inicio, motivos de auditoría, subida a OCI, compensaciones y resultado.
+  cambio de contraseña; tomar/liberar/resolver/descartar casos de auditoría; corrección de documentos (con la
+  cantidad de cambios: el detalle de cada valor queda en el historial de la base, no en el log).
+- **Ingesta**: inicio, clasificación y score, posibles duplicados (`documento_id` relacionado y si es archivo
+  idéntico o contenido similar), motivos de auditoría, subida a OCI, compensaciones y resultado.
 - **Errores no controlados**: una sola vez, con traceback. El usuario recibe `500` con el texto
   *"Error interno del servidor. Código de seguimiento: XXXX"*, el mismo ID de la línea del log.
 
@@ -80,4 +82,5 @@ Para depurar en **desarrollo** se puede activar temporalmente `EXECUTIONS_DATA_S
   elimina saltos de línea para que no se puedan falsificar líneas del log.
 - Backend: `logger = logging.getLogger(__name__)` y mensajes con `%s` (no f-strings), para que el texto
   solo se arme si el nivel está activo.
-- Frontend: `const log = createLogger('modulo')` desde `src/utils/logger.ts`, nunca `console.*` directo.
+- Frontend: `const log = createLogger('modulo')` desde `src/utils/logger.ts`, nunca `console.*` directo. Módulos
+  en uso: `api`, `auth`, `ingesta`, `auditoria`, `correccion`, `detalle-documento`, entre otros.

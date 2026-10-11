@@ -2,6 +2,24 @@
 
 Workflow: [`MediFlow_unificado.json`](MediFlow_unificado.json) (webhook `POST /webhook/triaje-medico`).
 
+Recibe el archivo desde el front, lo hace leer por **Gemini** con el catálogo vigente y envía el resultado al backend
+(`POST /documents/ingest`). n8n **no decide** el estado final: el backend normaliza, calcula el score, busca
+duplicados y aplica el triaje.
+
+**Índice:** [Cómo importar](#cómo-importar) · [Flujo](#flujo) · [Qué pasa si algo falla](#qué-pasa-si-algo-falla) ·
+[Configuración](#configuración) · [Editar el workflow](#editar-el-workflow) · [Logs](#logs-y-seguimiento) ·
+[Uso de tokens](#uso-de-tokens-por-qué-el-prompt-es-así)
+
+## Cómo importar
+
+1. n8n (<http://localhost:5678>) → **Import from file** → `MediFlow_unificado.json`. Si ya existía, importarlo
+   encima para reemplazarlo.
+2. Crear una credencial **Google Gemini(PaLM) Api** con la llave de [Google AI Studio](https://aistudio.google.com/)
+   y asignarla en los nodos **Gemini rápido** y **Gemini preciso**.
+3. **Activar** el workflow.
+
+> Cada vez que cambie `MediFlow_unificado.json` (o los archivos de `nodos/`), hay que volver a importarlo.
+
 ## Flujo
 
 ```
@@ -27,6 +45,19 @@ Webhook ─► Preparar corrida ─► GET formularios ─► GET colas activas 
    Nunca rellena con valores inventados. El **backend** normaliza, valida y calcula el score.
 6. **Formatear respuesta** devuelve al front el body del backend, o `{status: "error", etapa, detalle,
    request_id}` con el mismo código HTTP si el backend respondió error.
+
+## Qué pasa si algo falla
+
+| Situación | Resultado |
+|---|---|
+| Sin token, sin archivo, formato distinto de PDF/PNG/JPG o archivo de más de 10 MB | *Preparar corrida* corta el flujo **antes** de llamar a la IA (el front ya valida lo mismo antes de enviar) |
+| Token inválido o vencido | *GET formularios* recibe `401` y el flujo se corta: no se gasta en la IA |
+| Gemini rápido falla o devuelve un JSON inválido o cortado | Se escala a **Gemini preciso** |
+| Los dos modelos fallan | Se ingiere igual como tipo `OTRO` con `requiere_auditoria_humana`: queda **pendiente de auditoría** con el motivo |
+| El backend responde error (`400`, `409`, `422`, `500`) | *Formatear respuesta* devuelve `{status: "error", etapa, detalle, request_id}` con el mismo código; `etapa` es `AUTENTICACION` (401/403) o `INGESTA_BACKEND` |
+
+Un archivo **repetido** no es un error de n8n: el front avisa antes de enviarlo y, si el usuario lo sube igual, el
+backend lo deja en auditoría como posible duplicado.
 
 ## Configuración
 
@@ -65,15 +96,6 @@ cambio al archivo de `nodos/` para no perderlo en la próxima regeneración.
 - Detalle de cada **ejecución**: editor → *Executions* (solo las fallidas, 72 h, por los datos de pacientes).
 
 Guía completa: [`docs/LOGS.md`](../docs/LOGS.md).
-
-**Tras actualizar este archivo hay que volver a importarlo en n8n** (Import from file sobre el workflow
-existente) para que propague el ID de seguimiento.
-
-## Cómo importar
-
-1. n8n → **Import from file** → `MediFlow_unificado.json`.
-2. Asignar la credencial de Gemini en los dos nodos *Google Gemini Chat Model*.
-3. Activar el workflow.
 
 ## Uso de tokens (por qué el prompt es así)
 

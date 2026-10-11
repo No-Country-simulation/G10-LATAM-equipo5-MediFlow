@@ -3,71 +3,81 @@
 > **Hackathon ONE G10** | *Oracle Next Education & Alura*
 > **Sector:** HealthTech / Gestión Hospitalaria / Aseguradoras de Salud
 
+**Índice:** [Qué es](#-qué-es-mediflow) · [Funcionalidades](#-funcionalidades) · [Arquitectura](#-arquitectura) · [Puesta en marcha](#-puesta-en-marcha) · [Roles](#-roles-de-usuario) · [Catálogos](#️-tablas-maestras-catálogos) · [API](#-resumen-de-la-api) · [Documentación](#-documentación)
+
 ---
 
 ## 📋 ¿Qué es MediFlow?
 
-En hospitales y aseguradoras, cada día llegan cientos de documentos (informes de laboratorio, recetas, epicrisis, informes de imágenes) que hoy se leen y derivan **a mano**. Es lento y propenso a errores.
+Hospitales y aseguradoras reciben cada día cientos de documentos clínicos (laboratorios, recetas, epicrisis, informes de imágenes, licencias...) que hoy se leen y derivan **a mano**. Es lento y propenso a errores.
 
-**MediFlow** automatiza ese proceso con Inteligencia Artificial:
+**MediFlow** automatiza ese trabajo con Inteligencia Artificial:
 
 1. **Recibe** el documento (PDF o imagen).
-2. **Lo clasifica y extrae** los datos clave (paciente, médico, diagnóstico CIE-10, prioridad).
-3. **Decide a qué cola enviarlo** (por ejemplo, Urgencias, Farmacia Hospitalaria o Ficha Clínica). Los tipos de documento y las colas posibles **no están fijos en el código**: son tablas maestras que un administrador gestiona desde la API.
-4. Si la IA **no está segura** (confianza baja) o el caso lo requiere, lo deja en una **bandeja de auditoría** para que una persona lo revise y corrija (*Human-in-the-Loop*).
-5. **Guarda** los archivos originales y el resultado estructurado en **Oracle Cloud (OCI Object Storage)**, y los registra en **PostgreSQL**.
+2. **Lo clasifica y extrae** los datos clave: paciente (identificación de cualquier país y N° de ficha), profesionales, diagnósticos con CIE-10, prioridad y el detalle propio del tipo (parámetros de laboratorio, medicamentos, hallazgos...).
+3. **Calcula su confianza** y **decide a qué cola enviarlo** (Urgencias, Farmacia, Oncología, Ficha Clínica...).
+4. Si la confianza es baja o algo no calza, lo deja en una **bandeja de auditoría** para que una persona lo revise y corrija (*Human-in-the-Loop*).
+5. **Guarda** los archivos originales y el resultado en **Oracle Cloud (OCI Object Storage)** y lo registra en **PostgreSQL**.
 
-## 🎯 Objetivos
-
-1. **Ingestión multimodal:** PDFs escaneados o digitales, imágenes y JSON.
-2. **Clasificación y extracción precisa** con LLMs multimodales.
-3. **Orquestación con agentes** que evalúan confianza y severidad.
-4. **Human-in-the-Loop:** los casos dudosos van a una cola de auditoría manual.
-5. **Persistencia en la nube** usando solo la capa *Always Free* de OCI.
+Los tipos de documento, las colas y las áreas **no están fijos en el código**: son tablas maestras que se administran desde la aplicación.
 
 ---
 
-## 🧩 Arquitectura general
+## ✨ Funcionalidades
+
+| Módulo | Qué hace |
+|---|---|
+| **Ingesta con IA** | n8n envía el archivo a Gemini (modelo rápido y, si hay dudas, uno más preciso) y el backend normaliza, valida y calcula el score. |
+| **Detección de duplicados** | Antes de procesar, avisa si el mismo archivo ya se subió (huella SHA-256). Al ingerir, marca como *posible duplicado* un documento con el mismo paciente, tipo y fecha que otro. |
+| **Bandeja e Inicio** | KPIs por prioridad, carga rápida y lista de documentos. Al hacer clic en cualquier documento se abre su **detalle**: el original (URL pre-firmada) junto a los datos extraídos. |
+| **Triaje y Expedientes** | Casos activos por severidad, y repositorio en vista kanban o lista con filtros. |
+| **Auditoría (Human-in-the-Loop)** | Tomar el caso, corregir con un formulario que cambia según el tipo de documento, resolver o descartar. |
+| **Corrección posterior** | ADMIN y AUDITOR_CLINICO pueden corregir un documento ya procesado o auditado. Cada cambio queda en un **historial** (quién, cuándo, por qué y qué valor cambió). |
+| **Usuarios y catálogos** | CRUD de usuarios (cada uno con su área) y mantenedores de tipos de documento, áreas y colas, con historial y *Smart Delete*. |
+| **Seguridad y trazabilidad** | JWT con refresh token rotativo, roles, bloqueo de login tras 5 intentos y un ID de seguimiento que une los logs del navegador, n8n y el backend. |
+
+---
+
+## 🧩 Arquitectura
 
 ```mermaid
 flowchart LR
     U(["👤 Usuario"]) --> FE["🖥️ Frontend<br/>React"]
-    FE -- "1 · login (JWT)<br/>bandeja · auditoría · catálogos" --> BE["⚙️ Backend<br/>FastAPI"]
-    FE -- "2 · sube archivo + token" --> N8N["🤖 n8n<br/>workflow"]
-    N8N -- "3 · GET catálogos activos" --> BE
-    N8N -- "4 · clasifica y extrae" --> LLM["🧠 LLM<br/>Gemini"]
-    N8N -- "5 · POST /documents/ingest" --> BE
+    FE -- "1 · login (JWT) · bandeja<br/>auditoría · catálogos" --> BE["⚙️ Backend<br/>FastAPI"]
+    FE -- "2 · ¿archivo ya subido?" --> BE
+    FE -- "3 · sube archivo + token" --> N8N["🤖 n8n<br/>workflow"]
+    N8N -- "4 · formularios y colas" --> BE
+    N8N -- "5 · clasifica y extrae" --> LLM["🧠 Gemini"]
+    N8N -- "6 · POST /documents/ingest" --> BE
     BE --> DB[("🐘 PostgreSQL")]
     BE --> OCI[("☁️ OCI<br/>Object Storage")]
-    N8N -. "6 · resultado" .-> FE
+    N8N -. "7 · resultado" .-> FE
 ```
 
-1. El usuario inicia sesión en el front, que obtiene un JWT del backend.
-2. El front sube el documento al **webhook de n8n** junto con su token.
-3. n8n consulta los **catálogos activos** (tipos de documento y colas) al backend.
-4. El LLM clasifica el documento y extrae los datos, eligiendo **solo** entre las opciones del catálogo.
-5. n8n envía el resultado a `POST /documents/ingest`. El backend aplica el triaje, guarda los archivos y el JSON en **OCI** y registra todo en **PostgreSQL**.
-6. n8n devuelve al front la respuesta del backend.
+1. El usuario inicia sesión y obtiene un JWT del backend.
+2. Al elegir un archivo, el front calcula su huella y pregunta si ya existe: si es así, avisa **antes** de gastar en la IA.
+3. El front sube el documento al **webhook de n8n** junto con su token.
+4. n8n lee del backend los **tipos de documento con sus campos** y las **colas activas**.
+5. Gemini clasifica y extrae los datos eligiendo **solo** entre las opciones del catálogo. Si el modelo rápido tiene dudas, n8n repite con el preciso.
+6. n8n envía el resultado a `POST /documents/ingest`. El backend normaliza (identificación, CIE-10), calcula el score, busca duplicados, aplica el triaje, guarda en **OCI** y registra en **PostgreSQL**.
+7. n8n devuelve al front la respuesta del backend.
 
-**Regla de triaje:** el backend deja un documento en `PENDIENTE_AUDITORIA` si se cumple **cualquiera** de estas condiciones; si no se cumple ninguna, queda `PROCESADO`:
+**Regla de triaje.** El documento queda en `PENDIENTE_AUDITORIA` si se cumple **cualquiera** de estas condiciones (si no, queda `PROCESADO`):
 
-- score de confianza **menor a 0.85** (lo calcula el backend con la autoevaluación de la IA y validaciones propias: identificación, CIE-10, datos faltantes);
-- el workflow marca `requiere_auditoria_humana`;
-- el tipo es `OTRO` (no clasificable);
-- el tipo o la cola no existen (o están inactivos) en las tablas maestras;
-- `detalle_clinico` trae un bloque que no corresponde al tipo;
-- `campos_adicionales` no cumple el JSON Schema definido para el tipo en el catálogo.
+- score de confianza **menor a 0.85** (lo calcula el backend con la autoevaluación de la IA y sus propias validaciones);
+- el workflow pide auditoría humana, o el tipo es `OTRO` (no clasificable);
+- el tipo o la cola no existen o están inactivos en el catálogo;
+- el detalle no corresponde al tipo, o los campos propios del tipo no cumplen su esquema;
+- es **posible duplicado** de otro documento (archivo idéntico o mismo paciente, tipo y fecha).
 
-Los motivos se devuelven en `motivos_auditoria` y quedan guardados junto al documento.
-
-| Estado | Significado | Ruta del JSON en OCI |
+| Estado | Significado | JSON en OCI |
 |---|---|---|
 | `PROCESADO` | Enrutado automáticamente | `procesados/<prioridad>/<id>.json` |
 | `PENDIENTE_AUDITORIA` | Espera revisión humana | `auditoria_humana/<id>.json` |
-| `AUDITADO` | Corregido por un auditor | `procesados/auditados/<id>.json` |
+| `AUDITADO` | Resuelto por un auditor | `procesados/auditados/<id>.json` |
 | `DESCARTADO` | Descartado por un auditor (no clínico, duplicado, ilegible) | `descartados/<id>.json` |
 
-Los archivos originales se guardan en `recibidos/<id>/<n>.<extensión>` (un documento puede traer varios archivos; `n` es su posición: `0`, `1`, ...).
+Los archivos originales se guardan en `recibidos/<id>/<n>.<extensión>` (`n` = posición del archivo: `0`, `1`, ...). Un documento `PROCESADO` o `AUDITADO` que se corrige después **conserva su estado**: solo cambia su contenido y queda registrado en el historial.
 
 ---
 
@@ -75,77 +85,51 @@ Los archivos originales se guardan en `recibidos/<id>/<n>.<extensión>` (un docu
 
 ```
 .
-├── backend/                 # API REST en FastAPI (detalle en backend/README.md)
-├── frontend/                # Interfaz web en React + Vite (detalle en frontend/README.md)
-├── workflow/                # Workflow de n8n (MediFlow_unificado.json) y su README
-├── docker/
-│   └── postgres/            # init.sql (tablas, índices) + init_catalogo.sql (tipos y colas) + seed_dev_users.sql (solo dev)
+├── backend/                 # API REST en FastAPI            → backend/README.md
+├── frontend/                # Aplicación web React + Vite    → frontend/README.md
+├── workflow/                # Workflow de n8n y sus pruebas  → workflow/README.md
+├── docker/postgres/         # init.sql (esquema) · init_catalogo.sql (tipos y colas) · seed_dev_users.sql (solo dev)
 ├── deploy/                  # Caddyfile + imagen del front (producción)
+├── docs/                    # Despliegue en OCI, logs, QA y documento del sistema
 ├── docker-compose.yml       # Desarrollo: PostgreSQL 16 + n8n
 ├── docker-compose.prod.yml  # Producción en OCI: Caddy + front + backend + n8n + PostgreSQL
-├── .env.example             # Credenciales del contenedor de PostgreSQL (desarrollo)
-├── .env.prod.example        # Todas las variables de producción
-└── README.md                # Este archivo
+├── .env.example             # Variables de Docker para desarrollo
+└── .env.prod.example        # Variables de producción
 ```
 
-> Hay **dos archivos `.env` distintos**:
-> - `.env` en la **raíz**: solo usuario, contraseña y nombre de la base que crea Docker.
-> - `backend/.env`: configuración de la API (conexión a la base, JWT, OCI).
->
-> El usuario, la contraseña y el nombre de la base deben ser **iguales en ambos**.
+> Hay **dos archivos `.env`** en desarrollo: el de la **raíz** (usuario, contraseña y base que crea Docker) y `backend/.env` (configuración de la API). El usuario, la contraseña y el nombre de la base deben ser **iguales en ambos**.
 
 ---
 
-## 🚀 Puesta en marcha (paso a paso)
+## 🚀 Puesta en marcha
 
 ### Requisitos
 
 | Herramienta | Para qué | Cómo comprobarlo |
 |---|---|---|
-| [Docker Desktop](https://www.docker.com/products/docker-desktop/) (o Docker Engine + Compose) | Levantar PostgreSQL | `docker compose version` |
-| Python **3.11 o superior** | Ejecutar el backend | `py -0p` (Windows) o `python3 --version` (Linux/macOS) |
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) (o Docker Engine + Compose) | PostgreSQL y n8n | `docker compose version` |
+| Python **3.11 o superior** | Backend | `py -0p` (Windows) o `python3 --version` |
+| Node.js **20 o superior** | Frontend | `node --version` |
+| Llave de API de **Google Gemini** | Que n8n clasifique documentos | [aistudio.google.com](https://aistudio.google.com/) |
 | Credenciales de OCI *(opcional al inicio)* | Guardar documentos en Oracle Cloud | Ver [`backend/README.md`](backend/README.md#4-configurar-oci-opcional-para-empezar) |
 
-> Sin OCI la API **arranca igual**: funcionan el login, los usuarios y las tablas maestras. Solo fallan la ingesta de documentos y la vista previa de auditoría, y `/health` responde `503`.
+> Sin OCI la API **arranca igual**: funcionan el login, los usuarios y los catálogos. Fallan la ingesta y la vista de documentos, y `/health` responde `503`.
 
-Todos los comandos se ejecutan desde la **raíz del repositorio**, salvo que se indique otra carpeta.
+Los comandos se ejecutan desde la **raíz del repositorio**, salvo que se indique otra carpeta.
 
-### Paso 1 — Levantar la base de datos (Docker)
+### Paso 1 — Base de datos y n8n (Docker)
 
-1. Crear el `.env` de la raíz a partir del ejemplo:
+```bash
+cp .env.example .env            # Windows PowerShell: Copy-Item .env.example .env
+docker compose up -d
+docker compose ps               # postgres debe quedar "healthy"
+```
 
-   ```bash
-   cp .env.example .env          # Linux / macOS / Git Bash
-   ```
-   ```powershell
-   Copy-Item .env.example .env   # Windows PowerShell
-   ```
+La primera vez, Docker crea la base y ejecuta en orden `init.sql`, `init_catalogo.sql` y `seed_dev_users.sql`: tablas e índices, **12 áreas**, **13 tipos de documento**, **6 colas** y **un usuario de prueba por rol**.
 
-   Los valores del ejemplo sirven tal cual para desarrollo local.
+> ⚠️ Esos scripts corren **solo con el volumen vacío**. Si tu base ya existía, ver [Actualizar una base existente](#actualizar-una-base-existente).
 
-2. Levantar PostgreSQL:
-
-   ```bash
-   docker compose up -d
-   ```
-
-3. Esperar a que esté listo (la columna `STATUS` debe decir `healthy`):
-
-   ```bash
-   docker compose ps
-   ```
-
-**¿Qué pasa la primera vez?** Docker crea el volumen `postgres_data` y ejecuta automáticamente, en orden, `docker/postgres/init.sql`, `init_catalogo.sql` y `seed_dev_users.sql`, que:
-
-- crea todas las tablas e índices (usuarios, documentos clínicos y sus tablas hijas, tokens revocados, tablas maestras);
-- crea **un usuario de prueba por rol** (ver [Usuarios de prueba](#usuarios-de-prueba));
-- carga las **tablas maestras semilla**: 13 tipos de documento y 6 colas de enrutamiento.
-
-> ⚠️ `init.sql` se ejecuta **solo cuando el volumen está vacío** (primera vez). Si ya tenías la base creada de antes, no se vuelve a ejecutar solo: ver [Actualizar una base existente](#actualizar-una-base-existente).
-
-### Paso 2 — Levantar el backend
-
-Resumen (el detalle y la explicación de cada variable están en [`backend/README.md`](backend/README.md)):
+### Paso 2 — Backend
 
 ```powershell
 # Windows PowerShell
@@ -160,56 +144,59 @@ uvicorn app.main:app --reload --port 8000
 ```bash
 # Linux / macOS
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-Si no cambiaste las credenciales del `.env` de la raíz, el `backend/.env` de ejemplo ya apunta a la base correcta.
+Si no cambiaste el `.env` de la raíz, el `backend/.env` de ejemplo ya apunta a la base correcta. Swagger: <http://localhost:8000/docs>.
 
-### Paso 3 — Comprobar que todo funciona
+### Paso 3 — Workflow de n8n
 
-1. Abrir la documentación interactiva: <http://localhost:8000/docs>
-2. Iniciar sesión con el usuario de prueba:
+1. Abrir <http://localhost:5678> y crear el usuario owner.
+2. **Import from file** → `workflow/MediFlow_unificado.json`.
+3. Crear una credencial **Google Gemini(PaLM) Api** con tu llave y asignarla en los nodos **Gemini rápido** y **Gemini preciso**.
+4. Activar el workflow.
 
-   ```bash
-   curl -X POST http://localhost:8000/api/v1/auth/login \
-        -H "Content-Type: application/json" \
-        -d '{"username": "admin_user", "password": "admin123"}'
-   ```
+Detalle y variables (modelos de Gemini, URL del backend): [`workflow/README.md`](workflow/README.md).
 
-   Debe devolver un `access_token`. En Swagger (`/docs`) puedes usar el botón **Authorize** con ese mismo usuario.
+### Paso 4 — Frontend
 
-3. Consultar las colas cargadas por la semilla (reemplaza `<TOKEN>`):
+```bash
+cd frontend
+cp .env.example .env            # Windows PowerShell: Copy-Item .env.example .env
+npm install
+npm run dev                     # http://localhost:5173
+```
 
-   ```bash
-   curl http://localhost:8000/api/v1/catalogs/queues/active -H "Authorization: Bearer <TOKEN>"
-   ```
+Inicia sesión con un [usuario de prueba](#usuarios-de-prueba) y sube un documento desde **Inicio** o **Procesar Documento IA**.
 
-4. Estado general: `curl http://localhost:8000/api/v1/health` → `200` si la base y OCI responden, `503` si alguno falla (sin OCI configurado es normal ver `503`).
+### Comprobar que todo funciona
+
+| Qué | Cómo | Resultado esperado |
+|---|---|---|
+| API y dependencias | `curl http://localhost:8000/api/v1/health` | `200` si la base y OCI responden (`503` sin OCI configurado) |
+| Login | Botón **Authorize** en `/docs` con `admin_user` / `admin123` | Devuelve `access_token` y `refresh_token` |
+| Catálogos | `GET /api/v1/catalogs/queues/active` con el token | Las 6 colas semilla |
+| Flujo completo | Subir un PDF desde el front | Resumen con tipo, prioridad, destino y estado |
 
 ### Usuarios de prueba
 
-`docker/postgres/seed_dev_users.sql` crea un usuario por rol (solo en desarrollo: `docker-compose.prod.yml` no lo carga):
+Los crea `seed_dev_users.sql` (solo desarrollo; producción no lo carga):
 
-| Usuario | Contraseña | Rol |
-|---|---|---|
-| `admin_user` | `admin123` | `ADMIN` |
-| `gestor_user` | `gestor123` | `GESTOR_USUARIOS` |
-| `auditor_user` | `auditor123` | `AUDITOR_CLINICO` |
-| `operador_user` | `operador123` | `OPERADOR` |
+| Usuario | Contraseña | Rol | Área |
+|---|---|---|---|
+| `admin_user` | `admin123` | `ADMIN` | Administración y TI |
+| `gestor_user` | `gestor123` | `GESTOR_USUARIOS` | Administración y TI |
+| `auditor_user` | `auditor123` | `AUDITOR_CLINICO` | Auditoría Médica |
+| `operador_user` | `operador123` | `OPERADOR` | Admisión y Recepción |
 
-> ⚠️ Son solo para desarrollo. Desactívalos o cambia sus contraseñas, y cambia el `JWT_SECRET_KEY`, antes de cualquier despliegue real.
+> ⚠️ Cambia estas contraseñas y el `JWT_SECRET_KEY` antes de cualquier despliegue real.
 
 ### Actualizar una base existente
 
-Si tu base se creó con una versión anterior de `init.sql` (por ejemplo, antes de existir las tablas maestras), tienes dos opciones:
-
-**Opción A — conservar los datos (recomendada).** `init.sql` se puede ejecutar varias veces sin problema: solo crea lo que falta y no duplica registros.
-
-Con el contenedor levantado (`docker compose up -d`), ejecuta el script que ya está montado dentro del contenedor (usa el usuario y la base de tu `.env` de la raíz):
+`init.sql` se puede ejecutar varias veces: crea lo que falta, agrega las columnas nuevas y no duplica datos. `init_catalogo.sql` actualiza los tipos y colas semilla. Con los contenedores levantados:
 
 ```bash
 docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/init.sql
@@ -217,84 +204,87 @@ docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-en
 docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-entrypoint-initdb.d/seed_dev_users.sql
 ```
 
-Funciona igual en PowerShell, Linux y macOS. En **Git Bash** antepón `MSYS_NO_PATHCONV=1 ` al comando para que no modifique la ruta. Los mensajes `NOTICE: ... already exists, skipping` son normales.
+- En **Git Bash** antepón `MSYS_NO_PATHCONV=1 `. Los mensajes `NOTICE: ... already exists, skipping` son normales.
+- **Hazlo cada vez que actualices el código**: las versiones recientes agregan, por ejemplo, el historial de correcciones (`clinical_document_corrections`) y la huella de los archivos (`sha256`).
+- Para empezar de cero: `docker compose down -v && docker compose up -d` (⚠️ **borra todos los datos**).
 
-**Opción B — empezar de cero.** ⚠️ **Borra todos los datos** (usuarios, documentos, etc.):
-
-```bash
-docker compose down -v
-docker compose up -d
-```
-
-### Comandos útiles de la base de datos
+<details>
+<summary>Comandos útiles de Docker</summary>
 
 ```bash
-docker compose ps                  # ver estado
-docker compose logs -f postgres    # ver logs
+docker compose ps                  # estado
+docker compose logs -f postgres    # logs de la base (o n8n)
 docker compose stop                # detener (conserva los datos)
-docker compose down                # detener y eliminar el contenedor (conserva los datos)
 docker compose down -v             # detener y BORRAR los datos
 docker compose exec postgres psql -U mediflow_admin -d mediflow_db   # consola SQL
 ```
 
-Para conectarte con un cliente gráfico (DBeaver, TablePlus, pgAdmin): host `localhost`, puerto `5432`, y usuario/contraseña/base del `.env` de la raíz.
+Para un cliente gráfico (DBeaver, pgAdmin): `localhost:5432` con el usuario, contraseña y base del `.env` de la raíz.
+</details>
 
 ---
 
 ## 👥 Roles de usuario
 
-| Rol | Puede hacer |
-|---|---|
-| `ADMIN` | Todo: gestionar usuarios, ver documentos, ingestar, auditar y **administrar las tablas maestras** |
-| `GESTOR_USUARIOS` | Crear, listar y modificar usuarios |
-| `AUDITOR_CLINICO` | Subir documentos, ver la bandeja completa y tomar, resolver o descartar casos de auditoría |
-| `OPERADOR` | Subir documentos (admisión/recepción) y ver **solo los que subió** |
+| Rol | Menú | Puede hacer |
+|---|---|---|
+| `ADMIN` | Inicio · Triaje · Expedientes · Auditoría · Usuarios · Catálogos | Todo |
+| `AUDITOR_CLINICO` | Inicio · Triaje · Expedientes · Auditoría | Subir documentos, ver todos, auditar y **corregir** documentos procesados o auditados |
+| `OPERADOR` | Inicio · Triaje · Mis Documentos | Subir documentos y ver **solo los que subió** |
+| `GESTOR_USUARIOS` | Usuarios · Catálogos (solo Áreas) | Gestionar usuarios y áreas; sin acceso a documentos |
 
-Todos los usuarios autenticados pueden ver y editar su propio perfil, cambiar su contraseña y **consultar** las tablas maestras.
+Todos pueden editar su propio perfil, cambiar su contraseña y **consultar** los catálogos.
 
 ---
 
 ## 🗂️ Tablas maestras (catálogos)
 
-Definen las opciones que el workflow de IA puede elegir. n8n las lee desde la API antes de llamar al LLM, así que agregar o desactivar una opción **no requiere tocar el workflow**.
+| Maestra | Para qué | Registros semilla |
+|---|---|---|
+| **Tipos de documento** | Lo que la IA puede clasificar; cada tipo trae su descripción y sus campos a extraer | Receta · Laboratorio · Imágenes · Solicitud de Exámenes · Solicitud de Procedimiento · Epicrisis · Interconsulta · Anatomía Patológica · Protocolo Operatorio · Nota de Atención · Atención de Urgencia · Certificado / Licencia Médica · Otro |
+| **Colas de enrutamiento** | A dónde se deriva el documento | Urgencias · Farmacia Hospitalaria · Procedimientos y Exámenes · Interconsultas y Derivaciones · Oncología · Ficha Clínica (por defecto) |
+| **Áreas** | Área de cada usuario y área de origen de cada documento | 12 áreas (Admisión, Urgencias, Laboratorio, Auditoría Médica, ...) |
 
-| Maestra | Registros semilla |
-|---|---|
-| **Tipos de documento** | Receta Médica · Informe de Laboratorio · Informe de Estudio por Imágenes · Solicitud de Exámenes · Solicitud de Procedimiento · Epicrisis / Informe de Alta · Interconsulta / Derivación · Informe de Anatomía Patológica · Protocolo Operatorio · Nota de Atención Ambulatoria · Atención de Urgencia / Prehospitalaria · Certificado / Licencia Médica · Otro / No clasificable |
-| **Colas de enrutamiento** | Urgencias · Farmacia Hospitalaria · Procedimientos y Exámenes · Interconsultas y Derivaciones · Oncología · Ficha Clínica (destino por defecto) |
-
-Cada registro trae una descripción que el LLM usa para decidir; los tipos pueden definir además campos propios a extraer (`campos_extraccion`, un JSON Schema). Cada cambio queda en un historial, y `OTRO` y `Ficha_Clinica` están protegidos porque el sistema depende de ellos. Al **eliminar**, el backend aplica *Smart Delete*: si ningún documento clínico usa el registro lo borra físicamente; si alguno lo usa, solo lo desactiva para no dejar documentos huérfanos. Detalle en [`backend/README.md`](backend/README.md#tablas-maestras-catálogos).
+- n8n lee los tipos y colas **antes de cada documento**: agregar o desactivar una opción no requiere tocar el workflow.
+- Un tipo nuevo puede definir sus propios campos (`campos_extraccion`, un JSON Schema): la IA los extrae y el formulario de auditoría los muestra.
+- Cada cambio queda en un historial. `OTRO` y `Ficha_Clinica` están protegidos porque el sistema depende de ellos.
+- **Smart Delete:** si nada usa el registro se borra; si algo lo usa, solo se desactiva.
 
 ---
 
 ## 🔌 Resumen de la API
 
-Prefijo: `/api/v1`. Salvo `health`, `login` y `refresh`, todos requieren `Authorization: Bearer <token>`. El detalle está en [`backend/README.md`](backend/README.md).
+Prefijo `/api/v1`. Salvo `health`, `login` y `refresh`, todo requiere `Authorization: Bearer <token>`. Detalle completo en [`backend/README.md`](backend/README.md).
 
 | Área | Endpoints |
 |---|---|
-| Salud | `GET /health` |
+| Salud | `GET /health`, `GET /health/live` |
 | Autenticación | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me` |
-| Perfil y usuarios | `/users/me`, `/users/me/change-password`, `/users` |
-| Documentos | `POST /documents/ingest`, `GET /documents`, `GET /documents/{documento_id}` (detalle con URLs pre-firmadas e historial de correcciones), `PUT /documents/{documento_id}` (corrección de un documento PROCESADO o AUDITADO; ADMIN y AUDITOR_CLINICO), `POST /documents/duplicates/check` (¿el archivo ya fue subido? por huella SHA-256) |
-| Auditoría | `GET /audit/{documento_id}`, `POST`/`DELETE /audit/{documento_id}/claim`, `PUT /audit/{documento_id}/resolve`, `PUT /audit/{documento_id}/discard` |
-| Tablas maestras | CRUD en `/catalogs/queues`, `/catalogs/document-types` y `/catalogs/areas`, más `/active` y `/{id}/history` en cada una |
+| Perfil y usuarios | `/users/me`, `/users/me/change-password`, `/users` (CRUD) |
+| Documentos | `POST /documents/ingest` · `GET /documents` (bandeja con filtros) · `GET /documents/{id}` (detalle con URLs pre-firmadas, duplicados e historial) · `PUT /documents/{id}` (corregir) · `POST /documents/duplicates/check` (¿archivo ya subido?) |
+| Auditoría | `GET /audit/{id}`, `POST`/`DELETE /audit/{id}/claim`, `PUT /audit/{id}/resolve`, `PUT /audit/{id}/discard` |
+| Catálogos | CRUD en `/catalogs/document-types`, `/catalogs/queues` y `/catalogs/areas` (+ `/active` y `/{id}/history`), y `GET /catalogs/document-types/forms` |
 
 ---
 
 ## 📚 Documentación
 
-| Documento | Para quién |
+| Documento | Contenido |
 |---|---|
-| [`backend/README.md`](backend/README.md) | Backend: instalación, endpoints, reglas, base de datos y pruebas |
-| [`frontend/README.md`](frontend/README.md) | Frontend: stack, scripts y qué endpoints usa cada pantalla |
-| [`workflow/README.md`](workflow/README.md) | Workflow de n8n: flujo, configuración y reglas de uso de tokens |
+| [`backend/README.md`](backend/README.md) | Instalación, variables, endpoints, reglas de negocio, base de datos y pruebas |
+| [`frontend/README.md`](frontend/README.md) | Pantallas, estructura, variables y qué endpoint usa cada pantalla |
+| [`workflow/README.md`](workflow/README.md) | Flujo de n8n, configuración, edición y uso de tokens |
 | [`docs/DESPLIEGUE_OCI.md`](docs/DESPLIEGUE_OCI.md) | Despliegue en Oracle Cloud y checklist de seguridad |
-| [`docs/LOGS.md`](docs/LOGS.md) | Dónde están los logs (front, n8n, backend) y cómo seguir una operación con el ID de seguimiento |
-| Swagger (`/docs` con la API levantada, solo fuera de producción) | Probar los endpoints y ver los esquemas exactos |
+| [`docs/LOGS.md`](docs/LOGS.md) | Dónde están los logs y cómo seguir una operación con el ID de seguimiento |
+| [`docs/qa/`](docs/qa) | Plan de pruebas, casos de prueba y datos de prueba |
+| `docs/Documento Sistema Mediflow.docx` | Documento funcional y técnico completo, con diagramas |
+| Swagger (`/docs`, solo fuera de producción) | Probar los endpoints y ver los esquemas exactos |
 
 ---
 
 ## 🛠️ Tecnologías
 
-FastAPI · Python 3.11+ · PostgreSQL 16 · SQLAlchemy 2.0 (async) · Pydantic v2 · JWT · Oracle Cloud Infrastructure (Object Storage) · Docker Compose · n8n (workflow de IA) · React 19 + Vite + Tailwind CSS (frontend)
+**Backend:** FastAPI · Python 3.11+ · SQLAlchemy 2.0 async · Pydantic v2 · JWT · PostgreSQL 16 · OCI Object Storage
+**Frontend:** React 19 · TypeScript · Vite · Tailwind CSS v4 · Lucide
+**IA y orquestación:** n8n · Google Gemini (modelo rápido + preciso)
+**Infraestructura:** Docker Compose · Caddy (HTTPS) · Oracle Cloud Always Free
