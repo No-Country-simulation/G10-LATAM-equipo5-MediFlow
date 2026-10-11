@@ -2,6 +2,8 @@ import { FileText, Cloud, ArrowUpRight } from 'lucide-react';
 import type { TriageDocument } from '../../types/triage';
 import PriorityBadge from '../common/PriorityBadge';
 import { SCORE_CONFIANZA_THRESHOLD } from '../../types/medical';
+import { formatIdentificacion } from '../../utils/identificacion';
+import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clickableCard';
 
 interface TriageDocumentListProps {
   documents: TriageDocument[];
@@ -28,8 +30,8 @@ const TriageDocumentList = ({ documents, onSelectDocument }: TriageDocumentListP
         return (
           <div
             key={doc.documento_id}
-            onClick={() => onSelectDocument?.(doc)}
-            className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition-all space-y-3 cursor-pointer group"
+            {...tarjetaClickeable(() => onSelectDocument?.(doc), `Ver detalle del documento ${doc.documento_id}`)}
+            className={`${TARJETA_CLICKEABLE_CLASES} p-4 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition-all space-y-3 group`}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -60,7 +62,8 @@ const TriageDocumentList = ({ documents, onSelectDocument }: TriageDocumentListP
                   {doc.datos_extraidos.paciente.nombre} ({doc.datos_extraidos.paciente.edad} años)
                 </div>
                 <div className="text-slate-400 text-[11px]">
-                  RUT: {doc.datos_extraidos.paciente.rut || 'N/A'} • {doc.datos_extraidos.medico_solicitante?.nombre}
+                  {formatIdentificacion(doc.datos_extraidos.paciente.identificacion, doc.datos_extraidos.paciente.tipo_identificacion)}
+                  {doc.datos_extraidos.profesional?.nombre ? ` • ${doc.datos_extraidos.profesional.nombre}` : ''}
                 </div>
               </div>
 

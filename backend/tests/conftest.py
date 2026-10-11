@@ -11,7 +11,7 @@ os.environ["OCI_BUCKET_NAME"] = "test-bucket"
 
 import base64  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
-from uuid import uuid4  # noqa: E402
+from uuid import UUID, uuid4  # noqa: E402
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
@@ -21,6 +21,7 @@ from app.core.security import create_access_token, get_password_hash  # noqa: E4
 from app.features.auth import dependencies as auth_dependencies  # noqa: E402
 from app.features.auth.enums import UserRole  # noqa: E402
 from app.features.auth.models import User  # noqa: E402
+from app.features.catalogs.models import Area  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -124,6 +125,7 @@ def oci(monkeypatch) -> FakeOCI:
     fake = FakeOCI()
     monkeypatch.setattr("app.features.documents.service.oci_storage_client", fake)
     monkeypatch.setattr("app.features.audit.service.oci_storage_client", fake)
+    monkeypatch.setattr("app.features.documents.detail.oci_storage_client", fake)
     return fake
 
 
@@ -136,15 +138,37 @@ async def client(db):
     app.dependency_overrides.clear()
 
 
-def make_user(role: UserRole, username: str = "tester", active: bool = True) -> User:
+def make_area(codigo: str = "ADMISION", nombre: str = "Admisión y Recepción", **overrides) -> Area:
+    fields = {
+        "id": uuid4(),
+        "codigo": codigo,
+        "nombre": nombre,
+        "descripcion": None,
+        "is_active": True,
+        "es_sistema": False,
+        "created_at": datetime.now(timezone.utc),
+    }
+    fields.update(overrides)
+    return Area(**fields)
+
+
+def make_user(
+    role: UserRole,
+    username: str = "tester",
+    active: bool = True,
+    area: Area | None = None,
+    id: UUID | None = None,  # noqa: A002 - mismo nombre que la columna
+) -> User:
     return User(
-        id=uuid4(),
+        id=id or uuid4(),
         username=username,
         email=f"{username}@mediflow.cl",
         hashed_password=get_password_hash("password123"),
         full_name="Usuario de Prueba",
         role=role,
         is_active=active,
+        area=area,
+        area_id=area.id if area else None,
         created_at=datetime.now(timezone.utc),
     )
 
@@ -208,14 +232,25 @@ def ingest_body(
             "score_confianza_clasificacion": score,
         },
         "datos_generales": {
-            "paciente": {"nombre": "Carlos Mendes", "edad": 52, "rut": "12.345.678-9"},
-            "medico_solicitante": {
-                "nombre": "Dra. Silveira",
-                "rut": "9.876.543-2",
-                "matricula": "MED-4321",
+            "paciente": {
+                "nombre": "Carlos Mendes",
+                "edad": 52,
+                "identificacion": {"tipo": "RUT", "numero": "12.345.678-5", "pais": "CL"},
+                "numero_ficha": "43805",
             },
-            "diagnostico_principal": "TEP Agudo",
-            "cie10_sugerido": "I26.9",
+            "profesionales": [
+                {
+                    "nombre": "Dra. Silveira",
+                    "identificacion": "9.876.543-2",
+                    "registro_profesional": "MED-4321",
+                    "rol": "SOLICITANTE",
+                }
+            ],
+            "institucion_emisora": "Hospital Demo",
+            "fecha_documento": "2026-03-10",
+            "diagnosticos": [
+                {"descripcion": "TEP Agudo", "cie10": "I26.9", "tipo": "PRINCIPAL", "certeza": "CONFIRMADO"}
+            ],
         },
         "detalle_clinico": {
             "examenes_y_laboratorio": {

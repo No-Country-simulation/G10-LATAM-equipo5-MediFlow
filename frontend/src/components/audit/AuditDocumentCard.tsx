@@ -1,6 +1,8 @@
-import { FileText, User, Stethoscope, AlertTriangle, ArrowRight } from 'lucide-react';
+import { FileText, User, Stethoscope, AlertTriangle, ArrowRight, Eye } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import PriorityBadge from '../common/PriorityBadge';
+import { formatIdentificacion } from '../../utils/identificacion';
+import { useDocumentDetailModal } from '../../context/documentDetailContext';
 
 interface AuditDocumentCardProps {
   doc: DocumentListItemResponse;
@@ -24,6 +26,7 @@ function formatDate(dateStr: string | null | undefined): string {
 const AuditDocumentCard = ({ doc, onReview, isClaiming }: AuditDocumentCardProps) => {
   const formattedDate = formatDate(doc.created_at);
   const diagnosis = doc.diagnostico_principal || 'Diagnóstico preliminar en evaluación clínica';
+  const { abrirDocumento } = useDocumentDetailModal();
 
   return (
     <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition-all space-y-3.5">
@@ -61,7 +64,7 @@ const AuditDocumentCard = ({ doc, onReview, isClaiming }: AuditDocumentCardProps
             {doc.nombre_paciente ?? 'Paciente No Identificado'}
           </div>
           <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-            RUT: {doc.rut_paciente ?? 'Sin RUT'}
+            {formatIdentificacion(doc.identificacion_paciente, doc.tipo_identificacion)}
           </div>
         </div>
 
@@ -80,15 +83,25 @@ const AuditDocumentCard = ({ doc, onReview, isClaiming }: AuditDocumentCardProps
         <span className="text-[11px] text-slate-500 font-mono">
           Confianza: {Math.round(doc.score_confianza * 100)}%
         </span>
-        <button
-          type="button"
-          onClick={() => onReview?.(doc)}
-          disabled={isClaiming}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer hover:border-amber-500/50 disabled:opacity-50 disabled:cursor-wait"
-        >
-          <span>{isClaiming ? 'Tomando caso...' : 'Revisar'}</span>
-          {isClaiming ? null : <ArrowRight className="w-3.5 h-3.5" />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => abrirDocumento(doc.documento_id)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700/60 text-xs font-semibold transition-all cursor-pointer"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>Ver detalle</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onReview?.(doc)}
+            disabled={isClaiming}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer hover:border-amber-500/50 disabled:opacity-50 disabled:cursor-wait"
+          >
+            <span>{isClaiming ? 'Tomando caso...' : 'Revisar'}</span>
+            {isClaiming ? null : <ArrowRight className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
     </div>
   );

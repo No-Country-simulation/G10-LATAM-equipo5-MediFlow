@@ -7,11 +7,21 @@ from typing import ClassVar, Optional
 from uuid import uuid4
 
 import oci
-from oci.exceptions import ConfigFileNotFound, InvalidConfig, ServiceError
+from oci.exceptions import (
+    BaseRequestException,
+    ClientError,
+    ConfigFileNotFound,
+    InvalidConfig,
+    ServiceError,
+)
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Errores que puede lanzar el SDK de OCI: respuesta de error del servicio, configuración o
+# credenciales inválidas, y fallos de red (timeouts, conexión rechazada).
+STORAGE_ERRORS: tuple[type[Exception], ...] = (ServiceError, ClientError, BaseRequestException)
 
 
 class OCIStorageClient:

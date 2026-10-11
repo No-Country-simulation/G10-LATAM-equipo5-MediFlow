@@ -5,6 +5,8 @@ import binascii
 import json
 import logging
 import math
+import operator
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -19,21 +21,37 @@ from sqlalchemy.orm import noload
 from app.core.config import settings
 from app.features.auth.models import User
 from app.features.catalogs.models import DocumentType, RoutingQueue
+from app.features.documents.forms import BLOQUE_CAMPOS_ADICIONALES, BLOQUE_POR_TIPO
+from app.features.documents.duplicates import detectar_duplicados, huella, motivos_de_duplicados
 from app.features.documents.models import (
     ClinicalDocument,
     ClinicalDocumentAttachment,
+    ClinicalDocumentDiagnosis,
     ClinicalDocumentMedication,
     ClinicalDocumentProcedure,
+    ClinicalDocumentProfessional,
+    ClinicalDocumentRequestedExam,
     LabPanel,
     LabParameter,
 )
+from app.features.documents.normalization import (
+    normalizar_cie10,
+    normalizar_identificacion,
+    normalizar_pais,
+)
 from app.features.documents.schemas import (
+    LISTAS_COMUNES,
     ArchivoAdjunto,
+    DatosGeneralesExtract,
     DetalleClinicoExtract,
+    DiagnosticoExtract,
+    ExamenSolicitadoItem,
     IngestPayload,
     MedicamentoItem,
     PanelLaboratorio,
+    ProfesionalExtract,
 )
+from app.features.documents.scoring import HallazgosCalidad, ResultadoScore, calcular_score
 from app.shared.oci_client import oci_storage_client
 
 logger = logging.getLogger(__name__)
@@ -41,7 +59,6 @@ logger = logging.getLogger(__name__)
 SCORE_CONFIANZA_THRESHOLD = 0.85
 
 TIPO_NO_CLASIFICABLE = "OTRO"
-BLOQUE_CAMPOS_ADICIONALES = "campos_adicionales"
 
 # (extensión, content-type) con que se guarda cada `tipo_archivo` en OCI.
 _FORMATO_POR_TIPO_ARCHIVO = {
@@ -50,21 +67,6 @@ _FORMATO_POR_TIPO_ARCHIVO = {
     "JPG": ("jpg", "image/jpeg"),
     "TIFF": ("tiff", "image/tiff"),
     "DCM": ("dcm", "application/dicom"),
-}
-
-# Bloque de `detalle_clinico` que corresponde a cada `codigo` de tipo semilla. Un tipo que no
-# está aquí (OTRO o uno creado desde el mantenedor) no lleva bloque fijo. Además, cualquier tipo
-# con `campos_extraccion` en el catálogo admite el bloque genérico `campos_adicionales`.
-BLOQUE_POR_TIPO = {
-    "RECETA": "medicamentos",
-    "LABORATORIO": "examenes_y_laboratorio",
-    "IMAGENES": "informe_imagenologico",
-    "SOLICITUD_PROCEDIMIENTO": "solicitud_procedimiento",
-    "EPICRISIS": "procedimientos_e_internacion",
-    "INTERCONSULTA": "interconsulta",
-    "ANATOMIA_PATOLOGICA": "anatomia_patologica",
-    "PROTOCOLO_OPERATORIO": "protocolo_operatorio",
-    "NOTA_ATENCION": "nota_atencion_ambulatoria",
 }
 
 
@@ -80,25 +82,128 @@ class DocumentAlreadyExistsError(RuntimeError):
     """El `documento_id` ya fue ingresado: n8n debe generar uno nuevo por cada subida."""
 
 
+@dataclass
+class ExtraccionPreparada:
+    """Payload normalizado más el resultado de las validaciones y del cálculo del score."""
+
+    payload: IngestPayload
+    score: ResultadoScore
+    nivel_prioridad: str
+    ajustes: list[str] = field(default_factory=list)
+
+
+def _normalizar_identificacion(datos: DatosGeneralesExtract) -> str | None:
+    """Normaliza la identificación del paciente; retorna el problema de validación, si lo hay."""
+    identificacion = datos.paciente.identificacion
+    if identificacion is None:
+        return None
+    normalizada = normalizar_identificacion(identificacion.tipo, identificacion.numero)
+    identificacion.pais = normalizar_pais(identificacion.pais)
+    if normalizada is None:
+        datos.paciente.identificacion = None
+        return None
+    identificacion.tipo, identificacion.numero = normalizada.tipo, normalizada.numero
+    if normalizada.valida is False:
+        return f"Identificación {normalizada.tipo} con formato o dígito verificador inválido"
+    return None
+
+
+def _normalizar_diagnosticos(datos: DatosGeneralesExtract) -> int:
+    """CIE-10 en formato canónico (descarta los inválidos) y un único diagnóstico PRINCIPAL.
+
+    Retorna cuántos códigos se descartaron por formato inválido.
+    """
+    diagnosticos = [d for d in datos.diagnosticos if d.descripcion or d.cie10]
+    descartados = 0
+    for diagnostico in diagnosticos:
+        codigo = normalizar_cie10(diagnostico.cie10)
+        if diagnostico.cie10 and codigo is None:
+            descartados += 1
+        diagnostico.cie10 = codigo
+        if codigo is None:
+            diagnostico.origen_cie10 = None
+        elif diagnostico.origen_cie10 is None:
+            diagnostico.origen_cie10 = "INFERIDO"
+
+    datos.diagnosticos = diagnosticos
+    principal = datos.diagnostico_principal
+    for diagnostico in diagnosticos:
+        diagnostico.tipo = "PRINCIPAL" if diagnostico is principal else "SECUNDARIO"
+    return descartados
+
+
+def normalizar_datos_generales(datos: DatosGeneralesExtract) -> tuple[str | None, int]:
+    """Normaliza en el lugar identificación, país, CIE-10 y diagnóstico principal.
+
+    Retorna (problema de la identificación o `None`, cantidad de CIE-10 inválidos descartados).
+    Lo usan la ingesta (baja el score) y la auditoría (responde 422).
+    """
+    return _normalizar_identificacion(datos), _normalizar_diagnosticos(datos)
+
+
+def _parametros_criticos(detalle: DetalleClinicoExtract) -> list[str]:
+    lab = detalle.examenes_y_laboratorio
+    if lab is None:
+        return []
+    return [p.nombre or "(sin nombre)" for panel in lab.paneles for p in panel.parametros if p.critico]
+
+
+def preparar_extraccion(payload: IngestPayload) -> ExtraccionPreparada:
+    """Normaliza el payload del LLM, valida su contenido y calcula el puntaje de confianza.
+
+    El payload original no se modifica: se trabaja sobre una copia, que es la que se persiste.
+    Un valor crítico de laboratorio eleva la prioridad a Urgente aunque el LLM no lo haya hecho.
+    """
+    normalizado = payload.model_copy(deep=True)
+    problema_identificacion, cie10_descartados = normalizar_datos_generales(normalizado.datos_generales)
+
+    paciente = normalizado.datos_generales.paciente
+    hallazgos = HallazgosCalidad(
+        tiene_nombre=bool(paciente.nombre),
+        tiene_identificacion=bool(
+            (paciente.identificacion and paciente.identificacion.numero) or paciente.numero_ficha
+        ),
+        identificacion_invalida=problema_identificacion,
+        cie10_descartados=cie10_descartados,
+    )
+    resultado = calcular_score(
+        normalizado.clasificacion.tipo_documento,
+        normalizado.evaluacion,
+        normalizado.clasificacion.score_confianza_clasificacion,
+        normalizado.detalle_clinico,
+        hallazgos,
+    )
+
+    nivel = normalizado.clasificacion.nivel_prioridad
+    ajustes: list[str] = []
+    criticos = _parametros_criticos(normalizado.detalle_clinico)
+    if criticos and nivel != "Urgente":
+        nivel = "Urgente"
+        ajustes.append(f"Prioridad elevada a Urgente por valor crítico en: {', '.join(criticos[:5])}")
+    normalizado.clasificacion.nivel_prioridad = nivel
+    return ExtraccionPreparada(normalizado, resultado, nivel, ajustes)
+
+
 def _audit_reasons(
-    payload: IngestPayload,
+    preparada: ExtraccionPreparada,
     tipos_activos: dict[str, dict[str, Any] | None],
     colas_activas: set[str],
 ) -> list[str]:
     """Reúne los motivos por los que el documento debe pasar por auditoría humana (vacío si ninguno).
 
     `tipos_activos` mapea cada `codigo` activo a su `campos_extraccion` (JSON Schema o `None`).
+    Si el score no alcanza el umbral, se agregan también los motivos de cada descuento.
     """
-    clasificacion = payload.clasificacion
-    tipo = clasificacion.tipo_documento
+    payload = preparada.payload
+    tipo = payload.clasificacion.tipo_documento
     destino = payload.decision_enrutamiento.destino_principal
     motivos: list[str] = []
 
-    if clasificacion.score_confianza_clasificacion < SCORE_CONFIANZA_THRESHOLD:
+    if preparada.score.score < SCORE_CONFIANZA_THRESHOLD:
         motivos.append(
-            f"Score de confianza {clasificacion.score_confianza_clasificacion} menor al umbral "
-            f"{SCORE_CONFIANZA_THRESHOLD}"
+            f"Score de confianza {preparada.score.score} menor al umbral {SCORE_CONFIANZA_THRESHOLD}"
         )
+        motivos.extend(preparada.score.motivos)
     if payload.decision_enrutamiento.requiere_auditoria_humana:
         motivos.append("El workflow solicitó auditoría humana")
     if tipo == TIPO_NO_CLASIFICABLE:
@@ -120,9 +225,10 @@ def detalle_reasons(
     Lo usan la ingesta (manda a auditoría) y la resolución de auditoría (responde 422).
     """
     problemas: list[str] = []
-    permitidos = [b for b in (BLOQUE_POR_TIPO.get(tipo),) if b]
+    propios = [b for b in (BLOQUE_POR_TIPO.get(tipo),) if b]
     if esquema is not None:
-        permitidos.append(BLOQUE_CAMPOS_ADICIONALES)
+        propios.append(BLOQUE_CAMPOS_ADICIONALES)
+    permitidos = [*LISTAS_COMUNES, *propios]
     bloques = [
         nombre for nombre in type(detalle).model_fields if getattr(detalle, nombre) is not None
     ]
@@ -130,7 +236,7 @@ def detalle_reasons(
     if inesperados:
         problemas.append(
             f"detalle_clinico trae {inesperados} pero el tipo '{tipo}' espera "
-            f"{permitidos or 'ningún bloque'}"
+            f"{propios or 'ningún bloque propio'}"
         )
 
     if esquema is not None and detalle.campos_adicionales is not None:
@@ -149,15 +255,13 @@ def detalle_reasons(
 
 
 def _resolve_routing(
-    payload: IngestPayload, motivos_auditoria: list[str]
+    preparada: ExtraccionPreparada, motivos_auditoria: list[str]
 ) -> tuple[str, str, bool]:
     """Aplica la regla de triaje y retorna (estado, ruta_json_oci, requiere_auditoria)."""
-    documento_id = payload.documento_id
+    documento_id = preparada.payload.documento_id
     if motivos_auditoria:
         return "PENDIENTE_AUDITORIA", f"auditoria_humana/{documento_id}.json", True
-
-    nivel = payload.clasificacion.nivel_prioridad.lower()
-    return "PROCESADO", f"procesados/{nivel}/{documento_id}.json", False
+    return "PROCESADO", f"procesados/{preparada.nivel_prioridad.lower()}/{documento_id}.json", False
 
 
 async def active_document_types(db: AsyncSession) -> dict[str, dict[str, Any] | None]:
@@ -187,7 +291,7 @@ async def _compensate_uploads(object_names: list[str]) -> None:
 
 
 def _build_attachments(
-    archivos: list[ArchivoAdjunto], binary_paths: list[str]
+    archivos: list[ArchivoAdjunto], binary_paths: list[str], huellas: list[str]
 ) -> list[ClinicalDocumentAttachment]:
     """Construye una fila de adjunto por cada archivo del payload, en el orden recibido."""
     return [
@@ -196,29 +300,35 @@ def _build_attachments(
             oci_path=oci_path,
             rol=archivo.rol,
             orden=orden,
+            sha256=sha256,
         )
-        for orden, (archivo, oci_path) in enumerate(zip(archivos, binary_paths, strict=True))
+        for orden, (archivo, oci_path, sha256) in enumerate(zip(archivos, binary_paths, huellas, strict=True))
     ]
 
 
 def _build_medications(items: list[MedicamentoItem]) -> list[ClinicalDocumentMedication]:
-    """Construye las filas de medicamentos de una Receta (lista vacía si no aplica)."""
+    """Filas de medicamentos (de cualquier tipo de documento); se omiten los que no traen nombre."""
     return [
         ClinicalDocumentMedication(
             nombre=item.nombre,
             dosis=item.dosis,
+            frecuencia=item.frecuencia,
+            via=item.via,
             duracion_tratamiento=item.duracion_tratamiento,
+            cantidad=item.cantidad,
+            tipo=item.tipo,
             orden=orden,
         )
-        for orden, item in enumerate(items)
+        for orden, item in enumerate(i for i in items if i.nombre)
     ]
 
 
 def _build_lab_panels(paneles: list[PanelLaboratorio]) -> list[LabPanel]:
-    """Construye los paneles (y sus parámetros anidados) de un Informe de Laboratorio."""
+    """Paneles (y sus parámetros) de un informe de laboratorio; se omiten filas sin nombre."""
     return [
         LabPanel(
-            nombre_panel=panel.nombre_panel,
+            nombre_panel=panel.nombre_panel or "Resultados",
+            muestra=panel.muestra,
             orden=panel_orden,
             parametros=[
                 LabParameter(
@@ -227,13 +337,86 @@ def _build_lab_panels(paneles: list[PanelLaboratorio]) -> list[LabPanel]:
                     unidad=parametro.unidad,
                     rango_referencia=parametro.rango_referencia,
                     alterado=parametro.alterado,
+                    critico=parametro.critico,
                     orden=parametro_orden,
                 )
-                for parametro_orden, parametro in enumerate(panel.parametros)
+                for parametro_orden, parametro in enumerate(p for p in panel.parametros if p.nombre)
             ],
         )
         for panel_orden, panel in enumerate(paneles)
     ]
+
+
+def _build_requested_exams(items: list[ExamenSolicitadoItem]) -> list[ClinicalDocumentRequestedExam]:
+    return [
+        ClinicalDocumentRequestedExam(codigo=item.codigo, nombre=item.nombre, categoria=item.categoria, orden=orden)
+        for orden, item in enumerate(i for i in items if i.nombre)
+    ]
+
+
+def _build_diagnoses(items: list[DiagnosticoExtract]) -> list[ClinicalDocumentDiagnosis]:
+    return [
+        ClinicalDocumentDiagnosis(
+            descripcion=item.descripcion,
+            cie10=item.cie10,
+            tipo=item.tipo,
+            certeza=item.certeza,
+            origen_cie10=item.origen_cie10,
+            orden=orden,
+        )
+        for orden, item in enumerate(items)
+    ]
+
+
+def _build_professionals(items: list[ProfesionalExtract]) -> list[ClinicalDocumentProfessional]:
+    return [
+        ClinicalDocumentProfessional(
+            nombre=item.nombre,
+            identificacion=item.identificacion,
+            registro_profesional=item.registro_profesional,
+            especialidad=item.especialidad,
+            rol=item.rol,
+            orden=orden,
+        )
+        for orden, item in enumerate(i for i in items if i.nombre)
+    ]
+
+
+# Quién es "el médico" del documento para la bandeja: quien lo informa o firma antes que quien
+# lo pidió; el destinatario de una derivación, solo si no hay otro.
+_PRIORIDAD_ROL = {"INFORMANTE": 0, "TRATANTE": 1, "SOLICITANTE": 2, "OTRO": 3, "DESTINATARIO": 4}
+
+
+def profesional_responsable(profesionales: list[ProfesionalExtract]) -> ProfesionalExtract | None:
+    """Profesional que se muestra como responsable del documento."""
+    con_nombre = [p for p in profesionales if p.nombre]
+    return min(con_nombre, key=lambda p: _PRIORIDAD_ROL.get(p.rol, 3), default=None)
+
+
+def apply_general_data(document: ClinicalDocument, datos: DatosGeneralesExtract) -> None:
+    """Copia los datos generales a las columnas y (re)genera diagnósticos y profesionales."""
+    paciente = datos.paciente
+    identificacion = paciente.identificacion
+    principal = datos.diagnostico_principal
+    responsable = profesional_responsable(datos.profesionales)
+
+    document.identificacion_paciente = identificacion.numero if identificacion else None
+    document.tipo_identificacion = identificacion.tipo if identificacion and identificacion.numero else None
+    document.pais_identificacion = identificacion.pais if identificacion else None
+    document.nombre_paciente = paciente.nombre
+    document.edad_paciente = paciente.edad
+    document.fecha_nacimiento = paciente.fecha_nacimiento
+    document.sexo = paciente.sexo
+    document.numero_ficha = paciente.numero_ficha
+    document.medico_nombre = responsable.nombre if responsable else None
+    document.medico_identificacion = responsable.identificacion if responsable else None
+    document.institucion_emisora = datos.institucion_emisora
+    document.fecha_documento = datos.fecha_documento
+    document.diagnostico_principal = principal.descripcion if principal else None
+    document.cie10_sugerido = principal.cie10 if principal else None
+    document.cie10_origen = principal.origen_cie10 if principal else None
+    document.diagnoses = _build_diagnoses(datos.diagnosticos)
+    document.professionals = _build_professionals(datos.profesionales)
 
 
 def _build_procedures(descripciones: list[str]) -> list[ClinicalDocumentProcedure]:
@@ -253,6 +436,7 @@ def apply_clinical_detail(document: ClinicalDocument, detalle: DetalleClinicoExt
     examenes = detalle.examenes_y_laboratorio
     internacion = detalle.procedimientos_e_internacion
     document.medications = _build_medications(detalle.medicamentos or [])
+    document.requested_exams = _build_requested_exams(detalle.examenes_solicitados or [])
     document.lab_panels = _build_lab_panels(examenes.paneles if examenes else [])
     document.procedures = _build_procedures(
         internacion.procedimientos_realizados if internacion else []
@@ -277,6 +461,7 @@ async def ingest_document(
     except (binascii.Error, ValueError) as exc:
         logger.error("archivo_base64 inválido para el documento %s", payload.documento_id)
         raise InvalidBase64Error("El campo archivo_base64 no contiene un base64 válido") from exc
+    huellas = [huella(contenido) for _, contenido in decoded_archivos]
 
     try:
         result = await db.execute(
@@ -298,8 +483,40 @@ async def ingest_document(
             f"El documento {payload.documento_id} ya fue ingresado (estado {estado_existente})"
         )
 
-    motivos_auditoria = _audit_reasons(payload, tipos_activos, colas_activas)
-    estado, json_path, requiere_auditoria = _resolve_routing(payload, motivos_auditoria)
+    preparada = preparar_extraccion(payload)
+    normalizado = preparada.payload
+    try:
+        duplicados = await detectar_duplicados(
+            db,
+            documento_id=payload.documento_id,
+            huellas=huellas,
+            datos=normalizado.datos_generales,
+            tipo_documento=normalizado.clasificacion.tipo_documento,
+        )
+    except SQLAlchemyError as exc:
+        logger.exception("Fallo al buscar duplicados de %s", payload.documento_id)
+        raise DocumentIngestionError("No fue posible consultar la base de datos") from exc
+    if duplicados:
+        logger.info(
+            "Documento %s: posibles duplicados %s",
+            payload.documento_id,
+            [f"{d.documento_id} ({d.tipo})" for d in duplicados],
+        )
+    # Un posible duplicado va a auditoría: una persona decide si se descarta.
+    motivos_auditoria = [
+        *_audit_reasons(preparada, tipos_activos, colas_activas),
+        *motivos_de_duplicados(duplicados),
+    ]
+    estado, json_path, requiere_auditoria = _resolve_routing(preparada, motivos_auditoria)
+    logger.info(
+        "Documento %s clasificado como %s (score %s, prioridad %s)",
+        payload.documento_id,
+        normalizado.clasificacion.tipo_documento,
+        preparada.score.score,
+        preparada.nivel_prioridad,
+    )
+    for ajuste in preparada.ajustes:
+        logger.info("Documento %s: %s", payload.documento_id, ajuste)
     if motivos_auditoria:
         logger.info("Documento %s a auditoría: %s", payload.documento_id, motivos_auditoria)
 
@@ -320,16 +537,22 @@ async def ingest_document(
 
         # Los binarios ya están en OCI: el JSON solo los referencia por ruta, sin el base64
         # (si no, cada archivo quedaría triplicado en OCI y en `raw_extracted_json`).
-        extraction_payload = payload.model_dump(mode="json", exclude={"archivos"})
+        extraction_payload = normalizado.model_dump(mode="json", exclude={"archivos"})
         extraction_payload["archivos"] = [
             {"tipo_archivo": archivo.tipo_archivo, "rol": archivo.rol, "ruta_oci": path}
             for archivo, path in zip(payload.archivos, binary_paths, strict=True)
         ]
         extraction_payload["triaje"] = {
             "estado": estado,
+            "score_confianza": preparada.score.score,
+            "score_ia": payload.clasificacion.score_confianza_clasificacion,
+            "score_detalle": preparada.score.motivos,
+            "ajustes": preparada.ajustes,
             "motivos_auditoria": motivos_auditoria,
+            "duplicados": [d.model_dump() for d in duplicados],
             "uploaded_by_id": str(uploaded_by.id) if uploaded_by else None,
             "uploaded_by_username": uploaded_by.username if uploaded_by else None,
+            "area_origen_codigo": uploaded_by.area.codigo if uploaded_by and uploaded_by.area else None,
         }
         extraction_json = json.dumps(extraction_payload, ensure_ascii=False).encode("utf-8")
         await oci_storage_client.upload_object(
@@ -346,23 +569,17 @@ async def ingest_document(
 
     document_fields = {
         "estado": estado,
-        "rut_paciente": payload.datos_generales.paciente.rut,
-        "nombre_paciente": payload.datos_generales.paciente.nombre,
-        "edad_paciente": payload.datos_generales.paciente.edad,
-        "medico_nombre": payload.datos_generales.medico_solicitante.nombre,
-        "medico_rut": payload.datos_generales.medico_solicitante.rut,
-        "tipo_documento": payload.clasificacion.tipo_documento,
-        "especialidad": payload.clasificacion.especialidad,
-        "nivel_prioridad": payload.clasificacion.nivel_prioridad,
-        "score_confianza": Decimal(str(payload.clasificacion.score_confianza_clasificacion)),
+        "tipo_documento": normalizado.clasificacion.tipo_documento,
+        "especialidad": normalizado.clasificacion.especialidad,
+        "nivel_prioridad": preparada.nivel_prioridad,
+        "score_confianza": Decimal(str(preparada.score.score)),
         "requiere_auditoria": requiere_auditoria,
-        "diagnostico_principal": payload.datos_generales.diagnostico_principal,
-        "cie10_sugerido": payload.datos_generales.cie10_sugerido,
-        "destino_enrutamiento": payload.decision_enrutamiento.destino_principal,
-        "justificacion_enrutamiento": payload.decision_enrutamiento.justificacion_enrutamiento,
+        "destino_enrutamiento": normalizado.decision_enrutamiento.destino_principal,
+        "justificacion_enrutamiento": normalizado.decision_enrutamiento.justificacion_enrutamiento,
         "oci_bucket_name": settings.OCI_BUCKET_NAME,
         "oci_json_path": json_path,
         "uploaded_by_id": uploaded_by.id if uploaded_by else None,
+        "area_origen_id": uploaded_by.area_id if uploaded_by else None,
         # Persistimos el payload íntegro (incluye el texto libre de `detalle_clinico`, ej.
         # hallazgos de imagenología o evolución de una epicrisis) para no perder información
         # clínica que no tiene columna ni tabla relacional propia.
@@ -372,8 +589,9 @@ async def ingest_document(
     try:
         document = ClinicalDocument(documento_id=payload.documento_id, **document_fields)
         db.add(document)
-        document.attachments = _build_attachments(payload.archivos, binary_paths)
-        apply_clinical_detail(document, payload.detalle_clinico)
+        document.attachments = _build_attachments(payload.archivos, binary_paths, huellas)
+        apply_general_data(document, normalizado.datos_generales)
+        apply_clinical_detail(document, normalizado.detalle_clinico)
 
         await db.commit()
         await db.refresh(document)
@@ -393,41 +611,48 @@ async def ingest_document(
     return document
 
 
+def _identificacion_buscada(valor: str | None) -> str | None:
+    """La identificación tal como se guarda (sin puntos, con guion en el RUT), para que el filtro
+    funcione aunque el usuario la escriba con formato (`12.345.678-5`)."""
+    normalizada = normalizar_identificacion(None, valor)
+    return normalizada.numero if normalizada else None
+
+
 async def get_paginated_documents(
     db: AsyncSession,
     page: int = 1,
     page_size: int = 20,
     estado: str | None = None,
     destino: str | None = None,
-    rut: str | None = None,
+    identificacion: str | None = None,
+    numero_ficha: str | None = None,
     prioridad: str | None = None,
     fecha_desde: datetime | None = None,
     fecha_hasta: datetime | None = None,
     uploaded_by_id: UUID | None = None,
+    area_origen_id: UUID | None = None,
 ) -> dict:
-    """Lista la bandeja documental con filtros dinámicos y paginación."""
-    conditions = []
-    if uploaded_by_id is not None:
-        conditions.append(ClinicalDocument.uploaded_by_id == uploaded_by_id)
-    if estado is not None:
-        conditions.append(ClinicalDocument.estado == estado)
-    if destino is not None:
-        conditions.append(ClinicalDocument.destino_enrutamiento == destino)
-    if rut is not None:
-        conditions.append(ClinicalDocument.rut_paciente == rut)
-    if prioridad is not None:
-        conditions.append(ClinicalDocument.nivel_prioridad == prioridad)
-    if fecha_desde is not None:
-        conditions.append(ClinicalDocument.created_at >= fecha_desde)
-    if fecha_hasta is not None:
-        conditions.append(ClinicalDocument.created_at <= fecha_hasta)
+    """Lista la bandeja documental con filtros dinámicos y paginación (se omite cada filtro en `None`)."""
+    filters = (
+        (ClinicalDocument.uploaded_by_id, operator.eq, uploaded_by_id),
+        (ClinicalDocument.area_origen_id, operator.eq, area_origen_id),
+        (ClinicalDocument.estado, operator.eq, estado),
+        (ClinicalDocument.destino_enrutamiento, operator.eq, destino),
+        (ClinicalDocument.identificacion_paciente, operator.eq, _identificacion_buscada(identificacion)),
+        (ClinicalDocument.numero_ficha, operator.eq, numero_ficha),
+        (ClinicalDocument.nivel_prioridad, operator.eq, prioridad),
+        (ClinicalDocument.created_at, operator.ge, fecha_desde),
+        (ClinicalDocument.created_at, operator.le, fecha_hasta),
+    )
+    conditions = [compare(column, value) for column, compare, value in filters if value is not None]
 
     total_result = await db.execute(
         select(func.count(ClinicalDocument.id)).where(*conditions)
     )
     total = total_result.scalar_one()
 
-    # La bandeja solo muestra columnas del documento: no se cargan las tablas hijas (selectin).
+    # La bandeja solo muestra columnas del documento (y su área, por JOIN): no se cargan las
+    # tablas hijas (selectin).
     items_result = await db.execute(
         select(ClinicalDocument)
         .options(

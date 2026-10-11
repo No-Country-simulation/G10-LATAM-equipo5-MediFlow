@@ -1,44 +1,65 @@
 """Router de la feature de autenticación: login, perfil propio y gestión administrativa de usuarios."""
 
-from datetime import datetime, timedelta, timezone
+import logging
+from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_db
+from app.core.log_config import safe, set_current_username
 from app.core.rate_limit import login_throttle
-from app.core.security import create_access_token
+from app.core.security import (
+    REFRESH_TOKEN_TYPE,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+)
 from app.features.auth.dependencies import get_current_user, oauth2_scheme, require_roles
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.auth.schemas import (
     LoginRequest,
+    LogoutRequest,
     PaginatedUsersResponse,
     PasswordChangeRequest,
     ProfileUpdateRequest,
+    RefreshRequest,
     TokenResponse,
     UserAdminUpdateRequest,
     UserCreateRequest,
     UserOut,
     UserResponse,
 )
+from app.features.catalogs.schemas import DeleteResponse
 from app.features.auth.service import (
     admin_update_user,
     authenticate_user,
     change_password,
+    consume_refresh_token,
     create_user,
+    delete_user,
+    get_user_by_username,
     get_users_paginated,
     revoke_token,
     update_profile,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["Auth"])
 users_router = APIRouter(prefix="/users", tags=["Users"])
 
 _USER_MANAGEMENT_ROLES = [UserRole.ADMIN, UserRole.GESTOR_USUARIOS]
+
+_INVALID_REFRESH_ERROR = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Refresh token inválido o expirado",
+    headers={"WWW-Authenticate": "Bearer"},
+)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -52,8 +73,10 @@ async def login(
     """
     client_ip = request.client.host if request.client else "desconocida"
     throttle_key = f"{credentials.username.lower()}|{client_ip}"
+    login_name = safe(credentials.username)
     retry_after = login_throttle.retry_after(throttle_key)
     if retry_after:
+        logger.warning("Login bloqueado para %s desde %s: %d s restantes", login_name, client_ip, retry_after)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Demasiados intentos fallidos. Intenta nuevamente más tarde.",
@@ -63,33 +86,92 @@ async def login(
     user = await authenticate_user(db, credentials.username, credentials.password)
     if user is None:
         login_throttle.register_failure(throttle_key)
+        logger.warning("Login fallido para %s desde %s", login_name, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario o contraseña incorrectos",
             headers={"WWW-Authenticate": "Bearer"},
         )
     login_throttle.reset(throttle_key)
+    set_current_username(user.username)
+    logger.info("Inicio de sesión de %s (%s) desde %s", user.username, user.role.value, client_ip)
 
-    access_token = create_access_token(
-        data={"sub": user.username},
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    return _issue_tokens(user)
+
+
+def _issue_tokens(user: User) -> TokenResponse:
+    """Emite un par nuevo (access + refresh) para el usuario."""
+    data = {"sub": user.username}
+    return TokenResponse(
+        access_token=create_access_token(data),
+        refresh_token=create_refresh_token(data),
+        user=UserOut.model_validate(user),
     )
 
-    return TokenResponse(access_token=access_token, user=UserOut.model_validate(user))
+
+def _decode_refresh_token(token: str) -> dict[str, Any] | None:
+    """Retorna el payload si `token` es un refresh token válido (firma, expiración, `type`, `sub` y `jti`)."""
+    try:
+        payload = decode_token(token)
+    except jwt.PyJWTError:
+        return None
+    if payload.get("type") != REFRESH_TOKEN_TYPE or not payload.get("sub") or not payload.get("jti"):
+        return None
+    return payload
+
+
+def _expiration(payload: dict[str, Any]) -> datetime:
+    return datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+    """Canjea un refresh token por un par nuevo de tokens.
+
+    El refresh token es de un solo uso (rotación): queda revocado al canjearlo, así que el
+    cliente debe guardar el nuevo. Responde `401` si es inválido, expiró, ya se usó o el
+    usuario ya no está activo.
+    """
+    payload = _decode_refresh_token(body.refresh_token)
+    if payload is None:
+        logger.warning("Refresh rechazado: token inválido o expirado")
+        raise _INVALID_REFRESH_ERROR
+
+    username = safe(payload["sub"])
+    set_current_username(username)
+    user = await get_user_by_username(db, payload["sub"])
+    if user is None or not user.is_active:
+        logger.warning("Refresh rechazado: el usuario %s no existe o está inactivo", username)
+        raise _INVALID_REFRESH_ERROR
+
+    if not await consume_refresh_token(db, payload["jti"], _expiration(payload)):
+        # Un refresh token ya canjeado que vuelve a llegar puede indicar que fue robado.
+        logger.warning("Refresh rechazado: token ya utilizado (posible reutilización) de %s", username)
+        raise _INVALID_REFRESH_ERROR
+
+    logger.info("Sesión renovada para %s", username)
+    return _issue_tokens(user)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    body: LogoutRequest | None = None,
     token: str = Depends(oauth2_scheme),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Cierra la sesión: invalida el token actual para que no pueda volver a usarse."""
-    payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    """Cierra la sesión: invalida el token actual y, si se envía, también el refresh token."""
+    payload = decode_token(token)
     jti = payload.get("jti")
     if jti is not None:
-        expires_at = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
-        await revoke_token(db, jti, expires_at)
+        await revoke_token(db, jti, _expiration(payload))
+
+    if body is not None and body.refresh_token:
+        refresh_payload = _decode_refresh_token(body.refresh_token)
+        # Solo se revoca un refresh token del mismo usuario; uno inválido se ignora.
+        if refresh_payload is not None and refresh_payload["sub"] == current_user.username:
+            await revoke_token(db, refresh_payload["jti"], _expiration(refresh_payload))
+    logger.info("Cierre de sesión de %s", current_user.username)
 
 
 @router.get("/me", response_model=UserOut)
@@ -179,3 +261,19 @@ async def update_user(
     """
     user = await admin_update_user(user_id, payload, db, current_user)
     return UserResponse.model_validate(user)
+
+
+@users_router.delete("/{user_id}", response_model=DeleteResponse)
+async def remove_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_USER_MANAGEMENT_ROLES)),
+) -> DeleteResponse:
+    """Smart Delete: borrado físico si el usuario no tiene actividad registrada; si la tiene
+    (documentos subidos, auditados o tomados, o cambios de catálogos), se desactiva para
+    conservar la autoría. Requiere rol ADMIN o GESTOR_USUARIOS.
+
+    `409` al intentar eliminarse a sí mismo; `403` si un no-ADMIN intenta eliminar a un ADMIN.
+    """
+    deletion_type, message = await delete_user(user_id, db, current_user)
+    return DeleteResponse(message=message, deletion_type=deletion_type)

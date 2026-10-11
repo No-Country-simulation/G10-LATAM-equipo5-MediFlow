@@ -27,8 +27,11 @@ async def test_ingest_returns_full_json_for_react(client, login_as, db, oci):
     assert data["status"] == "PROCESADO"
     assert data["documento_id"] == "DOC-TEST-1"
     assert data["clasificacion"]["nivel_prioridad"] == "Urgente"
-    assert data["datos_generales"]["medico_solicitante"]["rut"] == "9.876.543-2"
-    assert data["datos_generales"]["medico_solicitante"]["matricula"] == "MED-4321"
+    assert data["datos_generales"]["profesionales"][0]["identificacion"] == "9.876.543-2"
+    assert data["datos_generales"]["profesionales"][0]["registro_profesional"] == "MED-4321"
+    # La respuesta trae los datos normalizados por el backend y el score que calculó.
+    assert data["datos_generales"]["paciente"]["identificacion"] == {"tipo": "RUT", "numero": "12345678-5", "pais": "CL"}
+    assert data["score_confianza"] == 0.95
     examenes = data["detalle_clinico"]["examenes_y_laboratorio"]
     assert examenes["estudio_solicitado"] == "Tomografia de Torax"
     assert examenes["paneles"][0]["nombre_panel"] == "Coagulacion"
@@ -89,7 +92,7 @@ def _document(**kwargs) -> ClinicalDocument:
     fields = dict(
         documento_id="DOC-1",
         estado="PROCESADO",
-        rut_paciente="1-9",
+        identificacion_paciente="1-9",
         nombre_paciente="Ana",
         tipo_documento="RECETA",
         nivel_prioridad="Rutina",

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useReducer } from 'react';
 import type { TriageDocument, TriageFilter } from '../types/triage';
 import { mapDocumentListItemToTriageDoc } from '../types/triage';
 import { documentService } from '../services/documentService';
+import { useRevisionDocumentos } from '../context/documentDetailContext';
 import { normalizePriority } from '../types/medical';
 import { triageReducer, initialTriageState } from './triageReducer';
 
@@ -28,6 +29,8 @@ export const useDashboardTriage = () => {
   const [activeFilter, setActiveFilter] = useState<TriageFilter>('ALL');
   const [{ documents, loading, error }, dispatch] = useReducer(triageReducer, initialTriageState);
   const [refreshIndex, setRefreshIndex] = useState<number>(0);
+  // Se recarga también cuando se corrige un documento desde el modal de detalle.
+  const revision = useRevisionDocumentos();
 
   const reload = useCallback(() => {
     setRefreshIndex((prev) => prev + 1);
@@ -55,7 +58,7 @@ export const useDashboardTriage = () => {
     return () => {
       cancelled = true;
     };
-  }, [refreshIndex]);
+  }, [refreshIndex, revision]);
 
   const counts: TriageCounts = useMemo(() => {
     return documents.reduce(

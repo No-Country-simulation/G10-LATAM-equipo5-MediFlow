@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     API_V1_PREFIX: str = "/api/v1"
 
+    # Logs: `text` es una línea legible por evento; `json`, una línea JSON (agregadores de logs).
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    LOG_FORMAT: Literal["text", "json"] = "text"
+
     # Base de datos. `DB_ECHO` imprime cada SQL con sus parámetros (datos de pacientes): solo
     # para depurar en local.
     DATABASE_URL: str = ""
@@ -35,7 +39,9 @@ class Settings(BaseSettings):
     # Autenticación (JWT)
     JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # Vida del refresh token: pasado ese plazo sin renovarse, hay que volver a iniciar sesión.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # Bloqueo temporal del login tras varios intentos fallidos (por usuario + IP).
     LOGIN_MAX_ATTEMPTS: int = 5
@@ -44,6 +50,9 @@ class Settings(BaseSettings):
     # Tamaño máximo de cada archivo de la ingesta (ya decodificado). El front limita a 10 MB.
     INGEST_MAX_FILE_MB: int = 10
     INGEST_MAX_FILES: int = 10
+
+    # Vigencia de las URLs pre-firmadas (PAR) de solo lectura para ver los archivos originales.
+    DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES: int = 15
 
     # Oracle Cloud Infrastructure (OCI) Object Storage.
     # `api_key`: usuario + llave PEM (desarrollo). `instance_principal`: la VM de OCI se

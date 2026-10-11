@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { AlertCircle, X, Loader2 } from 'lucide-react';
 import { useCatalogs } from '../../hooks/useCatalogs';
 import { useAuditDetailForm } from '../../hooks/useAuditDetailForm';
-import AuditDocumentViewer from './AuditDocumentViewer';
+import { useDocumentForms } from '../../hooks/useDocumentForms';
+import DocumentFilesViewer from '../common/DocumentFilesViewer';
 import AuditClinicalForm from './AuditClinicalForm';
 import AuditActionButtons from './AuditActionButtons';
+import { duplicadosDesdeJson } from '../../utils/auditForm';
 
 interface AuditDetailPanelProps {
   documentId: string;
@@ -12,19 +14,11 @@ interface AuditDetailPanelProps {
 }
 
 const AuditDetailPanel = ({ documentId, onClose }: AuditDetailPanelProps) => {
-  const { queues, documentTypes } = useCatalogs();
+  const { queues } = useCatalogs();
+  const { forms, error: formsError } = useDocumentForms();
   const [discardMode, setDiscardMode] = useState(false);
-  const {
-    detail,
-    loading,
-    error,
-    submitting,
-    formData,
-    handleChange,
-    handleResolve,
-    handleDiscard,
-    handleCancel,
-  } = useAuditDetailForm(documentId, onClose);
+  const audit = useAuditDetailForm(documentId, onClose, forms);
+  const { detail, loading, error, submitting, handleDiscard, handleCancel } = audit;
 
   if (loading) {
     return (
@@ -48,10 +42,16 @@ const AuditDetailPanel = ({ documentId, onClose }: AuditDetailPanelProps) => {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-8rem)]">
-      <AuditDocumentViewer detail={detail} />
+    // En pantallas anchas el panel ocupa el alto disponible (pantalla - navbar - márgenes) y cada
+    // columna tiene su propio scroll vertical; en pantallas angostas se apila con su alto natural.
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:h-[calc(100vh-10rem)] lg:min-h-[32rem]">
+      <DocumentFilesViewer
+        archivos={detail?.archivos ?? []}
+        fallbackUrl={detail?.oci_preview_url}
+        expiraEnMinutos={detail?.preview_expira_en_minutos}
+      />
 
-      <div className="flex flex-col rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
+      <div className="flex flex-col min-h-0 min-w-0 rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
         <div className="p-4 border-b border-slate-800/80 bg-slate-800/30 flex justify-between items-center">
           <div>
             <h3 className="text-base font-bold text-white">Corrección y Validación</h3>
@@ -69,21 +69,29 @@ const AuditDetailPanel = ({ documentId, onClose }: AuditDetailPanelProps) => {
 
         {!discardMode && (
           <AuditClinicalForm
-            formData={formData}
-            handleChange={handleChange}
-            handleResolve={handleResolve}
-            documentTypes={documentTypes}
+            forms={forms}
+            formsError={formsError}
             queues={queues}
-            detail={detail}
+            motivos={detail?.motivos_auditoria}
+            duplicados={duplicadosDesdeJson(detail?.raw_extracted_json)}
             error={error}
+            clasificacion={audit.clasificacion}
+            datosGenerales={audit.datosGenerales}
+            detalle={audit.detalle}
+            auditNotes={audit.auditNotes}
+            onClasificacionChange={audit.handleClasificacionChange}
+            onDatosGeneralesChange={audit.setDatosGenerales}
+            onDetalleChange={audit.setCampoDetalle}
+            onAuditNotesChange={audit.setAuditNotes}
+            handleResolve={(e) => void audit.handleResolve(e)}
           />
         )}
 
         <AuditActionButtons
           discardMode={discardMode}
           setDiscardMode={setDiscardMode}
-          motivoDescarte={formData.motivo_descarte}
-          handleChange={handleChange}
+          motivoDescarte={audit.motivoDescarte}
+          handleChange={audit.handleMotivoChange}
           handleDiscard={handleDiscard}
           handleCancel={handleCancel}
           submitting={submitting}

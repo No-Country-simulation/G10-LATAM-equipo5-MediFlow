@@ -61,7 +61,7 @@ const DocumentFilters = ({
 
         <div>
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
-            Buscar por RUT
+            Buscar por identificación
           </span>
           <div className="relative max-w-sm">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -69,7 +69,7 @@ const DocumentFilters = ({
             </div>
             <input
               type="text"
-              placeholder="Ej: 12.345.678-9"
+              placeholder="RUT, DNI, cédula... (ej: 12.345.678-5)"
               value={rutSearch}
               onChange={(e) => onRutSearchChange(e.target.value)}
               className="block w-full pl-9 pr-3 py-2 border border-slate-700 rounded-lg bg-slate-900/50 text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 sm:text-xs transition-colors"

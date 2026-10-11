@@ -1,4 +1,4 @@
-import { api, getStoredToken } from './api';
+import { api, ensureFreshToken, getStoredRefreshToken, getStoredToken } from './api';
 import { FASTAPI_ENDPOINTS } from '@/config/api';
 import type {
   LoginRequest,
@@ -9,16 +9,23 @@ import type {
   UserOut,
   UserResponse,
 } from '../types/auth';
+import type { DeleteResponse } from '../types/catalog';
 
 export const authService = {
   getToken: (): string | null => getStoredToken(),
 
   login: (credentials: LoginRequest): Promise<TokenResponse> => {
-    return api.post<TokenResponse>(FASTAPI_ENDPOINTS.auth.login, credentials);
+    return api.post<TokenResponse>(FASTAPI_ENDPOINTS.auth.login, credentials, { skipAuthRefresh: true });
   },
 
-  logout: (): Promise<void> => {
-    return api.post<void>(FASTAPI_ENDPOINTS.auth.logout);
+  logout: async (): Promise<void> => {
+    // Se renueva antes (si hace falta) para que el refresh token enviado sea el vigente.
+    await ensureFreshToken();
+    return api.post<void>(
+      FASTAPI_ENDPOINTS.auth.logout,
+      { refresh_token: getStoredRefreshToken() },
+      { skipAuthRefresh: true },
+    );
   },
 
   getProfile: (): Promise<UserOut> => {
@@ -35,6 +42,10 @@ export const authService = {
 
   updateUser: (userId: string, payload: UserAdminUpdateRequest): Promise<UserResponse> => {
     return api.patch<UserResponse>(FASTAPI_ENDPOINTS.users.detail(userId), payload);
+  },
+
+  deleteUser: (userId: string): Promise<DeleteResponse> => {
+    return api.delete<DeleteResponse>(FASTAPI_ENDPOINTS.users.detail(userId));
   },
 };
 

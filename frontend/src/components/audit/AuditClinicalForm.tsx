@@ -1,112 +1,165 @@
-import type { ChangeEvent, FormEvent } from 'react';
-import type { AuditDetailResponse, NivelPrioridad } from '../../types/medical';
-import type { QueueActiveForLLM, DocumentTypeActiveForLLM } from '../../types/catalog';
-
-interface FormData {
-  rut_paciente: string;
-  nombre_paciente: string;
-  edad_paciente: string | number;
-  medico_nombre: string;
-  medico_rut: string;
-  tipo_documento: string;
-  nivel_prioridad: NivelPrioridad;
-  diagnostico_principal: string;
-  cie10_sugerido: string;
-  destino_enrutamiento: string;
-  especialidad: string;
-  audit_notes: string;
-}
+import type { ChangeEvent, FormEvent, ReactNode } from 'react';
+import type { QueueActiveForLLM } from '../../types/catalog';
+import type { DocumentForms, JsonObject, JsonValue } from '../../types/forms';
+import type { ClasificacionForm } from '../../hooks/useClinicalForm';
+import { SchemaField } from '../common/schema-form/SchemaField';
+import PossibleDuplicatesNotice from '../documents/PossibleDuplicatesNotice';
+import type { DuplicadoDocumento } from '../../types/medical';
 
 interface AuditClinicalFormProps {
-  formData: FormData;
-  handleChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
-  handleResolve: (e: FormEvent) => void;
-  documentTypes: DocumentTypeActiveForLLM[];
+  forms: DocumentForms | null;
+  formsError: string | null;
   queues: QueueActiveForLLM[];
-  detail: AuditDetailResponse | null;
+  /** Motivos por los que el documento fue a auditoría (se muestran arriba del formulario). */
+  motivos?: string[];
+  /** Documentos que podrían ser el mismo (para compararlos antes de resolver o descartar). */
+  duplicados?: DuplicadoDocumento[];
+  /** `id` del <form>, para que los botones de acción externos lo envíen. */
+  formId?: string;
   error: string | null;
+  clasificacion: ClasificacionForm;
+  datosGenerales: JsonObject;
+  detalle: JsonObject;
+  auditNotes: string;
+  onClasificacionChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  onDatosGeneralesChange: (valor: JsonObject) => void;
+  onDetalleChange: (bloque: string, valor: JsonValue) => void;
+  onAuditNotesChange: (valor: string) => void;
+  handleResolve: (e: FormEvent) => void;
 }
 
+const INPUT = 'w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white';
+const LABEL = 'block text-[11px] font-semibold text-slate-400 uppercase mb-1';
+const PRIORIDADES = ['Urgente', 'Prioritario', 'Rutina'] as const;
+
+const Seccion = ({ titulo, descripcion, children }: { titulo: string; descripcion?: string; children: ReactNode }) => (
+  <section className="space-y-3 pt-4 border-t border-slate-800/80 first:border-t-0 first:pt-0">
+    <div>
+      <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wide">{titulo}</h4>
+      {descripcion && <p className="text-[11px] text-slate-500">{descripcion}</p>}
+    </div>
+    {children}
+  </section>
+);
+
+/**
+ * Formulario de corrección (auditoría y corrección de documentos). Los campos del paciente, los diagnósticos y los de cada tipo de
+ * documento se dibujan desde los esquemas del backend: al elegir otro tipo, cambian sus campos.
+ */
 const AuditClinicalForm = ({
-  formData,
-  handleChange,
-  handleResolve,
-  documentTypes,
+  forms,
+  formsError,
   queues,
-  detail,
+  motivos = [],
+  duplicados = [],
+  formId = 'audit-form',
   error,
+  clasificacion,
+  datosGenerales,
+  detalle,
+  auditNotes,
+  onClasificacionChange,
+  onDatosGeneralesChange,
+  onDetalleChange,
+  onAuditNotesChange,
+  handleResolve,
 }: AuditClinicalFormProps) => {
+  const tipo = forms?.tipos.find((t) => t.codigo === clasificacion.tipo_documento);
+  const tipoDesconocido = Boolean(forms) && !tipo && clasificacion.tipo_documento;
+
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
-      {error && (
-        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold">
-          {error}
+    // `relative`: los elementos posicionados del formulario quedan contenidos en este scroll (si no,
+    // se ubican respecto a la página y la estiran). Solo scroll vertical.
+    <div className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-5">
+      {(error || formsError) && (
+        <div role="alert" className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold">
+          {error || formsError}
         </div>
       )}
 
-      {detail?.motivos_auditoria?.length ? (
+      <PossibleDuplicatesNotice duplicados={duplicados} />
+
+      {motivos.length ? (
         <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
           <span className="font-bold text-amber-400 mb-1 block">Motivos de Auditoría:</span>
           <ul className="list-disc pl-4 text-amber-300/80 space-y-0.5">
-            {detail.motivos_auditoria.map((m, i) => <li key={i}>{m}</li>)}
+            {motivos.map((motivo) => <li key={motivo} className="break-words">{motivo}</li>)}
           </ul>
         </div>
       ) : null}
 
-      <form id="audit-form" onSubmit={handleResolve} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">RUT Paciente</label>
-            <input type="text" name="rut_paciente" value={formData.rut_paciente} onChange={handleChange} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white" />
+      <form id={formId} onSubmit={handleResolve} className="space-y-5">
+        <Seccion titulo="Clasificación">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="audit-tipo" className={LABEL}>Tipo de documento</label>
+              <select id="audit-tipo" name="tipo_documento" value={clasificacion.tipo_documento} onChange={onClasificacionChange} className={INPUT}>
+                {tipoDesconocido && <option value={clasificacion.tipo_documento}>{clasificacion.tipo_documento} (no está en el catálogo)</option>}
+                {forms?.tipos.map((t) => <option key={t.codigo} value={t.codigo}>{t.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="audit-destino" className={LABEL}>Destino</label>
+              <select id="audit-destino" name="destino_enrutamiento" value={clasificacion.destino_enrutamiento} onChange={onClasificacionChange} className={INPUT}>
+                {queues.map((q) => <option key={q.codigo} value={q.codigo}>{q.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="audit-prioridad" className={LABEL}>Prioridad clínica</label>
+              <select id="audit-prioridad" name="nivel_prioridad" value={clasificacion.nivel_prioridad} onChange={onClasificacionChange} className={INPUT}>
+                {PRIORIDADES.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="audit-especialidad" className={LABEL}>Especialidad</label>
+              <input id="audit-especialidad" name="especialidad" value={clasificacion.especialidad} onChange={onClasificacionChange} maxLength={150} className={INPUT} />
+            </div>
           </div>
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Nombre Paciente</label>
-            <input type="text" name="nombre_paciente" value={formData.nombre_paciente} onChange={handleChange} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white" />
-          </div>
-        </div>
+        </Seccion>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Tipo Documento</label>
-            <select name="tipo_documento" value={formData.tipo_documento} onChange={handleChange} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white">
-              {documentTypes.map(t => <option key={t.codigo} value={t.codigo}>{t.nombre}</option>)}
-              <option value="OTRO">Otro</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Destino Hospitalario</label>
-            <select name="destino_enrutamiento" value={formData.destino_enrutamiento} onChange={handleChange} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white">
-              {queues.map(q => <option key={q.codigo} value={q.codigo}>{q.nombre}</option>)}
-            </select>
-          </div>
-        </div>
+        {forms && (
+          <>
+            <Seccion titulo="Paciente y documento" descripcion="La identificación se valida (dígito verificador del RUT, CPF, DNI español) y el CIE-10 debe tener formato válido.">
+              <SchemaField
+                schema={forms.datos_generales}
+                value={datosGenerales}
+                onChange={(valor) => onDatosGeneralesChange(valor as JsonObject)}
+                path="datos_generales"
+              />
+            </Seccion>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Diagnóstico Principal</label>
-            <input type="text" name="diagnostico_principal" value={formData.diagnostico_principal} onChange={handleChange} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white" />
-          </div>
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Prioridad Clínica</label>
-            <select name="nivel_prioridad" value={formData.nivel_prioridad} onChange={handleChange} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white">
-              <option value="Urgente">Urgente</option>
-              <option value="Prioritario">Prioritario</option>
-              <option value="Rutina">Rutina</option>
-            </select>
-          </div>
-        </div>
+            <Seccion titulo={`Campos de ${tipo?.nombre ?? 'este tipo'}`}>
+              {tipo?.bloque && tipo.esquema ? (
+                <SchemaField
+                  schema={tipo.esquema}
+                  value={detalle[tipo.bloque]}
+                  onChange={(valor) => onDetalleChange(tipo.bloque as string, valor)}
+                  path={`detalle.${tipo.bloque}`}
+                />
+              ) : (
+                <p className="text-[11px] text-slate-500 italic">Este tipo no tiene campos propios; usa las listas de abajo.</p>
+              )}
+            </Seccion>
 
-        <div>
-          <label className="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Notas de Auditoría (Obligatorio)</label>
+            {Object.entries(forms.comunes).map(([lista, esquema]) => (
+              <Seccion key={lista} titulo={esquema.title ?? lista}>
+                <SchemaField schema={{ ...esquema, title: undefined }} value={detalle[lista]} onChange={(valor) => onDetalleChange(lista, valor)} path={`detalle.${lista}`} label={esquema.title} />
+              </Seccion>
+            ))}
+          </>
+        )}
+
+        <Seccion titulo="Notas de auditoría">
+          <label htmlFor="audit-notas" className={LABEL}>Justificación de las correcciones (obligatorio)</label>
           <textarea
-            name="audit_notes"
-            value={formData.audit_notes}
-            onChange={handleChange}
-            placeholder="Justifique las correcciones realizadas..."
-            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white min-h-24"
+            id="audit-notas"
+            value={auditNotes}
+            onChange={(e) => onAuditNotesChange(e.target.value)}
+            placeholder="Justifique las correcciones realizadas (obligatorio)..."
+            className={`${INPUT} min-h-24`}
             required
           />
-        </div>
+        </Seccion>
       </form>
     </div>
   );

@@ -18,12 +18,15 @@ export const FASTAPI_ENDPOINTS = {
   auth: {
     login: "/auth/login",
     logout: "/auth/logout",
+    refresh: "/auth/refresh",
     me: "/auth/me",
   },
   documents: {
     base: "/documents",
     ingest: "/documents/ingest",
     statsOverview: "/documents/stats/overview",
+    detail: (id: string) => `/documents/${encodeURIComponent(id)}`,
+    duplicatesCheck: "/documents/duplicates/check",
   },
   audit: {
     detail: (id: string) => `/audit/${id}`,
@@ -34,6 +37,11 @@ export const FASTAPI_ENDPOINTS = {
   catalogs: {
     documentTypesActive: "/catalogs/document-types/active",
     queuesActive: "/catalogs/queues/active",
+    areasActive: "/catalogs/areas/active",
+    documentTypeForms: "/catalogs/document-types/forms",
+    documentTypes: "/catalogs/document-types",
+    queues: "/catalogs/queues",
+    areas: "/catalogs/areas",
   },
   users: {
     base: "/users",

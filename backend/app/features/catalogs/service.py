@@ -6,36 +6,48 @@ rastrearse. Los registros `es_sistema` no se pueden eliminar ni desactivar.
 """
 
 import logging
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any, TypeVar
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.auth.models import User
-from app.features.catalogs.models import CatalogHistory, DocumentType, RoutingQueue
+from app.features.catalogs.models import Area, CatalogHistory, DocumentType, RoutingQueue
 from app.features.catalogs.schemas import (
+    AreaCreate,
+    AreaUpdate,
     DeletionType,
+    DocumentFormsResponse,
+    DocumentTypeForm,
     DocumentTypeCreate,
     DocumentTypeUpdate,
     QueueCreate,
     QueueUpdate,
 )
+from app.features.documents.forms import (
+    esquema_datos_generales,
+    esquemas_listas_comunes,
+    formulario_de_tipo,
+)
 from app.features.documents.models import ClinicalDocument
 
 logger = logging.getLogger(__name__)
 
-CatalogEntity = TypeVar("CatalogEntity", RoutingQueue, DocumentType)
+CatalogEntity = TypeVar("CatalogEntity", RoutingQueue, DocumentType, Area)
 
-_CATALOGO_POR_MODELO = {RoutingQueue: "QUEUE", DocumentType: "DOCUMENT_TYPE"}
+_CATALOGO_POR_MODELO = {RoutingQueue: "QUEUE", DocumentType: "DOCUMENT_TYPE", Area: "AREA"}
 
 # Campos que se registran en el historial (los demás son técnicos: id, timestamps, autor).
 _CAMPOS_AUDITABLES = {
     RoutingQueue: ("codigo", "nombre", "descripcion_semantica", "notificar_inmediato", "is_active"),
     DocumentType: ("codigo", "nombre", "descripcion", "campos_extraccion", "is_active"),
+    Area: ("codigo", "nombre", "descripcion", "is_active"),
 }
 
 
@@ -116,7 +128,9 @@ async def _create(
     )
     db.add(entity)
     _record_history(db, entity, "CREATE", {}, _snapshot(entity), user)
-    return await _persist(db, entity, label)
+    created = await _persist(db, entity, label)
+    logger.info("%s %s creado(a)", label, created.codigo)
+    return created
 
 
 def _ensure_not_system(entity: CatalogEntity, label: str, accion: str) -> None:
@@ -148,28 +162,55 @@ async def _update(
         setattr(entity, field, value)
     entity.updated_by_id = user.id
     _record_history(db, entity, "UPDATE", antes, _snapshot(entity), user)
-    return await _persist(db, entity, label)
+    updated = await _persist(db, entity, label)
+    logger.info("%s %s actualizado(a) (campos: %s)", label, updated.codigo, ", ".join(sorted(updates)) or "ninguno")
+    return updated
+
+
+@dataclass(frozen=True)
+class _Usage:
+    """Dónde se usa un registro de catálogo: `count_query` cuenta las filas que lo referencian."""
+
+    label: str
+    count_query: Callable[[Any], Select[tuple[int]]]
+
+
+def _documents_by_codigo(column: ColumnElement[str]) -> _Usage:
+    """Uso por valor: documentos cuyo `column` es igual al `codigo` del registro."""
+    return _Usage(
+        "documento(s) clínico(s)",
+        lambda entity: select(func.count(ClinicalDocument.id)).where(column == entity.codigo),
+    )
+
+
+async def _count_usages(
+    db: AsyncSession, entity: CatalogEntity, usages: Sequence[_Usage]
+) -> list[str]:
+    """Retorna la descripción de cada uso con filas asociadas, ej. `["3 usuario(s)"]`."""
+    descriptions = []
+    for usage in usages:
+        count: int = (await db.execute(usage.count_query(entity))).scalar_one()
+        if count:
+            descriptions.append(f"{count} {usage.label}")
+    return descriptions
 
 
 async def _smart_delete(
     db: AsyncSession,
     model: type[CatalogEntity],
     entity_id: UUID,
-    usage_column: ColumnElement[str],
+    usages: Sequence[_Usage],
     user: User,
     label: str,
 ) -> tuple[DeletionType, str]:
-    """Borra físicamente si ningún documento clínico usa la entidad; si no, la desactiva."""
+    """Borra físicamente si nada usa la entidad; si no, la desactiva."""
     entity = await _get_or_404(db, model, entity_id, label)
     _ensure_not_system(entity, label, "eliminar")
 
-    usage = await db.execute(
-        select(func.count(ClinicalDocument.id)).where(usage_column == entity.codigo)
-    )
-    count: int = usage.scalar_one()
+    in_use = await _count_usages(db, entity, usages)
     antes = _snapshot(entity)
 
-    if count == 0:
+    if not in_use:
         await db.delete(entity)
         _record_history(db, entity, "HARD_DELETE", antes, {}, user)
         result: tuple[DeletionType, str] = (
@@ -182,12 +223,12 @@ async def _smart_delete(
         _record_history(db, entity, "SOFT_DELETE", antes, _snapshot(entity), user)
         result = (
             "SOFT_DELETE",
-            f"{label} desactivado(a) lógicamente debido a que tiene {count} "
-            "documento(s) clínico(s) asociado(s)",
+            f"{label} desactivado(a) lógicamente debido a que tiene "
+            f"{' y '.join(in_use)} asociado(s)",
         )
 
     await db.commit()
-    logger.info("Smart delete de %s '%s': %s", label, entity.codigo, result[0])
+    logger.info("%s %s eliminado(a) (%s)", label, entity.codigo, result[0])
     return result
 
 
@@ -209,6 +250,7 @@ async def _history(
 # --- Colas de enrutamiento ---------------------------------------------------
 
 _QUEUE = "Cola"
+_QUEUE_USAGES = (_documents_by_codigo(ClinicalDocument.destino_enrutamiento),)
 
 
 async def get_active_queues_for_llm(db: AsyncSession) -> list[RoutingQueue]:
@@ -240,9 +282,7 @@ async def update_queue(
 async def smart_delete_queue(
     queue_id: UUID, db: AsyncSession, user: User
 ) -> tuple[DeletionType, str]:
-    return await _smart_delete(
-        db, RoutingQueue, queue_id, ClinicalDocument.destino_enrutamiento, user, _QUEUE
-    )
+    return await _smart_delete(db, RoutingQueue, queue_id, _QUEUE_USAGES, user, _QUEUE)
 
 
 async def queue_history(queue_id: UUID, db: AsyncSession) -> list[CatalogHistory]:
@@ -252,6 +292,7 @@ async def queue_history(queue_id: UUID, db: AsyncSession) -> list[CatalogHistory
 # --- Tipos de documento ------------------------------------------------------
 
 _DOC_TYPE = "Tipo de documento"
+_DOC_TYPE_USAGES = (_documents_by_codigo(ClinicalDocument.tipo_documento),)
 
 
 async def get_active_document_types_for_llm(db: AsyncSession) -> list[DocumentType]:
@@ -287,10 +328,76 @@ async def update_document_type(
 async def smart_delete_document_type(
     type_id: UUID, db: AsyncSession, user: User
 ) -> tuple[DeletionType, str]:
-    return await _smart_delete(
-        db, DocumentType, type_id, ClinicalDocument.tipo_documento, user, _DOC_TYPE
-    )
+    return await _smart_delete(db, DocumentType, type_id, _DOC_TYPE_USAGES, user, _DOC_TYPE)
 
 
 async def document_type_history(type_id: UUID, db: AsyncSession) -> list[CatalogHistory]:
     return await _history(db, DocumentType, type_id)
+
+
+# --- Áreas -------------------------------------------------------------------
+
+_AREA = "Área"
+_AREA_USAGES = (
+    _Usage("usuario(s)", lambda area: select(func.count(User.id)).where(User.area_id == area.id)),
+    _Usage(
+        "documento(s) clínico(s)",
+        lambda area: select(func.count(ClinicalDocument.id)).where(
+            ClinicalDocument.area_origen_id == area.id
+        ),
+    ),
+)
+
+
+async def get_active_areas(db: AsyncSession) -> list[Area]:
+    """Áreas activas, para los selectores del registro de usuarios."""
+    return await _list(db, Area, is_active=True)
+
+
+async def get_active_area_or_none(db: AsyncSession, area_id: UUID) -> Area | None:
+    """Retorna el área si existe y está activa; `None` en otro caso."""
+    area = await db.get(Area, area_id)
+    return area if area is not None and area.is_active else None
+
+
+async def list_areas(db: AsyncSession, is_active: bool | None = None) -> list[Area]:
+    return await _list(db, Area, is_active)
+
+
+async def get_area(area_id: UUID, db: AsyncSession) -> Area:
+    return await _get_or_404(db, Area, area_id, _AREA)
+
+
+async def create_area(payload: AreaCreate, db: AsyncSession, user: User) -> Area:
+    return await _create(db, Area, payload, user, _AREA)
+
+
+async def update_area(area_id: UUID, payload: AreaUpdate, db: AsyncSession, user: User) -> Area:
+    return await _update(db, Area, area_id, payload, user, _AREA)
+
+
+async def smart_delete_area(area_id: UUID, db: AsyncSession, user: User) -> tuple[DeletionType, str]:
+    return await _smart_delete(db, Area, area_id, _AREA_USAGES, user, _AREA)
+
+
+async def area_history(area_id: UUID, db: AsyncSession) -> list[CatalogHistory]:
+    return await _history(db, Area, area_id)
+
+
+async def get_document_forms(db: AsyncSession) -> DocumentFormsResponse:
+    """Formulario (bloque + JSON Schema) de cada tipo activo, para auditoría y para n8n."""
+    tipos = []
+    for doc_type in await get_active_document_types_for_llm(db):
+        bloque, esquema = formulario_de_tipo(doc_type.codigo, doc_type.campos_extraccion)
+        tipos.append(
+            DocumentTypeForm(
+                codigo=doc_type.codigo,
+                nombre=doc_type.nombre,
+                descripcion=doc_type.descripcion,
+                bloque=bloque,
+                esquema=esquema,
+            )
+        )
+    return DocumentFormsResponse(
+        datos_generales=esquema_datos_generales(), comunes=esquemas_listas_comunes(), tipos=tipos
+    )

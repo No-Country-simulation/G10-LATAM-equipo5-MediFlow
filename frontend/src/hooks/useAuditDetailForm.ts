@@ -1,105 +1,84 @@
 import { useState, useEffect } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { documentService } from '../services/documentService';
-import type { AuditDetailResponse, NivelPrioridad } from '../types/medical';
+import type { AuditDetailResponse } from '../types/medical';
+import type { DocumentForms } from '../types/forms';
+import { useClinicalForm, valoresDesdeDocumento } from './useClinicalForm';
+import { errorMessage } from '../utils/errors';
+import { createLogger, describeError } from '../utils/logger';
 
-export const useAuditDetailForm = (documentId: string, onClose: () => void) => {
+export type { ClasificacionForm } from './useClinicalForm';
+
+const log = createLogger('auditoria');
+
+/**
+ * Formulario de auditoría: carga el caso, y lo resuelve o descarta. El estado de los campos
+ * clínicos es el mismo de la corrección de documentos (`useClinicalForm`).
+ */
+export const useAuditDetailForm = (documentId: string, onClose: () => void, forms: DocumentForms | null) => {
   const [detail, setDetail] = useState<AuditDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [motivoDescarte, setMotivoDescarte] = useState('');
 
-  const [formData, setFormData] = useState({
-    rut_paciente: '',
-    nombre_paciente: '',
-    edad_paciente: '' as string | number,
-    medico_nombre: '',
-    medico_rut: '',
-    tipo_documento: '',
-    nivel_prioridad: 'Rutina' as NivelPrioridad,
-    diagnostico_principal: '',
-    cie10_sugerido: '',
-    destino_enrutamiento: '',
-    especialidad: '',
-    audit_notes: '',
-    motivo_descarte: '',
-  });
+  const form = useClinicalForm(forms);
+  const { cargar } = form;
 
   useEffect(() => {
-    const fetchDetail = async () => {
-      try {
-        const data = await documentService.getAuditDetail(documentId);
+    let cancelled = false;
+    documentService
+      .getAuditDetail(documentId)
+      .then((data) => {
+        if (cancelled) return;
         setDetail(data);
-        setFormData({
-          rut_paciente: data.rut_paciente || '',
-          nombre_paciente: data.nombre_paciente || '',
-          edad_paciente: data.edad_paciente || '',
-          medico_nombre: data.medico_nombre || '',
-          medico_rut: data.medico_rut || '',
-          tipo_documento: data.tipo_documento,
-          nivel_prioridad: data.nivel_prioridad,
-          diagnostico_principal: data.diagnostico_principal || '',
-          cie10_sugerido: data.cie10_sugerido || '',
-          destino_enrutamiento: data.destino_enrutamiento || '',
-          especialidad: data.especialidad || '',
-          audit_notes: '',
-          motivo_descarte: '',
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al cargar el detalle');
-      } finally {
-        setLoading(false);
-      }
+        cargar(valoresDesdeDocumento(data, data.raw_extracted_json));
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(errorMessage(err, 'Error al cargar el detalle'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-    fetchDetail();
-  }, [documentId]);
+  }, [documentId, cargar]);
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+  const handleMotivoChange = (e: ChangeEvent<HTMLTextAreaElement>) => setMotivoDescarte(e.target.value);
 
   const handleResolve = async (e: FormEvent) => {
     e.preventDefault();
-    if (!formData.audit_notes.trim()) {
-      setError('Las notas de auditoría son obligatorias.');
+    const problema = form.validar();
+    if (problema) {
+      setError(problema);
       return;
     }
+    setError(null);
     setSubmitting(true);
     try {
-      await documentService.resolveAudit(documentId, {
-        rut_paciente: formData.rut_paciente,
-        nombre_paciente: formData.nombre_paciente,
-        edad_paciente: formData.edad_paciente ? Number(formData.edad_paciente) : null,
-        medico_nombre: formData.medico_nombre,
-        medico_rut: formData.medico_rut,
-        tipo_documento: formData.tipo_documento,
-        nivel_prioridad: formData.nivel_prioridad,
-        diagnostico_principal: formData.diagnostico_principal,
-        cie10_sugerido: formData.cie10_sugerido,
-        destino_enrutamiento: formData.destino_enrutamiento,
-        especialidad: formData.especialidad,
-        audit_notes: formData.audit_notes,
-      });
+      await documentService.resolveAudit(documentId, { ...form.valoresParaEnviar(), audit_notes: form.notas });
+      log.info('Caso resuelto', { documentId, tipo: form.clasificacion.tipo_documento });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al resolver el caso');
+      setError(errorMessage(err, 'Error al resolver el caso'));
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDiscard = async () => {
-    if (!formData.motivo_descarte.trim()) {
+    if (!motivoDescarte.trim()) {
       setError('El motivo de descarte es obligatorio.');
       return;
     }
     setSubmitting(true);
     try {
-      await documentService.discardAudit(documentId, { motivo: formData.motivo_descarte });
+      await documentService.discardAudit(documentId, { motivo: motivoDescarte });
+      log.info('Caso descartado', { documentId });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al descartar el caso');
+      setError(errorMessage(err, 'Error al descartar el caso'));
     } finally {
       setSubmitting(false);
     }
@@ -109,10 +88,28 @@ export const useAuditDetailForm = (documentId: string, onClose: () => void) => {
     try {
       await documentService.releaseAuditCase(documentId);
     } catch (err) {
-      console.error('Error liberando el caso', err);
+      log.warn('No se pudo liberar el caso al cancelar', { documentId, error: describeError(err) });
     }
     onClose();
   };
 
-  return { detail, loading, error, submitting, formData, handleChange, handleResolve, handleDiscard, handleCancel };
+  return {
+    detail,
+    loading,
+    error,
+    submitting,
+    clasificacion: form.clasificacion,
+    datosGenerales: form.datosGenerales,
+    detalle: form.detalle,
+    auditNotes: form.notas,
+    motivoDescarte,
+    handleClasificacionChange: form.handleClasificacionChange,
+    setDatosGenerales: form.setDatosGenerales,
+    setCampoDetalle: form.setCampoDetalle,
+    setAuditNotes: form.setNotas,
+    handleMotivoChange,
+    handleResolve,
+    handleDiscard,
+    handleCancel,
+  };
 };

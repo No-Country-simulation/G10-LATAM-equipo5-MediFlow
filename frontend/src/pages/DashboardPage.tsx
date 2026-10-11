@@ -2,6 +2,7 @@ import TriageKpiCards from '../components/dashboard/TriageKpiCards';
 import TriageFilterTabs from '../components/dashboard/TriageFilterTabs';
 import TriageDocumentList from '../components/dashboard/TriageDocumentList';
 import QuickIngestionDropzone from '../components/dashboard/QuickIngestionDropzone';
+import { useDocumentDetailModal } from '../context/documentDetailContext';
 import { useDashboardTriage } from '../hooks/useDashboardTriage';
 
 export const DashboardPage = () => {
@@ -13,6 +14,7 @@ export const DashboardPage = () => {
     loading,
     reload,
   } = useDashboardTriage();
+  const { abrirDocumento } = useDocumentDetailModal();
 
   return (
     <div className="max-w-5xl w-full mx-auto p-4 sm:p-6 space-y-6 animate-fade-in">
@@ -55,7 +57,10 @@ export const DashboardPage = () => {
           ))}
         </div>
       ) : (
-        <TriageDocumentList documents={filteredDocuments} />
+        <TriageDocumentList
+          documents={filteredDocuments}
+          onSelectDocument={(doc) => abrirDocumento(doc.documento_id)}
+        />
       )}
     </div>
   );

@@ -1,55 +1,64 @@
-# Matriz de Casos de Prueba (QA Test Suite) — MediFlow MVP
+# Datos de Prueba — MediFlow MVP
 
-**Proyecto:** MediFlow  
-**Especialista QA:** Saúl Ever Sánchez Mendoza  
-**Fecha de actualización:** Septiembre 2026  
-**Ambiente:** Local (Docker PostgreSQL + FastAPI)
+**Especialista QA:** Saúl Ever Sánchez Mendoza
+**Actualizado:** Octubre 2026
 
----
+Datos para ejecutar los [casos de prueba](test-cases.md). **Todos son sintéticos.** Nunca usar documentos ni datos de pacientes reales en pruebas, capturas o reportes de bugs.
 
-## Leyenda de Estados
-- 🟢 **PASADO**: Caso ejecutado con éxito.
-- 🔴 **FALLADO**: Se detectó un bug o comportamiento no esperado.
-- 🟡 **PENDIENTE**: Caso diseñado, listo para ejecutarse cuando el módulo/integración esté disponible.
+## Usuarios
 
----
+Los crea `docker/postgres/seed_dev_users.sql` (solo desarrollo):
 
-## Módulo 1: Autenticación y Control de Acceso (AUTH)
+| Usuario | Contraseña | Rol | Área |
+|---|---|---|---|
+| `admin_user` | `admin123` | `ADMIN` | Administración y TI |
+| `gestor_user` | `gestor123` | `GESTOR_USUARIOS` | Administración y TI |
+| `auditor_user` | `auditor123` | `AUDITOR_CLINICO` | Auditoría Médica |
+| `operador_user` | `operador123` | `OPERADOR` | Admisión y Recepción |
 
-| ID | Título del Caso | Precondiciones | Pasos de Ejecución | Resultado Esperado | Estado |
-|---|---|---|---|---|---|
-| `TC-AUTH-001` | Login exitoso con usuario administrador | Base de datos iniciada (`init.sql`) | 1. Hacer `POST /api/v1/auth/login` enviando `admin_user` y `admin123`. | HTTP `200 OK`, retorna `access_token` JWT y objeto de usuario. | 🟢 **PASADO** |
-| `TC-AUTH-002` | Login fallido con credenciales incorrectas | Servidor backend activo | 1. Hacer `POST /api/v1/auth/login` con contraseña errónea. | HTTP `401 Unauthorized`, mensaje de error claro. | 🟢 **PASADO** |
-| `TC-AUTH-003` | Rechazo de acceso a endpoint protegido sin token | Backend activo | 1. Consultar `GET /api/v1/catalogs/queues/active` sin Bearer Token. | HTTP `401 Unauthorized` o `403 Forbidden`. | 🟢 **PASADO** |
-| `TC-AUTH-004` | Cierre de sesión y revocación de token | Token válido activo | 1. Hacer `POST /api/v1/auth/logout`. <br> 2. Reintentar petición usando el mismo token. | HTTP `200 OK` en logout y `401 Unauthorized` al reintentar. | 🟡 **PENDIENTE** |
+Para los casos de privacidad (`TC-DUP-003`, `TC-DOC-002`) hace falta un **segundo operador** de otra área: créalo desde *Usuarios* con el rol `OPERADOR`.
 
----
+## Identificaciones
 
-## Módulo 2: Catálogos y Tablas Maestras (CAT)
+| Tipo | Válida | Inválida | Nota |
+|---|---|---|---|
+| RUT (Chile) | `12.345.678-5` | `12.345.678-9` | Dígito verificador |
+| CPF (Brasil) | `111.444.777-35` | `111.444.777-36`, `111.111.111-11` | Dígitos repetidos también son inválidos |
+| DNI (España) | `12345678Z` | `12345678A` | Letra de control |
+| DNI (Argentina) | `30.123.456` | `123` | Sin dígito verificador; solo se valida el largo |
+| CURP (México) | `GODE561231HDFRRN09` | `GODE561231` | Formato completo de 18 caracteres |
+| Pasaporte / Cédula | `AB 123456` · `1-0234-0567` | — | Se normalizan sin validar dígito |
 
-| ID | Título del Caso | Precondiciones | Pasos de Ejecución | Resultado Esperado | Estado |
-|---|---|---|---|---|---|
-| `TC-CAT-001` | Consulta de colas de enrutamiento activas | Token JWT de `ADMIN` | 1. Hacer `GET /api/v1/catalogs/queues/active`. | HTTP `200 OK`, lista JSON con las 6 colas semilla (Urgencias, Oncología, etc.). | 🟢 **PASADO** |
-| `TC-CAT-002` | Consulta de tipos de documento activos | Token JWT de `ADMIN` | 1. Hacer `GET /api/v1/catalogs/document-types/active`. | HTTP `200 OK`, lista JSON con los 9 tipos de documento semilla. | 🟡 **PENDIENTE** |
-| `TC-CAT-003` | Desactivación dinámica de catálogo (*Smart Delete*) | Rol `ADMIN` activo | 1. Hacer `DELETE /api/v1/catalogs/queues/{id}`. <br> 2. Consultar `/active`. | La cola seleccionada cambia a inactiva y no aparece en la lista para n8n. | 🟡 **PENDIENTE** |
+## CIE-10
 
----
+| Entrada | Resultado |
+|---|---|
+| `j459`, `J45.9` | `J45.9` |
+| `I10`, `R73.9`, `E87.0` | Se conservan |
+| `XX9`, `12.3` | Se descartan (formato inválido) y bajan el score |
 
-## Módulo 3: Ingesta, Triaje IA y Boundary Testing (TRI)
+## Archivos
 
-| ID | Título del Caso | Precondiciones | Pasos de Ejecución | Resultado Esperado | Estado |
-|---|---|---|---|---|---|
-| `TC-TRI-001` | Triaje con Alta Confianza ($\ge 0.85$) | Workflow n8n y API listos | 1. Enviar PDF/Imagen legible de receta médica. | Estado `PROCESADO`, guardado en OCI en `procesados/<prioridad>/<id>.json`. | 🟡 **PENDIENTE** |
-| `TC-TRI-002` | Boundary Test — Confianza en Límite Inferior ($0.84$) | Imagen con ligera ambigüedad | 1. Simular respuesta de IA con `confidence = 0.84`. | Estado `PENDIENTE_AUDITORIA`, enrutado a bandeja de revisión humana (HITL). | 🟡 **PENDIENTE** |
-| `TC-TRI-003` | Boundary Test — Confianza en Límite Superior ($0.85$) | Documento claro | 1. Simular respuesta de IA con `confidence = 0.85`. | Estado `PROCESADO`, aprobación automática directa sin auditoría. | 🟡 **PENDIENTE** |
-| `TC-TRI-004` | Detección de Urgencia Crítica | Documento con diagnóstico crítico | 1. Enviar informe con hallazgo grave (ej. TEP o Potasio > 6.5). | `priority` = "Urgente", `routing_queue` = "Cola_Emergencia_Medica". | 🟡 **PENDIENTE** |
-| `TC-TRI-005` | Rechazo de archivo corrupto o no soportado | Backend activo | 1. Intentar ingesta de archivo `.exe` o PDF dañado. | HTTP `422 Validation Error` o `400 Bad Request`. | 🟡 **PENDIENTE** |
+| Caso | Archivo | Resultado esperado |
+|---|---|---|
+| Formatos admitidos | PDF, PNG o JPG de hasta 10 MB | Se envía a n8n |
+| Formato no admitido | `.exe`, `.docx`, `.gif` | El front lo rechaza antes de enviar |
+| Tamaño máximo | Un PDF de más de 10 MB | El front lo rechaza ("supera el límite de 10 MB") |
+| Duplicado exacto | Subir **dos veces el mismo archivo** (misma copia, sin modificarlo) | Aviso de archivo ya subido (`TC-DUP-001`) |
+| Re-escaneo | Dos archivos **distintos** (por ejemplo, dos fotos o dos exportaciones) del mismo documento sintético | Posible duplicado por contenido (`TC-DUP-005`). Requiere la misma identificación, tipo y fecha, y la misma institución o diagnóstico |
 
----
+## Payloads para el umbral
 
-## Módulo 4: Bandeja de Auditoría Human-in-the-Loop (HITL)
+Para probar el umbral sin depender de Gemini, enviar el payload directo a `POST /api/v1/documents/ingest` (con el token de un usuario con permiso de ingesta). El score lo **calcula el backend** desde `evaluacion` (ver *Score de confianza* en [`backend/README.md`](../../backend/README.md#normalización-y-score)):
 
-| ID | Título del Caso | Precondiciones | Pasos de Ejecución | Resultado Esperado | Estado |
-|---|---|---|---|---|---|
-| `TC-HITL-001` | Consulta de bandeja por auditor | Token de `AUDITOR_CLINICO` | 1. Hacer `GET /api/v1/audit/pending`. | HTTP `200 OK`, muestra lista de documentos con `PENDIENTE_AUDITORIA`. | 🟡 **PENDIENTE** |
-| `TC-HITL-002` | Resolución y corrección manual de auditoría | Caso en pendiente | 1. Hacer `PUT /api/v1/audit/{id}/resolve` corrigiendo la cola o prioridad. | Estado pasa a `AUDITADO`, el JSON en OCI se guarda en `procesados/auditados/`. | 🟡 **PENDIENTE** |
+| Score esperado | `evaluacion` | Resto del payload |
+|---|---|---|
+| **0.95** (`PROCESADO`) | `{"certeza_tipo": "alta", "legibilidad": "alta"}` | Paciente con nombre e identificación válida, sin campos dudosos |
+| **0.874** (`PROCESADO`) | `{"certeza_tipo": "alta", "legibilidad": "media"}` | Igual |
+| **0.80** (`PENDIENTE_AUDITORIA`) | `{"certeza_tipo": "media", "legibilidad": "alta"}` | Igual |
+
+Cada descuento (identificación inválida, CIE-10 inválido, campos dudosos, contenido faltante) baja el score y queda como motivo en `motivos_auditoria`. Para el límite exacto 0.84/0.85, las pruebas automáticas usan el contrato anterior, sin `evaluacion`, con `clasificacion.score_confianza_clasificacion` fijo (`tests/test_ingest_service.py`). Un ejemplo de payload completo está en [`backend/README.md`](../../backend/README.md#ingesta-contrato-v2).
+
+## Documento de laboratorio con valor crítico
+
+Para `TC-TRI-004`, un parámetro con `"critico": true` dentro de `detalle_clinico.examenes_y_laboratorio.paneles[].parametros[]` (por ejemplo, potasio `6.8 mEq/L`) debe elevar la prioridad a `Urgente`.

@@ -1,5 +1,7 @@
 # secrets/
 
-Coloca aquí la clave privada de autenticación programática de OCI (`oci_api_key.pem`) que corresponde a la ruta configurada en `OCI_KEY_FILE_PATH` dentro de tu `.env`.
+Coloca aquí la clave privada de la API Key de OCI (`oci_api_key.pem`), en la ruta indicada por `OCI_KEY_FILE_PATH` en `backend/.env`. Solo se usa en **desarrollo** (`OCI_AUTH_MODE=api_key`).
 
-**No subas archivos `.pem` reales a git.** El `.gitignore` de la raíz del repositorio ya ignora cualquier `*.pem`, así que solo este `README.md` queda versionado como referencia de la estructura esperada.
+En producción, en una VM de OCI, se usa `OCI_AUTH_MODE=instance_principal` y **no hace falta ninguna llave en disco** (ver [`docs/DESPLIEGUE_OCI.md`](../../docs/DESPLIEGUE_OCI.md)).
+
+**No subas archivos `.pem` reales a git.** El `.gitignore` de la raíz ignora cualquier `*.pem`: solo este `README.md` queda versionado.

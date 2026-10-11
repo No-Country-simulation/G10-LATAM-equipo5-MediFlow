@@ -27,7 +27,7 @@ rutas relativas (`/api/v1`, `/webhook/triaje-medico`).
      Allow dynamic-group mediflow-vm to manage objects in compartment <compartment> where target.bucket.name = 'mediflow-documents'
      Allow dynamic-group mediflow-vm to manage buckets in compartment <compartment> where all {target.bucket.name = 'mediflow-documents', any {request.permission = 'BUCKET_INSPECT', request.permission = 'BUCKET_READ', request.permission = 'PAR_MANAGE'}}
      ```
-     (`PAR_MANAGE` permite crear las URLs pre-firmadas de la vista de auditoría; no da permiso para borrar ni crear buckets.)
+     (`PAR_MANAGE` permite crear las URLs pre-firmadas con que el detalle y la auditoría muestran el documento original; no da permiso para borrar ni crear buckets.)
 5. **Dominio**: un registro DNS `A` hacia la IP pública de la VM (Caddy necesita el puerto 80 para emitir el certificado).
 
 ## 2. Instalar y levantar
@@ -52,7 +52,7 @@ Producción no carga los usuarios de prueba (`seed_dev_users.sql`). Crear el pri
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backend python -m app.cli create-admin \
-    --username admin --email admin@hospital.cl --full-name "Administrador"
+    --username admin --email admin@hospital.cl --full-name "Administrador" --area ADMINISTRACION
 ```
 
 ## 4. n8n
@@ -61,9 +61,12 @@ docker compose -f docker-compose.prod.yml exec backend python -m app.cli create-
 ssh -L 5678:localhost:5678 opc@<ip-vm>     # y abrir http://localhost:5678 en el navegador local
 ```
 
-1. Crear el usuario owner, importar `workflow/MediFlow_unificado.json` y asignar la credencial de Gemini.
-2. Activar el workflow. `MEDIFLOW_API_BASE_URL=http://backend:8000` ya viene en el compose.
-3. Fijar `N8N_VERSION` en `.env` a la versión probada (no usar `latest` en producción).
+1. Crear el usuario owner e importar `workflow/MediFlow_unificado.json`.
+2. Crear la credencial **Google Gemini(PaLM) Api** y asignarla en los nodos **Gemini rápido** y **Gemini preciso**.
+3. Activar el workflow. `MEDIFLOW_API_BASE_URL=http://backend:8000` ya viene en el compose.
+4. Opcional: elegir los modelos con `GEMINI_MODELO_RAPIDO` y `GEMINI_MODELO_PRECISO` en `.env` (por defecto
+   `gemini-3.1-flash-lite` y `gemini-3.8-flash`; ver [`workflow/README.md`](../workflow/README.md#configuración)).
+5. Fijar `N8N_VERSION` en `.env` a la versión probada (no usar `latest` en producción).
 
 ## 5. Verificación
 
@@ -76,9 +79,14 @@ curl https://$DOMAIN/api/v1/health         # 200 si la base y OCI responden; 503
 
 - **Respaldos de la base** (cron diario, copiar el archivo al bucket o a otro bucket):
   `docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U mediflow_admin mediflow_db | gzip > backup_$(date +%F).sql.gz`
-- **Actualizar**: `git pull && docker compose -f docker-compose.prod.yml up -d --build`.
-- **Cambios de esquema**: no hay Alembic; volver a ejecutar `init.sql` (es re-ejecutable):
-  `docker compose -f docker-compose.prod.yml exec -T postgres psql -U mediflow_admin -d mediflow_db < docker/postgres/init.sql`
+- **Actualizar**: `git pull && docker compose -f docker-compose.prod.yml up -d --build`, y luego los dos puntos siguientes.
+- **Cambios de esquema**: no hay Alembic. **Después de cada actualización** volver a ejecutar `init.sql` (crea
+  tablas y columnas nuevas; es re-ejecutable) e `init_catalogo.sql` (actualiza los tipos y colas semilla):
+  ```bash
+  docker compose -f docker-compose.prod.yml exec -T postgres psql -U mediflow_admin -d mediflow_db < docker/postgres/init.sql
+  docker compose -f docker-compose.prod.yml exec -T postgres psql -U mediflow_admin -d mediflow_db < docker/postgres/init_catalogo.sql
+  ```
+- **Workflow**: si cambió `workflow/MediFlow_unificado.json`, volver a importarlo en n8n (por el túnel SSH).
 - **Logs**: `docker compose -f docker-compose.prod.yml logs -f backend n8n`.
 
 ## Checklist de seguridad
@@ -95,9 +103,12 @@ curl https://$DOMAIN/api/v1/health         # 200 si la base y OCI responden; 503
 | ✅ | n8n toma la URL del backend de su configuración (no del navegador) y valida token/archivo antes de llamar a la IA |
 | ✅ | n8n no guarda ejecuciones exitosas (contienen archivo, token y datos del paciente) |
 | ✅ | Contenedor del backend sin root |
+| ✅ | Un OPERADOR solo ve sus documentos: los ajenos responden `404`, y el aviso de duplicado no le muestra su ID ni datos del paciente |
+| ✅ | Historial de correcciones: cada cambio humano a un documento guarda quién, cuándo, por qué y qué valor cambió |
+| ✅ | Detección de archivos repetidos antes de llamar a la IA (huella SHA-256) y de posibles duplicados al ingerir |
 | ⬜ | El token JWT vive en `sessionStorage`: ante un XSS sería legible. A futuro: cookie `HttpOnly` + `SameSite=Strict` |
-| ⬜ | Tokens de 8 h sin refresh: evaluar 1-2 h + refresh token |
+| ✅ | Access token de 30 min + refresh token de 7 días con rotación (cada refresh token es de un solo uso) |
 | ⬜ | El bloqueo de login es en memoria (por proceso): con varias réplicas, moverlo a Redis/BD |
-| ⬜ | Auditoría de accesos a datos clínicos (quién vio qué documento), exigible por normativa de datos de salud |
+| ⬜ | Auditoría de **lecturas** de datos clínicos (quién abrió qué documento), exigible por normativa de datos de salud. Hoy las modificaciones quedan en la base, y las consultas solo en el log del backend (usuario y ruta de cada petición), que rota |
 | ⬜ | Cifrado del bucket con llave propia (OCI Vault) y política de retención/ciclo de vida |
 | ⬜ | Alembic para migraciones versionadas en vez de re-ejecutar `init.sql` |

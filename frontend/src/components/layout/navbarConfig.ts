@@ -1,4 +1,5 @@
 import {
+  Database,
   LayoutDashboard,
   FolderOpen,
   UserCheck,
@@ -12,11 +13,14 @@ export interface NavItem {
   icon: typeof LayoutDashboard;
 }
 
+const USERS_NAV_ITEM: NavItem = { to: '/usuarios', label: 'Usuarios', icon: Users };
+const CATALOGS_NAV_ITEM: NavItem = { to: '/catalogos', label: 'Catálogos', icon: Database };
+
 export const getNavLinks = (role?: UserRole): NavItem[] => {
   if (!role) return [];
 
   if (role === 'GESTOR_USUARIOS') {
-    return [{ to: '/usuarios', label: 'Usuarios', icon: Users }];
+    return [USERS_NAV_ITEM, CATALOGS_NAV_ITEM];
   }
 
   const items: NavItem[] = [
@@ -33,7 +37,7 @@ export const getNavLinks = (role?: UserRole): NavItem[] => {
   }
 
   if (role === 'ADMIN') {
-    items.push({ to: '/usuarios', label: 'Usuarios', icon: Users });
+    items.push(USERS_NAV_ITEM, CATALOGS_NAV_ITEM);
   }
 
   return items;

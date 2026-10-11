@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.features.auth.enums import UserRole
+from app.features.catalogs.schemas import AreaSummary
 
 
 class LoginRequest(BaseModel):
@@ -25,14 +26,28 @@ class UserOut(BaseModel):
     email: str
     full_name: str
     role: UserRole
+    area: AreaSummary | None = None
 
 
 class TokenResponse(BaseModel):
-    """Respuesta del login: token de acceso y perfil del usuario autenticado."""
+    """Respuesta del login y del refresh: par de tokens y perfil del usuario autenticado."""
 
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class RefreshRequest(BaseModel):
+    """Refresh token con el que se pide un par nuevo de tokens."""
+
+    refresh_token: str = Field(max_length=2048)
+
+
+class LogoutRequest(BaseModel):
+    """Cuerpo opcional del logout: si trae el refresh token, también se revoca."""
+
+    refresh_token: str | None = Field(default=None, max_length=2048)
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -62,6 +77,7 @@ class UserCreateRequest(BaseModel):
     password: str = Field(min_length=8, max_length=72)
     full_name: str = Field(min_length=1, max_length=150)
     role: UserRole = UserRole.AUDITOR_CLINICO
+    area_id: UUID
 
 
 class UserAdminUpdateRequest(BaseModel):
@@ -71,6 +87,7 @@ class UserAdminUpdateRequest(BaseModel):
     email: EmailStr | None = None
     role: UserRole | None = None
     is_active: bool | None = None
+    area_id: UUID | None = None
 
 
 class UserResponse(BaseModel):
@@ -84,6 +101,7 @@ class UserResponse(BaseModel):
     full_name: str
     role: UserRole
     is_active: bool
+    area: AreaSummary | None = None
     created_at: datetime
 
 

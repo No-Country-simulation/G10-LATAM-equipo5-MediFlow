@@ -1,0 +1,38 @@
+[
+ {
+  "codigo": "Cola_Emergencia_Medica",
+  "nombre": "Urgencias",
+  "descripcion_semantica": "Usar SOLO si el documento muestra riesgo vital o un valor crítico que requiere acción en minutos u horas: hallazgo como tromboembolismo pulmonar, neumotórax, infarto o hemorragia activa; valor de laboratorio marcado como crítico o de pánico (ej. potasio > 6.5 mEq/L, hemoglobina < 7 g/dL); triaje rojo o naranjo (C1-C2). Aplica a cualquier tipo de documento. NO usar para resultados alterados sin riesgo inmediato ni para urgencia meramente administrativa.",
+  "notificar_inmediato": true
+ },
+ {
+  "codigo": "Cola_Oncologia",
+  "nombre": "Oncología",
+  "descripcion_semantica": "Documentos con sospecha o confirmación de malignidad (ej. biopsia positiva para carcinoma, imagen sugerente de neoplasia, masa tumoral, metástasis) que requieren ingreso oportuno a la ruta de atención oncológica. Si además hay riesgo vital inmediato, usar Urgencias.",
+  "notificar_inmediato": true
+ },
+ {
+  "codigo": "Farmacia_Hospitalaria",
+  "nombre": "Farmacia Hospitalaria",
+  "descripcion_semantica": "Recetas médicas que requieren validación farmacéutica o dispensación, con prioridad para medicamentos controlados, de alto costo o con posibles interacciones. NO usar si la receta contiene además un hallazgo crítico (ver Urgencias).",
+  "notificar_inmediato": false
+ },
+ {
+  "codigo": "Ficha_Clinica",
+  "nombre": "Ficha Clínica",
+  "descripcion_semantica": "Destino por defecto: documentos informativos que solo deben incorporarse a la historia clínica del paciente, sin acción pendiente: resultados normales o alterados sin riesgo inmediato, epicrisis, protocolos operatorios, atenciones e informes de control, certificados y licencias médicas.",
+  "notificar_inmediato": false
+ },
+ {
+  "codigo": "Gestion_Interconsultas",
+  "nombre": "Interconsultas y Derivaciones",
+  "descripcion_semantica": "Interconsultas o derivaciones a otra especialidad, profesional (kinesiología, psicología, nutrición), centro o nivel de atención que deben gestionarse e ingresar a lista de espera o agenda.",
+  "notificar_inmediato": false
+ },
+ {
+  "codigo": "Gestion_Procedimientos",
+  "nombre": "Procedimientos y Exámenes",
+  "descripcion_semantica": "Órdenes que deben agendarse: solicitudes de exámenes de laboratorio o imagenología y de procedimientos o cirugías pendientes (endoscopía, biopsia, procedimiento invasivo). NO usar para exámenes o procedimientos ya realizados (ver Ficha Clínica).",
+  "notificar_inmediato": false
+ }
+]

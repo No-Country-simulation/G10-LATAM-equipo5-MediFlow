@@ -1,8 +1,10 @@
-import { AlertCircle, FileText, Sparkles, X } from 'lucide-react';
+import { AlertCircle, FileText, Loader2, Sparkles, X } from 'lucide-react';
 import ProcessingScanner from '../components/ingestion/ProcessingScanner';
 import DocumentDropzone from '../components/ingestion/DocumentDropzone';
 import TriageProcessSummary from '../components/ingestion/TriageProcessSummary';
+import DuplicateFileWarning from '../components/ingestion/DuplicateFileWarning';
 import { useDocumentIngestion } from '../hooks/useDocumentIngestion';
+import type { CoincidenciaArchivo } from '../types/medical';
 
 const formatSize = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 
@@ -11,11 +13,19 @@ const formatSize = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 // ---------------------------------------------------------------------------
 interface ConfirmModalProps {
   file: File;
+  /** Mientras se consulta si el archivo ya fue subido, no se puede confirmar. */
+  verificando: boolean;
+  duplicados: CoincidenciaArchivo[];
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-const ConfirmModal = ({ file, onConfirm, onCancel }: ConfirmModalProps) => (
+const etiquetaConfirmar = (verificando: boolean, hayDuplicados: boolean): string => {
+  if (verificando) return 'Verificando archivo...';
+  return hayDuplicados ? 'Subir igual' : 'Confirmar y Analizar';
+};
+
+const ConfirmModal = ({ file, verificando, duplicados, onConfirm, onCancel }: ConfirmModalProps) => (
   // Backdrop — clicking it is equivalent to "Cambiar archivo".
   <div
     role="dialog"
@@ -52,19 +62,24 @@ const ConfirmModal = ({ file, onConfirm, onCancel }: ConfirmModalProps) => (
         </div>
       </div>
 
-      <p className="text-sm text-slate-300 leading-relaxed">
-        Documento cargado correctamente. ¿Desea iniciar el análisis clínico?
-      </p>
+      {duplicados.length > 0 ? (
+        <DuplicateFileWarning coincidencias={duplicados} />
+      ) : (
+        <p className="text-sm text-slate-300 leading-relaxed">
+          Documento cargado correctamente. ¿Desea iniciar el análisis clínico?
+        </p>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3">
         <button
           type="button"
           onClick={onConfirm}
-          className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2.5 rounded-xl text-sm shadow-lg shadow-emerald-950/40 border border-emerald-400/30 transition-all cursor-pointer"
+          disabled={verificando}
+          className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2.5 rounded-xl text-sm shadow-lg shadow-emerald-950/40 border border-emerald-400/30 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait"
         >
-          <Sparkles className="w-4 h-4 text-emerald-100" />
-          Confirmar y Analizar
+          {verificando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-emerald-100" />}
+          {etiquetaConfirmar(verificando, duplicados.length > 0)}
         </button>
         <button
           type="button"
@@ -92,6 +107,8 @@ const IngestionPage = () => {
     cancelConfirmation,
     submit,
     reset,
+    verificandoDuplicados,
+    duplicados,
   } = useDocumentIngestion();
 
   return (
@@ -100,6 +117,8 @@ const IngestionPage = () => {
       {confirmPending && selectedFile && (
         <ConfirmModal
           file={selectedFile}
+          verificando={verificandoDuplicados}
+          duplicados={duplicados}
           onConfirm={() => void submit()}
           onCancel={cancelConfirmation}
         />

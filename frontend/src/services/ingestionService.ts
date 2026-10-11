@@ -1,6 +1,6 @@
-import { getStoredToken } from './api';
-import { authService } from './authService';
+import { ensureFreshToken } from './api';
 import { N8N_WEBHOOK_INGESTION_URL } from '@/config/api';
+import { createLogger, describeError, newRequestId, type LogContext } from '@/utils/logger';
 import {
   IngestionError,
   type N8nErrorResponse,
@@ -10,10 +10,12 @@ import {
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
 
-// Gemini Flash takes 10-45 s per document; 120 s gives ample headroom without
-// needing visibility-change cancellation — the request runs to completion even
-// when the user switches browser tabs.
-const INGEST_TIMEOUT_MS = 120_000;
+// Gemini tarda 10-45 s por documento y n8n puede repetir la extracción con el modelo preciso
+// cuando el rápido tiene dudas: 180 s cubren ambas llamadas. La petición sigue aunque el usuario
+// cambie de pestaña.
+const INGEST_TIMEOUT_MS = 180_000;
+
+const log = createLogger('ingesta');
 
 function isN8nError(body: unknown): body is N8nErrorResponse {
   return typeof body === 'object' && body !== null && 'status' in body && body.status === 'error';
@@ -38,16 +40,31 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+const failIngestion = (etapa: string, detalle: string, context: LogContext): never => {
+  log.error(`Ingesta fallida en ${etapa}: ${detalle}`, context);
+  throw new IngestionError(etapa, detalle);
+};
+
+/**
+ * Envía el documento al webhook de n8n. `request_id` viaja como campo del formulario: n8n lo
+ * reenvía al backend como `X-Request-ID`, así que con ese valor se sigue la ingesta en los tres
+ * logs. El nombre del archivo no se registra (puede incluir el nombre del paciente).
+ */
 export async function ingestDocument(file: File): Promise<N8nIngestResponse> {
+  const requestId = newRequestId();
+  const fileInfo: LogContext = { requestId, type: file.type || 'desconocido', sizeKb: Math.round(file.size / 1024) };
+
   const webhookUrl = N8N_WEBHOOK_INGESTION_URL;
   if (!webhookUrl) {
-    throw new IngestionError('CONFIGURACION', 'Falta la URL de webhook para n8n.');
+    return failIngestion('CONFIGURACION', 'Falta la URL de webhook para n8n.', fileInfo);
   }
 
-  const token = authService.getToken() || getStoredToken();
+  // n8n reenvía el token al backend y no puede renovarlo: debe seguir vigente toda la ingesta.
+  const token = await ensureFreshToken(INGEST_TIMEOUT_MS + 60_000);
 
   const formData = new FormData();
   formData.append('data', file);
+  formData.append('request_id', requestId);
   if (token) {
     formData.append('token', token);
   }
@@ -56,6 +73,10 @@ export async function ingestDocument(file: File): Promise<N8nIngestResponse> {
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
+
+  log.info('Enviando documento a n8n', fileInfo);
+  const startedAt = performance.now();
+  const elapsed = () => Math.round(performance.now() - startedAt);
 
   let response: Response;
   try {
@@ -67,16 +88,26 @@ export async function ingestDocument(file: File): Promise<N8nIngestResponse> {
     });
   } catch (error) {
     const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';
-    throw new IngestionError(
+    return failIngestion(
       'CONEXION_N8N',
-      isTimeout ? 'Tiempo de espera agotado (120 s).' : 'No se pudo conectar con el webhook de n8n.',
+      isTimeout ? 'Tiempo de espera agotado (180 s).' : 'No se pudo conectar con el webhook de n8n.',
+      { ...fileInfo, durationMs: elapsed(), error: describeError(error) },
     );
   }
 
   const body = await readJson(response);
-  if (isN8nError(body)) throw new IngestionError(body.etapa, body.detalle);
+  const result: LogContext = { requestId, httpStatus: response.status, durationMs: elapsed() };
+  if (isN8nError(body)) return failIngestion(body.etapa, body.detalle, { ...result, n8nRequestId: body.request_id });
   if (!response.ok) {
-    throw new IngestionError('HTTP', `n8n respondió con HTTP ${response.status}.`);
+    return failIngestion('HTTP', `n8n respondió con HTTP ${response.status}.`, result);
   }
-  return body as N8nIngestResponse;
+
+  const ingested = body as N8nIngestResponse;
+  log.info('Documento procesado por n8n', {
+    ...result,
+    documentoId: ingested.documento_id,
+    estado: ingested.status,
+    tipo: ingested.clasificacion?.tipo_documento,
+  });
+  return ingested;
 }

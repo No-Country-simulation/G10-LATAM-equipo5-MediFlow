@@ -3,12 +3,13 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.features.auth.enums import UserRole
+from app.features.catalogs.models import Area
 
 
 class User(Base):
@@ -27,9 +28,15 @@ class User(Base):
         default=UserRole.AUDITOR_CLINICO,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Nullable solo por los usuarios anteriores a las áreas: la API exige área al crear.
+    area_id: Mapped[UUID | None] = mapped_column(ForeignKey("areas.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
     )
+
+    # `joined`: el área llega en la misma consulta que el usuario (se usa en cada respuesta
+    # de perfil y al ingerir documentos) y evita el lazy-load implícito, que falla en async.
+    area: Mapped[Area | None] = relationship(foreign_keys=[area_id], lazy="joined")
 
 
 class RevokedToken(Base):

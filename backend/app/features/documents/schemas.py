@@ -1,19 +1,48 @@
 """Esquemas Pydantic para la feature de ingesta y consulta de documentos clínicos.
 
-El payload de ingesta sigue el patrón *Envelope*: `clasificacion` y `datos_generales` son
-comunes a cualquier documento, mientras que `detalle_clinico` transporta un único bloque
-poblado según `clasificacion.tipo_documento`, que es el `codigo` del tipo en la tabla maestra
-`document_types` (RECETA -> `medicamentos`, LABORATORIO -> `examenes_y_laboratorio`,
-EPICRISIS -> `procedimientos_e_internacion`, etc.; ver `DetalleClinicoExtract`).
+El payload de ingesta sigue el patrón *Envelope*:
+
+- `clasificacion`, `evaluacion` y `datos_generales` son comunes a cualquier documento.
+  `datos_generales` trae al paciente (con una identificación de cualquier país), los
+  profesionales con su rol, la institución, la fecha del documento y la lista de diagnósticos.
+- `detalle_clinico` trae las **listas comunes** a todos los tipos (`medicamentos`,
+  `examenes_solicitados`) y, como máximo, **un bloque propio** del tipo (RECETA no tiene bloque
+  propio: su contenido son los medicamentos; LABORATORIO -> `examenes_y_laboratorio`, etc.; ver
+  `BLOQUE_POR_TIPO` en `forms.py`). Los tipos definidos con `campos_extraccion` en el catálogo
+  usan `campos_adicionales`.
+
+Los campos de texto son tolerantes (ver `fields.py`): un valor no interpretable queda en `None`
+en lugar de rechazar el documento completo.
 """
 
-from datetime import datetime
-from typing import Any, Literal
+from datetime import date, datetime
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_serializer,
+)
 
 from app.core.config import settings
+from app.features.catalogs.schemas import AreaSummary
+from app.features.documents.fields import (
+    Booleano,
+    Edad,
+    Fecha,
+    TextoCorto,
+    TextoLargo,
+    TextoMedio,
+    lista_acotada,
+    opcion,
+    texto_de,
+)
+from app.features.documents.normalization import TIPOS_IDENTIFICACION
 
 NivelPrioridad = Literal["Rutina", "Prioritario", "Urgente"]
 
@@ -23,45 +52,140 @@ NivelPrioridad = Literal["Rutina", "Prioritario", "Urgente"]
 TipoArchivo = Literal["PDF", "PNG", "JPG", "TIFF", "DCM"]
 TIPOS_ARCHIVO_PRINCIPAL: tuple[str, ...] = ("PDF", "PNG", "JPG")
 
+ROLES_PROFESIONAL = ("SOLICITANTE", "INFORMANTE", "TRATANTE", "DESTINATARIO", "OTRO")
+NIVELES_EVALUACION = ("alta", "media", "baja")
+ORIGENES_CIE10 = ("DOCUMENTO", "INFERIDO", "AUDITOR")
+
+TipoIdentificacion = Annotated[
+    str,
+    BeforeValidator(
+        opcion(
+            TIPOS_IDENTIFICACION,
+            {"RUN": "RUT", "CI": "CEDULA", "CC": "CEDULA", "CÉDULA": "CEDULA", "PASSPORT": "PASAPORTE"},
+            "OTRO",
+        )
+    ),
+    Field(json_schema_extra={"enum": list(TIPOS_IDENTIFICACION)}),
+]
+Sexo = Annotated[
+    str | None,
+    BeforeValidator(
+        opcion(("F", "M", "X"), {"FEMENINO": "F", "MUJER": "F", "MASCULINO": "M", "HOMBRE": "M"})
+    ),
+    Field(json_schema_extra={"enum": ["F", "M", "X"]}),
+]
+RolProfesional = Annotated[
+    str,
+    BeforeValidator(
+        opcion(ROLES_PROFESIONAL, {"FIRMANTE": "INFORMANTE", "RESPONSABLE": "TRATANTE"}, "OTRO")
+    ),
+    Field(json_schema_extra={"enum": list(ROLES_PROFESIONAL)}),
+]
+# Si el LLM no evalúa (o responde algo fuera de la escala), se asume lo conservador.
+NivelEvaluacion = Annotated[
+    str,
+    BeforeValidator(opcion(NIVELES_EVALUACION, {"high": "alta", "medium": "media", "low": "baja"}, "baja")),
+]
+OrigenCie10 = Annotated[str | None, BeforeValidator(opcion(ORIGENES_CIE10))]
+
 
 # --- Datos generales (comunes a todo tipo de documento) ---------------------
 
 
+class IdentificacionExtract(BaseModel):
+    """Documento de identidad del paciente: RUT/RUN, DNI, CURP, cédula, CPF, pasaporte u otro."""
+
+    tipo: TipoIdentificacion = Field("OTRO", title="Tipo de identificación")
+    numero: texto_de(30) = Field(None, title="Número de identificación")
+    pais: texto_de(56) = Field(None, title="País (ISO alfa-2)")
+
+
 class PacienteExtract(BaseModel):
-    """Datos del paciente extraídos por el pipeline de OCR/LLM."""
+    """Datos del paciente extraídos del documento."""
 
-    rut: str | None = None
-    nombre: str | None = None
-    edad: int | None = None
+    nombre: TextoCorto = Field(None, title="Nombre del paciente")
+    identificacion: IdentificacionExtract | None = Field(None, title="Identificación")
+    edad: Edad = Field(None, title="Edad (años)")
+    fecha_nacimiento: Fecha = Field(None, title="Fecha de nacimiento")
+    sexo: Sexo = Field(None, title="Sexo")
+    numero_ficha: texto_de(50) = Field(None, title="N° de ficha / historia clínica")
 
 
-class MedicoExtract(BaseModel):
-    """Datos del profesional solicitante extraídos por el pipeline."""
+class ProfesionalExtract(BaseModel):
+    """Profesional que participa en el documento, con su rol (quién solicita, informa, etc.)."""
 
-    rut: str | None = None
-    nombre: str | None = None
-    matricula: str | None = None
+    nombre: TextoCorto = Field(None, title="Nombre")
+    identificacion: texto_de(30) = Field(None, title="Identificación")
+    registro_profesional: texto_de(50) = Field(None, title="Registro profesional")
+    especialidad: texto_de(100) = Field(None, title="Especialidad")
+    rol: RolProfesional = Field("OTRO", title="Rol")
+
+
+class DiagnosticoExtract(BaseModel):
+    """Diagnóstico del documento. `origen_cie10`: impreso en el DOCUMENTO o INFERIDO por la IA."""
+
+    descripcion: texto_de(300) = Field(None, title="Diagnóstico")
+    cie10: texto_de(12) = Field(None, title="CIE-10")
+    tipo: Annotated[str, BeforeValidator(opcion(("PRINCIPAL", "SECUNDARIO"), defecto="SECUNDARIO"))] = Field(
+        "SECUNDARIO", title="Tipo", json_schema_extra={"enum": ["PRINCIPAL", "SECUNDARIO"]}
+    )
+    certeza: Annotated[
+        str, BeforeValidator(opcion(("CONFIRMADO", "PRESUNTIVO"), {"SOSPECHA": "PRESUNTIVO"}, "PRESUNTIVO"))
+    ] = Field("PRESUNTIVO", title="Certeza", json_schema_extra={"enum": ["CONFIRMADO", "PRESUNTIVO"]})
+    origen_cie10: OrigenCie10 = Field(
+        None, title="Origen del CIE-10", json_schema_extra={"enum": list(ORIGENES_CIE10), "readOnly": True}
+    )
 
 
 class DatosGeneralesExtract(BaseModel):
     """Datos administrativos y clínicos comunes a cualquier tipo de documento."""
 
-    paciente: PacienteExtract
-    medico_solicitante: MedicoExtract
-    diagnostico_principal: str | None = None
-    cie10_sugerido: str | None = None
+    paciente: PacienteExtract = Field(default_factory=PacienteExtract, title="Paciente")
+    profesionales: Annotated[list[ProfesionalExtract], BeforeValidator(lista_acotada(10))] = Field(
+        [], title="Profesionales"
+    )
+    institucion_emisora: texto_de(200) = Field(None, title="Institución emisora")
+    fecha_documento: Fecha = Field(None, title="Fecha del documento / examen")
+    diagnosticos: Annotated[list[DiagnosticoExtract], BeforeValidator(lista_acotada(20))] = Field(
+        [], title="Diagnósticos"
+    )
+
+    @property
+    def diagnostico_principal(self) -> DiagnosticoExtract | None:
+        """El marcado como PRINCIPAL o, si ninguno lo está, el primero de la lista."""
+        principales = [d for d in self.diagnosticos if d.tipo == "PRINCIPAL"]
+        return (principales or self.diagnosticos or [None])[0]
 
 
-# --- Clasificación y enrutamiento --------------------------------------------
+# --- Clasificación, evaluación y enrutamiento -------------------------------
 
 
 class ClasificacionExtract(BaseModel):
-    """Resultado de la clasificación automática del documento."""
+    """Resultado de la clasificación automática del documento.
+
+    `score_confianza_clasificacion` es el que reporta el LLM; cuando viene `evaluacion`, el
+    backend calcula el puntaje final con reglas propias (ver `scoring.py`) y conserva este como
+    `score_ia`.
+    """
 
     tipo_documento: str  # `codigo` del tipo en la tabla maestra (ej. "RECETA")
-    especialidad: str | None = None
+    especialidad: TextoCorto = None
     nivel_prioridad: NivelPrioridad
-    score_confianza_clasificacion: float = Field(ge=0, le=1)
+    score_confianza_clasificacion: float | None = Field(None, ge=0, le=1)
+
+
+class EvaluacionExtract(BaseModel):
+    """Autoevaluación del LLM sobre la calidad de la lectura, en categorías (más confiables que un
+    número): con ella y con validaciones propias el backend calcula el puntaje de confianza."""
+
+    legibilidad: NivelEvaluacion = "baja"
+    certeza_tipo: NivelEvaluacion = "baja"
+    evidencia_tipo: TextoMedio = None  # texto del documento que justifica el tipo (título, encabezado)
+    campos_dudosos: Annotated[list[str], BeforeValidator(lista_acotada(20))] = []
+    documentos_multiples: bool = False
+    es_documento_clinico: bool = True
+    modelo: texto_de(80) = None  # modelo que produjo la extracción final (lo agrega n8n)
+    escalado: bool = False  # True si n8n repitió la extracción con el modelo de mayor precisión
 
 
 class NotificacionGenerada(BaseModel):
@@ -76,156 +200,188 @@ class DecisionEnrutamientoExtract(BaseModel):
 
     destino_principal: str
     requiere_auditoria_humana: bool
-    justificacion_enrutamiento: str | None = None
+    justificacion_enrutamiento: TextoMedio = None
     notificacion_generada: NotificacionGenerada | None = None
 
 
-# --- Detalle clínico (Envelope: un solo bloque poblado por tipo de documento) --
+# --- Listas comunes a todos los tipos ----------------------------------------
 
 
 class MedicamentoItem(BaseModel):
-    """Ítem de posología dentro de una Receta médica."""
+    """Medicamento prescrito (receta, indicaciones de alta o de una atención) o administrado
+    (tratamiento en urgencias o en una ambulancia)."""
 
-    nombre: str
-    dosis: str | None = None
-    duracion_tratamiento: str | None = None
+    nombre: texto_de(200) = Field(None, title="Medicamento")
+    dosis: texto_de(100) = Field(None, title="Dosis")
+    frecuencia: texto_de(100) = Field(None, title="Frecuencia")
+    via: texto_de(50) = Field(None, title="Vía")
+    duracion_tratamiento: texto_de(100) = Field(None, title="Duración")
+    cantidad: texto_de(100) = Field(None, title="Cantidad")
+    tipo: Annotated[str, BeforeValidator(opcion(("PRESCRITO", "ADMINISTRADO"), defecto="PRESCRITO"))] = Field(
+        "PRESCRITO", title="Prescrito / administrado", json_schema_extra={"enum": ["PRESCRITO", "ADMINISTRADO"]}
+    )
+
+
+class ExamenSolicitadoItem(BaseModel):
+    """Examen o estudio pedido en una orden (aún no realizado)."""
+
+    codigo: texto_de(30) = Field(None, title="Código de prestación")
+    nombre: texto_de(300) = Field(None, title="Examen solicitado")
+    categoria: Annotated[
+        str,
+        BeforeValidator(
+            opcion(
+                ("LABORATORIO", "IMAGENOLOGIA", "PROCEDIMIENTO", "OTRO"),
+                {"IMAGEN": "IMAGENOLOGIA", "IMAGENES": "IMAGENOLOGIA", "IMAGENOLOGÍA": "IMAGENOLOGIA"},
+                "OTRO",
+            )
+        ),
+    ] = Field(
+        "OTRO",
+        title="Categoría",
+        json_schema_extra={"enum": ["LABORATORIO", "IMAGENOLOGIA", "PROCEDIMIENTO", "OTRO"]},
+    )
+
+
+# --- Bloques propios de cada tipo semilla --------------------------------------
 
 
 class ParametroLaboratorio(BaseModel):
-    """Parámetro individual reportado dentro de un examen de laboratorio."""
+    """Parámetro individual de un examen de laboratorio. `critico`: el informe lo marca como
+    valor crítico o de pánico (ej. `**`), lo que eleva la prioridad a Urgente."""
 
-    nombre: str
-    valor: str | None = None
-    unidad: str | None = None
-    rango_referencia: str | None = None
-    alterado: bool | None = None
+    nombre: texto_de(150) = Field(None, title="Parámetro")
+    valor: texto_de(100) = Field(None, title="Valor")
+    unidad: texto_de(50) = Field(None, title="Unidad")
+    rango_referencia: texto_de(100) = Field(None, title="Rango de referencia")
+    alterado: Booleano = Field(None, title="Fuera de rango")
+    critico: Booleano = Field(None, title="Valor crítico")
 
 
 class PanelLaboratorio(BaseModel):
-    """Panel o sección de un informe de laboratorio (ej. 'Hemograma', 'Coagulación').
+    """Panel o sección de un informe de laboratorio (ej. 'Hemograma', 'Coagulación')."""
 
-    Un mismo informe suele traer varios paneles, cada uno con su propia tabla de
-    parámetros; por eso `ExamenesLaboratorioDetail.paneles` es una lista de estos.
-    """
-
-    nombre_panel: str
-    parametros: list[ParametroLaboratorio] = []
+    nombre_panel: texto_de(150) = Field(None, title="Panel")
+    muestra: texto_de(50) = Field(None, title="Muestra")
+    parametros: Annotated[list[ParametroLaboratorio], BeforeValidator(lista_acotada(150))] = Field(
+        [], title="Parámetros"
+    )
 
 
 class ExamenesLaboratorioDetail(BaseModel):
-    """Detalle clínico específico de un Informe de Laboratorio.
+    """Detalle de un informe de resultados de laboratorio (uno o varios paneles)."""
 
-    Puede contener uno o varios `paneles` (ej. un informe de "Exámenes de Sangre" trae
-    Química en Sangre, Hemograma, Coagulación, Hormonas, etc., cada uno como un panel
-    independiente con sus propios parámetros y unidades).
-    """
-
-    estudio_solicitado: str | None = None
-    conclusiones_o_hallazgos: str | None = None
-    paneles: list[PanelLaboratorio] = []
+    estudio_solicitado: TextoMedio = Field(None, title="Estudio solicitado")
+    conclusiones_o_hallazgos: TextoLargo = Field(None, title="Conclusiones o comentarios")
+    paneles: Annotated[list[PanelLaboratorio], BeforeValidator(lista_acotada(40))] = Field([], title="Paneles")
 
 
 class ProcedimientosInternacionDetail(BaseModel):
-    """Detalle clínico específico de una Epicrisis (evolución y antecedentes)."""
+    """Detalle de una epicrisis o informe de alta de una hospitalización."""
 
-    fecha_ingreso: str | None = None
-    fecha_alta: str | None = None
-    resumen_evolucion: str | None = None
-    antecedentes_relevantes: str | None = None
-    procedimientos_realizados: list[str] = []
+    fecha_ingreso: Fecha = Field(None, title="Fecha de ingreso")
+    fecha_alta: Fecha = Field(None, title="Fecha de alta")
+    resumen_evolucion: TextoLargo = Field(None, title="Resumen de la evolución")
+    antecedentes_relevantes: TextoLargo = Field(None, title="Antecedentes relevantes")
+    condicion_alta: TextoMedio = Field(None, title="Condición al alta")
+    indicaciones_alta: TextoLargo = Field(None, title="Indicaciones al alta")
+    controles: TextoMedio = Field(None, title="Controles")
+    procedimientos_realizados: Annotated[list[str], BeforeValidator(lista_acotada(30))] = Field(
+        [], title="Procedimientos realizados"
+    )
 
 
 class InformeImagenologicoDetail(BaseModel):
-    """Detalle clínico específico de un Informe de Imagenología (TC, RM, Rx, Ecotomografía, etc.).
+    """Detalle de un informe de imagenología (Rx, TC, RM, ecografía, mamografía, ...)."""
 
-    `hallazgos` e `impresion_diagnostica` suelen venir como texto libre (a veces con
-    subtítulos anatómicos dentro del mismo bloque, ej. "TORAX" / "ABDOMEN Y PELVIS");
-    no se estructuran más porque no hay una tabla real detrás, a diferencia de laboratorio.
-    """
-
-    tecnica: str | None = None
-    antecedentes: str | None = None
-    hallazgos: str | None = None
-    impresion_diagnostica: str | None = None
+    estudio_realizado: TextoMedio = Field(None, title="Estudio realizado")
+    modalidad: Annotated[
+        str | None,
+        BeforeValidator(
+            opcion(
+                ("RX", "TC", "RM", "ECO", "MAMOGRAFIA", "PET", "MEDICINA_NUCLEAR", "OTRA"),
+                {"RADIOGRAFIA": "RX", "TAC": "TC", "TOMOGRAFIA": "TC", "RESONANCIA": "RM", "ECOGRAFIA": "ECO"},
+                "OTRA",
+            )
+        ),
+    ] = Field(
+        None,
+        title="Modalidad",
+        json_schema_extra={"enum": ["RX", "TC", "RM", "ECO", "MAMOGRAFIA", "PET", "MEDICINA_NUCLEAR", "OTRA"]},
+    )
+    region_anatomica: TextoCorto = Field(None, title="Región anatómica")
+    tecnica: TextoLargo = Field(None, title="Técnica")
+    antecedentes: TextoLargo = Field(None, title="Antecedentes / indicación")
+    hallazgos: TextoLargo = Field(None, title="Hallazgos")
+    impresion_diagnostica: TextoLargo = Field(None, title="Impresión diagnóstica")
 
 
 class NotaAtencionAmbulatoriaDetail(BaseModel):
-    """Detalle clínico específico de una Nota de Atención Ambulatoria (consulta médica).
+    """Registro de una atención o evaluación ambulatoria (consulta, control, evaluación de
+    kinesiología o rehabilitación, plan de tratamiento)."""
 
-    A diferencia de un informe de examen, no describe un estudio sino la evolución de una
-    consulta: motivo, antecedentes acumulados del paciente, anamnesis, examen físico e
-    indicaciones. Todos son texto libre extraído de la ficha electrónica; `diagnostico_atencion`
-    puede diferir de `diagnostico_referencia` (el motivo con el que llegó derivado el paciente).
-    """
-
-    motivo_consulta: str | None = None
-    antecedentes: str | None = None
-    anamnesis: str | None = None
-    examen_fisico: str | None = None
-    diagnostico_referencia: str | None = None
-    diagnostico_atencion: str | None = None
-    indicaciones: str | None = None
+    motivo_consulta: TextoLargo = Field(None, title="Motivo de consulta")
+    antecedentes: TextoLargo = Field(None, title="Antecedentes")
+    anamnesis: TextoLargo = Field(None, title="Anamnesis")
+    examen_fisico: TextoLargo = Field(None, title="Examen físico")
+    diagnostico_referencia: TextoMedio = Field(None, title="Diagnóstico de referencia")
+    diagnostico_atencion: TextoMedio = Field(None, title="Diagnóstico de la atención")
+    indicaciones: TextoLargo = Field(None, title="Indicaciones / plan")
 
 
 class SolicitudProcedimientoDetail(BaseModel):
-    """Detalle clínico específico de una Solicitud de Procedimiento (aún no realizado)."""
+    """Solicitud de un procedimiento aún no realizado (cirugía, endoscopía, biopsia, ...)."""
 
-    procedimiento_solicitado: str | None = None
-    indicacion_clinica: str | None = None
-    antecedentes: str | None = None
-    fecha_solicitud: str | None = None
+    procedimiento_solicitado: TextoMedio = Field(None, title="Procedimiento solicitado")
+    indicacion_clinica: TextoLargo = Field(None, title="Indicación clínica")
+    antecedentes: TextoLargo = Field(None, title="Antecedentes")
+    fecha_solicitud: Fecha = Field(None, title="Fecha de solicitud")
 
 
 class InterconsultaDetail(BaseModel):
-    """Detalle clínico específico de una Interconsulta / Derivación a otra especialidad o centro."""
+    """Interconsulta o derivación a otra especialidad, profesional o centro."""
 
-    especialidad_destino: str | None = None
-    establecimiento_destino: str | None = None
-    motivo_interconsulta: str | None = None
-    antecedentes_clinicos: str | None = None
+    especialidad_destino: TextoCorto = Field(None, title="Especialidad de destino")
+    establecimiento_destino: TextoCorto = Field(None, title="Establecimiento de destino")
+    motivo_interconsulta: TextoLargo = Field(None, title="Motivo de la interconsulta")
+    antecedentes_clinicos: TextoLargo = Field(None, title="Antecedentes clínicos")
 
 
 class AnatomiaPatologicaDetail(BaseModel):
-    """Detalle clínico específico de un Informe de Anatomía Patológica (biopsia, citología, pieza).
+    """Informe de anatomía patológica. `malignidad`: `None` si el patólogo no se pronuncia."""
 
-    `malignidad` explicita si el patólogo informa neoplasia maligna (`None` si no se pronuncia);
-    es la señal principal para enrutar a la cola de Oncología.
-    """
-
-    tipo_muestra: str | None = None
-    descripcion_macroscopica: str | None = None
-    descripcion_microscopica: str | None = None
-    diagnostico_histopatologico: str | None = None
-    malignidad: bool | None = None
+    tipo_muestra: TextoMedio = Field(None, title="Tipo de muestra")
+    descripcion_macroscopica: TextoLargo = Field(None, title="Descripción macroscópica")
+    descripcion_microscopica: TextoLargo = Field(None, title="Descripción microscópica")
+    diagnostico_histopatologico: TextoLargo = Field(None, title="Diagnóstico histopatológico")
+    malignidad: Booleano = Field(None, title="Malignidad")
 
 
 class ProtocoloOperatorioDetail(BaseModel):
-    """Detalle clínico específico de un Protocolo Operatorio (cirugía ya realizada)."""
+    """Protocolo operatorio de una cirugía ya realizada."""
 
-    fecha_cirugia: str | None = None
-    cirugia_realizada: str | None = None
-    diagnostico_preoperatorio: str | None = None
-    tecnica: str | None = None
-    hallazgos_intraoperatorios: str | None = None
-    complicaciones: str | None = None
-    muestras_enviadas: str | None = None
+    fecha_cirugia: Fecha = Field(None, title="Fecha de la cirugía")
+    cirugia_realizada: TextoMedio = Field(None, title="Cirugía realizada")
+    diagnostico_preoperatorio: TextoMedio = Field(None, title="Diagnóstico preoperatorio")
+    tecnica: TextoLargo = Field(None, title="Técnica")
+    hallazgos_intraoperatorios: TextoLargo = Field(None, title="Hallazgos intraoperatorios")
+    complicaciones: TextoMedio = Field(None, title="Complicaciones")
+    muestras_enviadas: TextoMedio = Field(None, title="Muestras enviadas")
 
 
 class DetalleClinicoExtract(BaseModel):
-    """Envelope de detalle clínico: solo el bloque correspondiente al `tipo_documento` viene poblado.
+    """Envelope de detalle clínico: listas comunes + a lo sumo un bloque propio del tipo.
 
-    Mapeo `codigo` del tipo -> bloque: RECETA -> `medicamentos`, LABORATORIO ->
-    `examenes_y_laboratorio`, IMAGENES -> `informe_imagenologico`, SOLICITUD_PROCEDIMIENTO ->
-    `solicitud_procedimiento`, EPICRISIS -> `procedimientos_e_internacion`, INTERCONSULTA ->
-    `interconsulta`, ANATOMIA_PATOLOGICA -> `anatomia_patologica`, PROTOCOLO_OPERATORIO ->
-    `protocolo_operatorio`, NOTA_ATENCION -> `nota_atencion_ambulatoria`. OTRO no lleva bloque.
-
-    `campos_adicionales` es el bloque genérico para los tipos que definen `campos_extraccion`
-    (JSON Schema) en el catálogo, por ejemplo uno creado desde el mantenedor; el backend lo
-    valida contra ese esquema en la ingesta.
+    Bloque por `codigo` de tipo: LABORATORIO -> `examenes_y_laboratorio`, IMAGENES ->
+    `informe_imagenologico`, SOLICITUD_PROCEDIMIENTO -> `solicitud_procedimiento`, EPICRISIS ->
+    `procedimientos_e_internacion`, INTERCONSULTA -> `interconsulta`, ANATOMIA_PATOLOGICA ->
+    `anatomia_patologica`, PROTOCOLO_OPERATORIO -> `protocolo_operatorio`, NOTA_ATENCION ->
+    `nota_atencion_ambulatoria`. RECETA y OTRO no tienen bloque propio. Los tipos con
+    `campos_extraccion` en el catálogo usan `campos_adicionales` (validado contra ese JSON Schema).
     """
 
     medicamentos: list[MedicamentoItem] | None = None
+    examenes_solicitados: list[ExamenSolicitadoItem] | None = None
     examenes_y_laboratorio: ExamenesLaboratorioDetail | None = None
     procedimientos_e_internacion: ProcedimientosInternacionDetail | None = None
     informe_imagenologico: InformeImagenologicoDetail | None = None
@@ -236,11 +392,21 @@ class DetalleClinicoExtract(BaseModel):
     protocolo_operatorio: ProtocoloOperatorioDetail | None = None
     campos_adicionales: dict[str, Any] | None = None
 
+    @field_validator("medicamentos", "examenes_solicitados", mode="before")
+    @classmethod
+    def _lista_vacia_es_none(cls, value: Any) -> Any:
+        """Una lista vacía equivale a "sin datos": no ensucia el JSON ni la validación."""
+        return value or None
+
     @model_serializer(mode="wrap")
     def _omitir_bloques_vacios(self, handler):
-        """Serializa solo el bloque poblado: los otros ocho `null` son ruido en la respuesta,
-        en el JSON de OCI y en `raw_extracted_json`."""
+        """Serializa solo lo poblado: los bloques en `null` son ruido en la respuesta, en el JSON
+        de OCI y en `raw_extracted_json`."""
         return {bloque: valor for bloque, valor in handler(self).items() if valor is not None}
+
+
+# Listas que cualquier tipo puede traer, además de su bloque propio.
+LISTAS_COMUNES: tuple[str, ...] = ("medicamentos", "examenes_solicitados")
 
 
 # --- Payload unificado de ingesta --------------------------------------------
@@ -268,6 +434,7 @@ class IngestPayload(BaseModel):
     documento_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     archivos: list[ArchivoAdjunto] = Field(min_length=1, max_length=settings.INGEST_MAX_FILES)
     clasificacion: ClasificacionExtract
+    evaluacion: EvaluacionExtract | None = None
     datos_generales: DatosGeneralesExtract
     detalle_clinico: DetalleClinicoExtract
     decision_enrutamiento: DecisionEnrutamientoExtract
@@ -296,13 +463,14 @@ class AlmacenamientoOci(BaseModel):
 class IngestResponse(BaseModel):
     """Respuesta final del procesamiento, consumida por el frontend React.
 
-    Repite la información recibida desde n8n y agrega `status` (`PROCESADO` o
-    `PENDIENTE_AUDITORIA`, igual que `estado` en la bandeja), `motivos_auditoria` (por qué el
-    backend dejó el documento en auditoría; vacío si quedó procesado) y `almacenamiento_oci`.
+    Repite la información normalizada y agrega `status` (`PROCESADO` o `PENDIENTE_AUDITORIA`),
+    `score_confianza` (el puntaje final calculado por el backend), `motivos_auditoria` (por qué
+    quedó en auditoría; vacío si quedó procesado) y `almacenamiento_oci`.
     """
 
     status: Literal["PROCESADO", "PENDIENTE_AUDITORIA"]
     documento_id: str
+    score_confianza: float
     motivos_auditoria: list[str] = []
     clasificacion: ClasificacionExtract
     datos_generales: DatosGeneralesExtract
@@ -318,19 +486,160 @@ class DocumentListItemResponse(BaseModel):
 
     documento_id: str
     estado: str
-    rut_paciente: str | None
+    identificacion_paciente: str | None
+    tipo_identificacion: str | None = None
     nombre_paciente: str | None
+    numero_ficha: str | None = None
+    medico_nombre: str | None = None
     tipo_documento: str
+    especialidad: str | None = None
     nivel_prioridad: str
     score_confianza: float
+    diagnostico_principal: str | None = None
+    cie10_sugerido: str | None = None
+    cie10_origen: str | None = None
+    institucion_emisora: str | None = None
+    fecha_documento: date | None = None
     destino_enrutamiento: str | None
     oci_json_path: str
     uploaded_by_id: UUID | None = None
+    area_origen: AreaSummary | None = None
     motivos_auditoria: list[str] = []
     asignado_a_id: UUID | None = None
     asignado_a_username: str | None = None
     asignado_at: datetime | None = None
     created_at: datetime
+
+
+class ArchivoDocumento(BaseModel):
+    """Un archivo original del documento con su URL pre-firmada de solo lectura.
+
+    `visualizable` indica si el navegador puede mostrarlo (PDF/PNG/JPG); TIFF y DICOM se
+    ofrecen como descarga. `url` es `None` si OCI no pudo generarla (ver `aviso_archivos`).
+    """
+
+    orden: int
+    tipo_archivo: str
+    rol: str | None
+    url: str | None
+    visualizable: bool
+
+
+class ArchivoPreview(ArchivoDocumento):
+    """Archivo con URL garantizada: la auditoría no se puede hacer sin ver el original."""
+
+    url: str
+
+
+class CampoRelevante(BaseModel):
+    """Campo del detalle clínico sin tabla propia, listo para mostrarse (`etiqueta`: `valor`)."""
+
+    campo: str
+    etiqueta: str
+    valor: Any
+
+
+class TablasClinicas(BaseModel):
+    """Datos tabulares del documento, leídos de las tablas hijas normalizadas."""
+
+    diagnosticos: list[DiagnosticoExtract] = []
+    profesionales: list[ProfesionalExtract] = []
+    medicamentos: list[MedicamentoItem] = []
+    examenes_solicitados: list[ExamenSolicitadoItem] = []
+    paneles_laboratorio: list[PanelLaboratorio] = []
+    procedimientos: list[str] = []
+
+
+class DetalleDocumento(BaseModel):
+    """Detalle clínico para mostrar: las tablas del documento y los campos de texto relevantes."""
+
+    tablas: TablasClinicas = Field(default_factory=TablasClinicas)
+    campos_relevantes: list[CampoRelevante] = []
+
+
+TipoDuplicado = Literal["ARCHIVO_IDENTICO", "CONTENIDO_SIMILAR"]
+Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+
+
+class DuplicadoDocumento(BaseModel):
+    """Otro documento que podría ser el mismo: `ARCHIVO_IDENTICO` (misma huella SHA-256) o
+    `CONTENIDO_SIMILAR` (mismo paciente, tipo y fecha, y misma institución o diagnóstico)."""
+
+    documento_id: str
+    tipo: TipoDuplicado
+
+
+class DuplicateCheckRequest(BaseModel):
+    """Huellas SHA-256 (hex en minúsculas) de los archivos que se van a subir."""
+
+    sha256: list[Sha256] = Field(min_length=1, max_length=settings.INGEST_MAX_FILES)
+
+
+class CoincidenciaArchivo(BaseModel):
+    """Un documento ya registrado con un archivo idéntico.
+
+    Un OPERADOR solo ve el detalle de los documentos que subió: para los de otros usuarios
+    `documento_id` y `estado` vienen en `null` y solo se informa el área y la fecha.
+    """
+
+    sha256: str
+    documento_id: str | None
+    estado: str | None
+    created_at: datetime
+    area_origen: str | None
+    propio: bool
+
+
+class DuplicateCheckResponse(BaseModel):
+    coincidencias: list[CoincidenciaArchivo]
+
+
+class CambioCorreccion(BaseModel):
+    """Un valor modificado por una corrección. `campo` es la ruta (`paciente.edad`,
+    `examenes_y_laboratorio.paneles[0].parametros[1].valor`) y `etiqueta` su texto legible."""
+
+    campo: str
+    etiqueta: str
+    antes: Any = None
+    despues: Any = None
+
+
+class CorreccionResponse(BaseModel):
+    """Una entrada del historial de correcciones del documento."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    origen: Literal["AUDITORIA", "CORRECCION"]
+    justificacion: str
+    cambios: list[CambioCorreccion]
+    corrected_by_username: str
+    corrected_at: datetime
+
+
+class DocumentDetailResponse(DocumentListItemResponse):
+    """Detalle completo de un documento: datos del caso, archivos originales y detalle clínico."""
+
+    pais_identificacion: str | None = None
+    edad_paciente: int | None = None
+    fecha_nacimiento: date | None = None
+    sexo: str | None = None
+    medico_identificacion: str | None = None
+    requiere_auditoria: bool
+    justificacion_enrutamiento: str | None = None
+    audited_by_id: UUID | None = None
+    audited_at: datetime | None = None
+    audit_notes: str | None = None
+    updated_at: datetime | None = None
+    archivos: list[ArchivoDocumento] = []
+    preview_expira_en_minutos: int = settings.DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES
+    aviso_archivos: str | None = None
+    detalle: DetalleDocumento = Field(default_factory=DetalleDocumento)
+    # Valores vigentes en el formato de la ingesta: precargan el formulario de corrección.
+    datos_generales: dict[str, Any] = {}
+    detalle_clinico: dict[str, Any] = {}
+    historial_correcciones: list[CorreccionResponse] = []
+    # Documentos que podrían ser el mismo (detectados al ingerir); para un OPERADOR, solo los suyos.
+    duplicados: list[DuplicadoDocumento] = []
 
 
 class PaginatedDocumentResponse(BaseModel):

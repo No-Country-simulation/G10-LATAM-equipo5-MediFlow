@@ -1,0 +1,716 @@
+{
+ "comunes": {
+  "medicamentos": {
+   "type": "array",
+   "title": "Medicamentos",
+   "items": {
+    "properties": {
+     "nombre": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Medicamento"
+     },
+     "dosis": {
+      "type": "string",
+      "maxLength": 100,
+      "title": "Dosis"
+     },
+     "frecuencia": {
+      "type": "string",
+      "maxLength": 100,
+      "title": "Frecuencia"
+     },
+     "via": {
+      "type": "string",
+      "maxLength": 50,
+      "title": "Vía"
+     },
+     "duracion_tratamiento": {
+      "type": "string",
+      "maxLength": 100,
+      "title": "Duración"
+     },
+     "cantidad": {
+      "type": "string",
+      "maxLength": 100,
+      "title": "Cantidad"
+     },
+     "tipo": {
+      "enum": [
+       "PRESCRITO",
+       "ADMINISTRADO"
+      ],
+      "title": "Prescrito / administrado",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "examenes_solicitados": {
+   "type": "array",
+   "title": "Exámenes solicitados",
+   "items": {
+    "properties": {
+     "codigo": {
+      "type": "string",
+      "maxLength": 30,
+      "title": "Código de prestación"
+     },
+     "nombre": {
+      "type": "string",
+      "maxLength": 300,
+      "title": "Examen solicitado"
+     },
+     "categoria": {
+      "enum": [
+       "LABORATORIO",
+       "IMAGENOLOGIA",
+       "PROCEDIMIENTO",
+       "OTRO"
+      ],
+      "title": "Categoría",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  }
+ },
+ "tipos": [
+  {
+   "codigo": "ANATOMIA_PATOLOGICA",
+   "nombre": "Informe de Anatomía Patológica",
+   "descripcion": "Resultado del análisis de tejidos o células: biopsia, pieza quirúrgica, citología, PAP, inmunohistoquímica; con descripción macro y microscópica y diagnóstico histopatológico. Suele indicar si hay o no malignidad.",
+   "bloque": "anatomia_patologica",
+   "esquema": {
+    "properties": {
+     "tipo_muestra": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Tipo de muestra"
+     },
+     "descripcion_macroscopica": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Descripción macroscópica"
+     },
+     "descripcion_microscopica": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Descripción microscópica"
+     },
+     "diagnostico_histopatologico": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Diagnóstico histopatológico"
+     },
+     "malignidad": {
+      "type": "boolean",
+      "title": "Malignidad"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "codigo": "ATENCION_URGENCIA",
+   "nombre": "Atención de Urgencia / Prehospitalaria",
+   "descripcion": "Registro de una atención de urgencia o prehospitalaria: dato o documento de atención de urgencia (DAU), hoja de ingreso a urgencias, hoja de intervención SAMU o ambulancia. Suele traer categoría o color de triaje (C1-C5, ESI, Manchester: rojo, naranjo, amarillo, verde, azul), signos vitales, tratamiento administrado, diagnóstico presuntivo y final, y destino (alta, hospitalización, traslado). NO es la epicrisis de una hospitalización (EPICRISIS).",
+   "bloque": "campos_adicionales",
+   "esquema": {
+    "type": "object",
+    "properties": {
+     "categoria_triaje": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Categoría o color de triaje",
+      "maxLength": 50
+     },
+     "motivo_consulta": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Motivo de consulta",
+      "maxLength": 1000
+     },
+     "signos_vitales": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "title": "Signos vitales",
+      "properties": {
+       "presion_arterial": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "title": "Presión arterial",
+        "maxLength": 20
+       },
+       "frecuencia_cardiaca": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "title": "Frecuencia cardíaca",
+        "maxLength": 20
+       },
+       "frecuencia_respiratoria": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "title": "Frecuencia respiratoria",
+        "maxLength": 20
+       },
+       "saturacion_o2": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "title": "Saturación O2",
+        "maxLength": 20
+       },
+       "temperatura": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "title": "Temperatura",
+        "maxLength": 20
+       },
+       "glasgow": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "title": "Glasgow",
+        "maxLength": 20
+       },
+       "glicemia": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "title": "Glicemia / HGT",
+        "maxLength": 20
+       }
+      },
+      "propertyOrdering": [
+       "presion_arterial",
+       "frecuencia_cardiaca",
+       "frecuencia_respiratoria",
+       "saturacion_o2",
+       "temperatura",
+       "glasgow",
+       "glicemia"
+      ]
+     },
+     "examen_fisico": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Examen físico",
+      "maxLength": 2000
+     },
+     "tratamiento_realizado": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Tratamiento y procedimientos realizados",
+      "maxLength": 2000
+     },
+     "destino": {
+      "enum": [
+       "ALTA",
+       "HOSPITALIZACION",
+       "TRASLADO",
+       "FALLECIDO",
+       "OTRO",
+       null
+      ],
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Destino del paciente"
+     }
+    },
+    "propertyOrdering": [
+     "categoria_triaje",
+     "motivo_consulta",
+     "signos_vitales",
+     "examen_fisico",
+     "tratamiento_realizado",
+     "destino"
+    ]
+   }
+  },
+  {
+   "codigo": "CERTIFICADO_MEDICO",
+   "nombre": "Certificado / Licencia Médica",
+   "descripcion": "Documento que certifica o informa a un TERCERO (empleador, colegio, seguro, tribunal): certificado de atención, de reposo, de salud o aptitud, licencia médica o incapacidad, informe médico para un trámite. Títulos: Certificado médico, Licencia médica, Constancia, Informe médico. NO es el registro clínico de la consulta (NOTA_ATENCION).",
+   "bloque": "campos_adicionales",
+   "esquema": {
+    "type": "object",
+    "properties": {
+     "tipo_certificado": {
+      "enum": [
+       "ATENCION",
+       "REPOSO",
+       "LICENCIA_MEDICA",
+       "APTITUD",
+       "INFORME_MEDICO",
+       "OTRO",
+       null
+      ],
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Tipo de certificado"
+     },
+     "motivo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Motivo / contenido certificado",
+      "maxLength": 1000
+     },
+     "reposo_desde": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Reposo desde",
+      "format": "date"
+     },
+     "reposo_hasta": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Reposo hasta",
+      "format": "date"
+     },
+     "dias_reposo": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "title": "Días de reposo",
+      "minimum": 0
+     },
+     "destinatario": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Para presentar en",
+      "maxLength": 200
+     }
+    },
+    "propertyOrdering": [
+     "tipo_certificado",
+     "motivo",
+     "reposo_desde",
+     "reposo_hasta",
+     "dias_reposo",
+     "destinatario"
+    ]
+   }
+  },
+  {
+   "codigo": "EPICRISIS",
+   "nombre": "Epicrisis / Informe de Alta",
+   "descripcion": "Resumen de una HOSPITALIZACIÓN al alta: fechas de ingreso y egreso, diagnósticos de ingreso y egreso, evolución, procedimientos, condición e indicaciones al alta. Títulos: Epicrisis, Informe de alta, Resumen de egreso, Alta hospitalaria. NO es una atención de urgencia sin hospitalización (ATENCION_URGENCIA).",
+   "bloque": "procedimientos_e_internacion",
+   "esquema": {
+    "properties": {
+     "fecha_ingreso": {
+      "format": "date",
+      "type": "string",
+      "title": "Fecha de ingreso"
+     },
+     "fecha_alta": {
+      "format": "date",
+      "type": "string",
+      "title": "Fecha de alta"
+     },
+     "resumen_evolucion": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Resumen de la evolución"
+     },
+     "antecedentes_relevantes": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Antecedentes relevantes"
+     },
+     "condicion_alta": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Condición al alta"
+     },
+     "indicaciones_alta": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Indicaciones al alta"
+     },
+     "controles": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Controles"
+     },
+     "procedimientos_realizados": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Procedimientos Realizados",
+      "type": "array"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "codigo": "IMAGENES",
+   "nombre": "Informe de Estudio por Imágenes",
+   "descripcion": "Informe de un estudio de imagen YA realizado, redactado por un radiólogo o médico informante: técnica, hallazgos e impresión o conclusión. Radiografía (Rx), tomografía (TC, TAC), resonancia (RM), ecografía o ecotomografía, mamografía, densitometría, PET, medicina nuclear. NO es la orden del estudio (SOLICITUD_EXAMENES).",
+   "bloque": "informe_imagenologico",
+   "esquema": {
+    "properties": {
+     "estudio_realizado": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Estudio realizado"
+     },
+     "modalidad": {
+      "type": "string",
+      "enum": [
+       "RX",
+       "TC",
+       "RM",
+       "ECO",
+       "MAMOGRAFIA",
+       "PET",
+       "MEDICINA_NUCLEAR",
+       "OTRA"
+      ],
+      "title": "Modalidad"
+     },
+     "region_anatomica": {
+      "type": "string",
+      "maxLength": 150,
+      "title": "Región anatómica"
+     },
+     "tecnica": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Técnica"
+     },
+     "antecedentes": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Antecedentes / indicación"
+     },
+     "hallazgos": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Hallazgos"
+     },
+     "impresion_diagnostica": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Impresión diagnóstica"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "codigo": "INTERCONSULTA",
+   "nombre": "Interconsulta / Derivación",
+   "descripcion": "Solicitud de evaluación por otra especialidad, profesional o centro (derivación, referencia) con su motivo y antecedentes; incluye órdenes de evaluación por kinesiología, psicología, nutrición o fonoaudiología. Títulos: Interconsulta, Derivación, Referencia, Hoja de referencia y contrarreferencia, SIC.",
+   "bloque": "interconsulta",
+   "esquema": {
+    "properties": {
+     "especialidad_destino": {
+      "type": "string",
+      "maxLength": 150,
+      "title": "Especialidad de destino"
+     },
+     "establecimiento_destino": {
+      "type": "string",
+      "maxLength": 150,
+      "title": "Establecimiento de destino"
+     },
+     "motivo_interconsulta": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Motivo de la interconsulta"
+     },
+     "antecedentes_clinicos": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Antecedentes clínicos"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "codigo": "LABORATORIO",
+   "nombre": "Informe de Laboratorio",
+   "descripcion": "Informe de RESULTADOS de análisis de muestras (sangre, orina, deposiciones, cultivos, gases) con parámetros, valores, unidades y rangos de referencia; suele traer N° de petición u orden y la validación de un tecnólogo o bioquímico. Títulos: Informe de resultados, Resultados de laboratorio, Exámenes de laboratorio, Hemograma, Perfil bioquímico. NO es una orden de exámenes sin valores (SOLICITUD_EXAMENES) ni una biopsia o citología (ANATOMIA_PATOLOGICA).",
+   "bloque": "examenes_y_laboratorio",
+   "esquema": {
+    "properties": {
+     "estudio_solicitado": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Estudio solicitado"
+     },
+     "conclusiones_o_hallazgos": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Conclusiones o comentarios"
+     },
+     "paneles": {
+      "items": {
+       "properties": {
+        "nombre_panel": {
+         "type": "string",
+         "maxLength": 150,
+         "title": "Panel"
+        },
+        "muestra": {
+         "type": "string",
+         "maxLength": 50,
+         "title": "Muestra"
+        },
+        "parametros": {
+         "items": {
+          "properties": {
+           "nombre": {
+            "type": "string",
+            "maxLength": 150,
+            "title": "Parámetro"
+           },
+           "valor": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Valor"
+           },
+           "unidad": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Unidad"
+           },
+           "rango_referencia": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Rango de referencia"
+           },
+           "alterado": {
+            "type": "boolean",
+            "title": "Fuera de rango"
+           },
+           "critico": {
+            "type": "boolean",
+            "title": "Valor crítico"
+           }
+          },
+          "type": "object"
+         },
+         "title": "Parametros",
+         "type": "array"
+        }
+       },
+       "type": "object"
+      },
+      "title": "Paneles",
+      "type": "array"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "codigo": "NOTA_ATENCION",
+   "nombre": "Nota de Atención Ambulatoria",
+   "descripcion": "Registro de una atención o evaluación ambulatoria: consulta, control, telemedicina, o evaluación y plan de tratamiento de kinesiología, rehabilitación o psicología; con motivo, anamnesis, examen físico, diagnóstico e indicaciones o plan. Títulos: Atención ambulatoria, Resumen de atención, Nota de consulta, Evolución, Plan de tratamiento. NO es una hospitalización (EPICRISIS), una urgencia (ATENCION_URGENCIA) ni un certificado para terceros (CERTIFICADO_MEDICO).",
+   "bloque": "nota_atencion_ambulatoria",
+   "esquema": {
+    "properties": {
+     "motivo_consulta": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Motivo de consulta"
+     },
+     "antecedentes": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Antecedentes"
+     },
+     "anamnesis": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Anamnesis"
+     },
+     "examen_fisico": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Examen físico"
+     },
+     "diagnostico_referencia": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Diagnóstico de referencia"
+     },
+     "diagnostico_atencion": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Diagnóstico de la atención"
+     },
+     "indicaciones": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Indicaciones / plan"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "codigo": "OTRO",
+   "nombre": "Otro / No clasificable",
+   "descripcion": "Usar cuando el documento no es clínico o no corresponde claramente a ningún otro tipo (consentimientos, documentos administrativos, facturas) o es ilegible. Siempre requiere auditoría humana.",
+   "bloque": null,
+   "esquema": null
+  },
+  {
+   "codigo": "PROTOCOLO_OPERATORIO",
+   "nombre": "Protocolo Operatorio",
+   "descripcion": "Informe de una cirugía YA realizada: equipo quirúrgico, técnica, hallazgos intraoperatorios, complicaciones y muestras enviadas a estudio. Títulos: Protocolo operatorio, Hoja o nota quirúrgica, Informe quirúrgico.",
+   "bloque": "protocolo_operatorio",
+   "esquema": {
+    "properties": {
+     "fecha_cirugia": {
+      "format": "date",
+      "type": "string",
+      "title": "Fecha de la cirugía"
+     },
+     "cirugia_realizada": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Cirugía realizada"
+     },
+     "diagnostico_preoperatorio": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Diagnóstico preoperatorio"
+     },
+     "tecnica": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Técnica"
+     },
+     "hallazgos_intraoperatorios": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Hallazgos intraoperatorios"
+     },
+     "complicaciones": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Complicaciones"
+     },
+     "muestras_enviadas": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Muestras enviadas"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "codigo": "RECETA",
+   "nombre": "Receta Médica",
+   "descripcion": "Prescripción de medicamentos para que el paciente los adquiera o use: nombre, dosis, frecuencia y duración. Títulos: Receta médica, Receta, Prescripción, Rp. con medicamentos; receta retenida o de controlados (psicotrópicos, estupefacientes). El talonario \"Rp.\" NO basta: si lista exámenes es SOLICITUD_EXAMENES y si deriva a otro profesional es INTERCONSULTA. NO incluye las indicaciones dentro de una epicrisis, atención o urgencia (esos medicamentos se extraen en su propio tipo).",
+   "bloque": null,
+   "esquema": null
+  },
+  {
+   "codigo": "SOLICITUD_EXAMENES",
+   "nombre": "Solicitud de Exámenes",
+   "descripcion": "Orden médica que PIDE exámenes o estudios aún no realizados: laboratorio, imagenología u otros exámenes diagnósticos, con o sin código de prestación (ej. FONASA 0301045). Títulos: Solicitud de exámenes, Orden de exámenes, Orden médica, Petición de estudios; también recetarios \"Rp.\" que listan exámenes (ej. \"Rx de tórax\", \"hemograma\"). NO trae resultados (LABORATORIO o IMAGENES). Cirugías o procedimientos invasivos: SOLICITUD_PROCEDIMIENTO.",
+   "bloque": "campos_adicionales",
+   "esquema": {
+    "type": "object",
+    "properties": {
+     "indicacion_clinica": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Indicación clínica / diagnóstico",
+      "maxLength": 500
+     },
+     "prioridad_solicitada": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "title": "Prioridad indicada (urgente, control, ...)",
+      "maxLength": 100
+     }
+    },
+    "propertyOrdering": [
+     "indicacion_clinica",
+     "prioridad_solicitada"
+    ]
+   }
+  },
+  {
+   "codigo": "SOLICITUD_PROCEDIMIENTO",
+   "nombre": "Solicitud de Procedimiento",
+   "descripcion": "Solicitud o indicación de un procedimiento invasivo o quirúrgico aún no realizado que debe agendarse: cirugía, endoscopía, colonoscopía, biopsia, cateterismo, punción. Títulos: Solicitud de pabellón, Orden de cirugía, Solicitud de procedimiento. NO incluye exámenes de laboratorio o imagen (SOLICITUD_EXAMENES) ni derivaciones a un especialista (INTERCONSULTA).",
+   "bloque": "solicitud_procedimiento",
+   "esquema": {
+    "properties": {
+     "procedimiento_solicitado": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Procedimiento solicitado"
+     },
+     "indicacion_clinica": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Indicación clínica"
+     },
+     "antecedentes": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Antecedentes"
+     },
+     "fecha_solicitud": {
+      "format": "date",
+      "type": "string",
+      "title": "Fecha de solicitud"
+     }
+    },
+    "type": "object"
+   }
+  }
+ ]
+}

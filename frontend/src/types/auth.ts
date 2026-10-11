@@ -1,5 +1,11 @@
 export type UserRole = 'ADMIN' | 'GESTOR_USUARIOS' | 'AUDITOR_CLINICO' | 'OPERADOR';
 
+export interface AreaSummary {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
 export interface LoginRequest {
   username: string;
   password: string;
@@ -11,10 +17,12 @@ export interface UserOut {
   email: string;
   full_name: string;
   role: UserRole;
+  area?: AreaSummary | null;
 }
 
 export interface TokenResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
   user: UserOut;
 }
@@ -26,6 +34,7 @@ export interface UserResponse {
   full_name: string;
   role: UserRole;
   is_active: boolean;
+  area?: AreaSummary | null;
   created_at: string;
 }
 
@@ -43,6 +52,7 @@ export interface UserCreateRequest {
   password: string;
   full_name: string;
   role: UserRole;
+  area_id: string;
 }
 
 export interface UserAdminUpdateRequest {
@@ -50,6 +60,7 @@ export interface UserAdminUpdateRequest {
   email?: string;
   role?: UserRole;
   is_active?: boolean;
+  area_id?: string;
 }
 
 export interface ProfileUpdateRequest {
