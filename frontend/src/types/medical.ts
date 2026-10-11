@@ -88,6 +88,117 @@ export interface ArchivoPreview {
   visualizable: boolean;
 }
 
+/** Archivo original con su URL pre-firmada; `url` es `null` si OCI no pudo generarla. */
+export interface ArchivoDocumento extends Omit<ArchivoPreview, 'url'> {
+  url: string | null;
+}
+
+export interface DiagnosticoDetalle {
+  descripcion: string | null;
+  cie10: string | null;
+  tipo: string;
+  certeza: string;
+  origen_cie10: string | null;
+}
+
+export interface ProfesionalDetalle {
+  nombre: string | null;
+  identificacion: string | null;
+  registro_profesional: string | null;
+  especialidad: string | null;
+  rol: string;
+}
+
+export interface MedicamentoDetalle {
+  nombre: string | null;
+  dosis: string | null;
+  frecuencia: string | null;
+  via: string | null;
+  duracion_tratamiento: string | null;
+  cantidad: string | null;
+  tipo: string;
+}
+
+export interface ExamenSolicitadoDetalle {
+  codigo: string | null;
+  nombre: string | null;
+  categoria: string;
+}
+
+export interface ParametroLaboratorioDetalle {
+  nombre: string | null;
+  valor: string | null;
+  unidad: string | null;
+  rango_referencia: string | null;
+  alterado: boolean | null;
+  critico: boolean | null;
+}
+
+export interface PanelLaboratorioDetalle {
+  nombre_panel: string | null;
+  muestra: string | null;
+  parametros: ParametroLaboratorioDetalle[];
+}
+
+/** Campo de texto del detalle clínico sin tabla propia, listo para mostrar. */
+export interface CampoRelevante {
+  campo: string;
+  etiqueta: string;
+  valor: unknown;
+}
+
+/** Un valor modificado por una corrección (`campo` es la ruta; `etiqueta`, su texto legible). */
+export interface CambioCorreccion {
+  campo: string;
+  etiqueta: string;
+  antes: unknown;
+  despues: unknown;
+}
+
+/** Entrada del historial: la resolución de la auditoría o una corrección posterior. */
+export interface CorreccionHistorial {
+  origen: 'AUDITORIA' | 'CORRECCION';
+  justificacion: string;
+  cambios: CambioCorreccion[];
+  corrected_by_username: string;
+  corrected_at: string;
+}
+
+/** Respuesta de `GET /documents/{id}`: datos del caso, archivos originales y detalle clínico. */
+export interface DocumentDetailResponse extends DocumentListItemResponse {
+  especialidad: string | null;
+  cie10_origen: string | null;
+  pais_identificacion: string | null;
+  edad_paciente: number | null;
+  fecha_nacimiento: string | null;
+  sexo: string | null;
+  medico_identificacion: string | null;
+  requiere_auditoria: boolean;
+  justificacion_enrutamiento: string | null;
+  area_origen: { id: string; codigo: string; nombre: string } | null;
+  motivos_auditoria: string[];
+  audited_at: string | null;
+  audit_notes: string | null;
+  archivos: ArchivoDocumento[];
+  preview_expira_en_minutos: number;
+  aviso_archivos: string | null;
+  detalle: {
+    tablas: {
+      diagnosticos: DiagnosticoDetalle[];
+      profesionales: ProfesionalDetalle[];
+      medicamentos: MedicamentoDetalle[];
+      examenes_solicitados: ExamenSolicitadoDetalle[];
+      paneles_laboratorio: PanelLaboratorioDetalle[];
+      procedimientos: string[];
+    };
+    campos_relevantes: CampoRelevante[];
+  };
+  /** Valores vigentes en el formato de la ingesta (precargan el formulario de corrección). */
+  datos_generales: Record<string, unknown>;
+  detalle_clinico: Record<string, unknown>;
+  historial_correcciones: CorreccionHistorial[];
+}
+
 export interface AuditDetailResponse {
   documento_id: string;
   estado: EstadoDocumento;
@@ -142,14 +253,23 @@ export interface DatosGenerales {
   diagnosticos: Record<string, unknown>[];
 }
 
-export interface AuditResolveRequest {
+/** Valores corregidos por una persona (auditoría y corrección de documentos). */
+export interface CorreccionClinica {
   tipo_documento: string;
   nivel_prioridad: NivelPrioridad;
   destino_enrutamiento: string;
   especialidad?: string | null;
   datos_generales: DatosGenerales;
   detalle_clinico?: Record<string, unknown> | null;
+}
+
+export interface AuditResolveRequest extends CorreccionClinica {
   audit_notes: string;
+}
+
+/** `PUT /documents/{id}`: corrección de un documento PROCESADO o AUDITADO. */
+export interface DocumentCorrectionRequest extends CorreccionClinica {
+  justificacion: string;
 }
 
 export interface AuditDiscardRequest {

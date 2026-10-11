@@ -147,6 +147,13 @@ class ClinicalDocument(Base):
         order_by="ClinicalDocumentProfessional.orden",
         lazy="selectin",
     )
+    # Historial de correcciones humanas, de la más reciente a la más antigua.
+    corrections: Mapped[list["ClinicalDocumentCorrection"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="desc(ClinicalDocumentCorrection.corrected_at)",
+        lazy="selectin",
+    )
 
     @property
     def motivos_auditoria(self) -> list[str]:
@@ -319,3 +326,29 @@ class ClinicalDocumentProfessional(Base):
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     document: Mapped["ClinicalDocument"] = relationship(back_populates="professionals")
+
+
+class ClinicalDocumentCorrection(Base):
+    """Corrección humana de un documento: la resolución de su auditoría (`AUDITORIA`) o un ajuste
+    posterior de un documento ya procesado o auditado (`CORRECCION`).
+
+    `cambios` guarda cada valor modificado como `{campo, etiqueta, antes, despues}`; el username se
+    copia para que el historial siga legible si el usuario se elimina.
+    """
+
+    __tablename__ = "clinical_document_corrections"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("clinical_documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    origen: Mapped[str] = mapped_column(String(20), nullable=False)
+    justificacion: Mapped[str] = mapped_column(Text, nullable=False)
+    cambios: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    corrected_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    corrected_by_username: Mapped[str] = mapped_column(String(50), nullable=False)
+    corrected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
+    )
+
+    document: Mapped["ClinicalDocument"] = relationship(back_populates="corrections")

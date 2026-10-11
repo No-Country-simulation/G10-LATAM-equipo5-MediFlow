@@ -3,6 +3,8 @@ import type { DocumentListItemResponse } from '../../types/medical';
 import { DESTINATION_LABELS, CATEGORY_LABELS } from '../../types/documents';
 import PriorityBadge from '../common/PriorityBadge';
 import { formatIdentificacion } from '../../utils/identificacion';
+import { useDocumentDetailModal } from '../../context/documentDetailContext';
+import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clickableCard';
 
 interface DocumentRepositoryCardProps {
   doc: DocumentListItemResponse;
@@ -24,7 +26,7 @@ function formatConfidence(score: number | null | undefined): string {
 }
 
 const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
-
+  const { abrirDocumento } = useDocumentDetailModal();
   const destinationLabel = doc.destino_enrutamiento
     ? (destinationLookup[doc.destino_enrutamiento] ?? doc.destino_enrutamiento)
     : 'Otras Derivaciones';
@@ -39,7 +41,10 @@ const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
     'Sin diagnóstico registrado';
 
   return (
-    <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition-all space-y-3">
+    <div
+      {...tarjetaClickeable(() => abrirDocumento(doc.documento_id), `Ver detalle del documento ${doc.documento_id}`)}
+      className={`${TARJETA_CLICKEABLE_CLASES} p-4 sm:p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition-all space-y-3`}
+    >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-xl bg-slate-800/80 text-rose-400">

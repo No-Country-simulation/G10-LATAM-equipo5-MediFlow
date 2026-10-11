@@ -4,6 +4,10 @@ Un caso `PENDIENTE_AUDITORIA` termina `AUDITADO` (resuelto con correcciones) o `
 (no clínico, duplicado o ilegible). En ambos casos el JSON del documento se "mueve" en OCI
 (se sube el nuevo y luego se borra el anterior) y la BD queda con el mismo JSON consolidado.
 
+Un documento `PROCESADO` o `AUDITADO` puede corregirse después (`correct_document`) con las
+mismas validaciones; conserva su estado y su JSON se sobrescribe en la misma ruta de OCI. La
+resolución de la auditoría y cada corrección quedan en `clinical_document_corrections`.
+
 Para que dos auditores no trabajen el mismo caso, un auditor puede "tomarlo": mientras la
 asignación esté vigente (`CLAIM_TTL_MINUTES`), nadie más puede resolverlo ni descartarlo.
 """
@@ -12,6 +16,7 @@ import asyncio
 import copy
 import json
 import logging
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -21,16 +26,19 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.features.audit.changes import cambios_de_correccion
 from app.features.audit.schemas import (
     AuditClaimResponse,
     AuditDetailResponse,
     AuditDiscardRequest,
     AuditResolveRequest,
+    CorreccionClinica,
+    DocumentCorrectionRequest,
 )
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.documents.detail import attachment_fields, create_preview_url
-from app.features.documents.models import ClinicalDocument
+from app.features.documents.models import ClinicalDocument, ClinicalDocumentCorrection
 from app.features.documents.schemas import ArchivoPreview, DatosGeneralesExtract, DetalleClinicoExtract
 from app.features.documents.service import (
     active_document_types,
@@ -49,6 +57,10 @@ CLAIM_TTL_MINUTES = 30
 ESTADO_PENDIENTE = "PENDIENTE_AUDITORIA"
 ESTADO_AUDITADO = "AUDITADO"
 ESTADO_DESCARTADO = "DESCARTADO"
+ESTADOS_CORREGIBLES = ("PROCESADO", ESTADO_AUDITADO)
+
+ORIGEN_AUDITORIA = "AUDITORIA"
+ORIGEN_CORRECCION = "CORRECCION"
 
 # Columnas que quedan registradas en `campos_corregidos` cuando el auditor las cambia.
 _CAMPOS_CORREGIBLES = (
@@ -273,47 +285,54 @@ async def release_audit_case(documento_id: str, user: User, db: AsyncSession) ->
     logger.info("Caso %s liberado (estaba tomado por %s)", documento_id, previous_owner)
 
 
-# --- Resolver / descartar ----------------------------------------------------
+# --- Validar y aplicar una corrección (auditoría y corrección de documentos) --
 
 
-def _final_audited_json(
-    raw: dict[str, Any],
-    payload: AuditResolveRequest,
-    datos: DatosGeneralesExtract,
-    detalle_final: DetalleClinicoExtract,
-    especialidad: str | None,
-    auditoria: dict[str, Any],
+@dataclass
+class _CorreccionValidada:
+    """Corrección ya normalizada y validada, lista para aplicarse al documento."""
+
+    datos: DatosGeneralesExtract
+    detalle_vigente: DetalleClinicoExtract
+    detalle_final: DetalleClinicoExtract
+    especialidad: str | None
+
+
+def _json_corregido(
+    raw: dict[str, Any], payload: CorreccionClinica, correccion: _CorreccionValidada
 ) -> dict[str, Any]:
-    """Arma el JSON final: valores corregidos arriba y la extracción original en `version_ia`."""
+    """JSON con los valores corregidos arriba. La extracción original de la IA queda en
+    `version_ia` la primera vez que alguien corrige el documento y no se vuelve a pisar."""
     final = copy.deepcopy(raw)
-    final["version_ia"] = {
-        clave: copy.deepcopy(raw.get(clave))
-        for clave in ("clasificacion", "datos_generales", "detalle_clinico", "decision_enrutamiento")
-    }
+    final.setdefault(
+        "version_ia",
+        {
+            clave: copy.deepcopy(raw.get(clave))
+            for clave in ("clasificacion", "datos_generales", "detalle_clinico", "decision_enrutamiento")
+        },
+    )
     final.setdefault("clasificacion", {}).update(
         tipo_documento=payload.tipo_documento,
-        especialidad=especialidad,
+        especialidad=correccion.especialidad,
         nivel_prioridad=payload.nivel_prioridad,
     )
-    final["datos_generales"] = datos.model_dump(mode="json")
-    final["detalle_clinico"] = detalle_final.model_dump(mode="json")
+    final["datos_generales"] = correccion.datos.model_dump(mode="json")
+    final["detalle_clinico"] = correccion.detalle_final.model_dump(mode="json")
     final.setdefault("decision_enrutamiento", {})["destino_principal"] = payload.destino_enrutamiento
-    final.setdefault("triaje", {})["estado"] = ESTADO_AUDITADO
-    final["auditoria"] = auditoria
     return final
 
 
 def _marcar_cie10_del_auditor(datos: DatosGeneralesExtract, raw: dict[str, Any]) -> None:
-    """Los códigos CIE-10 que la IA no había propuesto quedan con origen AUDITOR."""
-    diagnosticos_ia = (raw.get("datos_generales") or {}).get("diagnosticos") or []
-    codigos_ia = {d.get("cie10") for d in diagnosticos_ia if isinstance(d, dict)}
+    """Los códigos CIE-10 que no estaban en la versión vigente quedan con origen AUDITOR."""
+    diagnosticos_previos = (raw.get("datos_generales") or {}).get("diagnosticos") or []
+    codigos_previos = {d.get("cie10") for d in diagnosticos_previos if isinstance(d, dict)}
     for diagnostico in datos.diagnosticos:
-        if diagnostico.cie10 and diagnostico.cie10 not in codigos_ia:
+        if diagnostico.cie10 and diagnostico.cie10 not in codigos_previos:
             diagnostico.origen_cie10 = "AUDITOR"
 
 
 def _errores_de_catalogo(
-    payload: AuditResolveRequest,
+    payload: CorreccionClinica,
     detalle_final: DetalleClinicoExtract,
     tipos_activos: dict[str, dict[str, Any] | None],
     colas_activas: set[str],
@@ -335,7 +354,7 @@ def _errores_de_catalogo(
 def _errores_de_datos(
     datos: DatosGeneralesExtract, problema_identificacion: str | None, cie10_invalidos: int
 ) -> list[str]:
-    """Mismas validaciones que la ingesta, pero aquí bloquean: el auditor debe corregirlas."""
+    """Mismas validaciones que la ingesta, pero aquí bloquean: quien corrige debe resolverlas."""
     errores: list[str] = []
     if not datos.paciente.nombre:
         errores.append("El nombre del paciente es obligatorio")
@@ -349,31 +368,16 @@ def _errores_de_datos(
     return errores
 
 
-def _valor_json(valor: Any) -> Any:
-    return valor.isoformat() if isinstance(valor, (date, datetime)) else valor
-
-
-def _snapshot(document: ClinicalDocument) -> dict[str, Any]:
-    return {campo: _valor_json(getattr(document, campo)) for campo in _CAMPOS_CORREGIBLES}
-
-
-async def resolve_audit_case(
-    documento_id: str,
-    payload: AuditResolveRequest,
-    current_user: User,
-    db: AsyncSession,
-) -> ClinicalDocument:
-    """Resuelve un caso: valida la corrección (catálogos, identificación, CIE-10, detalle según el
-    tipo), consolida los datos y mueve el JSON en OCI."""
-    document = await _get_document_or_404(documento_id, db)
-    _ensure_workable(document, current_user)
-
+async def _validar_correccion(
+    document: ClinicalDocument, payload: CorreccionClinica, raw: dict[str, Any], db: AsyncSession
+) -> _CorreccionValidada:
+    """Normaliza y valida la corrección (catálogos, identificación, CIE-10, detalle según el
+    tipo). Lanza 422 con todos los problemas juntos; no modifica el documento."""
     tipos_activos = await active_document_types(db)
     colas_activas = await active_queue_codes(db)
 
-    raw = document.raw_extracted_json or {}
-    detalle_ia = DetalleClinicoExtract.model_validate(raw.get("detalle_clinico") or {})
-    detalle_final = payload.detalle_clinico if payload.detalle_clinico is not None else detalle_ia
+    detalle_vigente = DetalleClinicoExtract.model_validate(raw.get("detalle_clinico") or {})
+    detalle_final = payload.detalle_clinico if payload.detalle_clinico is not None else detalle_vigente
     especialidad = (
         payload.especialidad if "especialidad" in payload.model_fields_set else document.especialidad
     )
@@ -385,13 +389,28 @@ async def resolve_audit_case(
     errores.extend(_errores_de_datos(datos, problema_identificacion, cie10_invalidos))
     if errores:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errores)
+    return _CorreccionValidada(datos, detalle_vigente, detalle_final, especialidad)
 
+
+def _valor_json(valor: Any) -> Any:
+    return valor.isoformat() if isinstance(valor, (date, datetime)) else valor
+
+
+def _snapshot(document: ClinicalDocument) -> dict[str, Any]:
+    return {campo: _valor_json(getattr(document, campo)) for campo in _CAMPOS_CORREGIBLES}
+
+
+def _aplicar_correccion(
+    document: ClinicalDocument, payload: CorreccionClinica, correccion: _CorreccionValidada
+) -> dict[str, Any]:
+    """Aplica la corrección a las columnas y tablas hijas. Devuelve `campos_corregidos`
+    (`{campo: {antes, despues}}`), el resumen que queda en el JSON del documento."""
     antes = _snapshot(document)
     document.tipo_documento = payload.tipo_documento
     document.nivel_prioridad = payload.nivel_prioridad
     document.destino_enrutamiento = payload.destino_enrutamiento
-    document.especialidad = especialidad
-    apply_general_data(document, datos)
+    document.especialidad = correccion.especialidad
+    apply_general_data(document, correccion.datos)
     despues = _snapshot(document)
 
     campos_corregidos: dict[str, Any] = {
@@ -399,16 +418,71 @@ async def resolve_audit_case(
         for campo in _CAMPOS_CORREGIBLES
         if antes[campo] != despues[campo]
     }
-    detalle_cambio = detalle_final.model_dump(mode="json") != detalle_ia.model_dump(mode="json")
-    if detalle_cambio:
-        campos_corregidos["detalle_clinico"] = {
-            "antes": detalle_ia.model_dump(mode="json"),
-            "despues": detalle_final.model_dump(mode="json"),
-        }
-        apply_clinical_detail(document, detalle_final)
+    detalle_vigente = correccion.detalle_vigente.model_dump(mode="json")
+    detalle_final = correccion.detalle_final.model_dump(mode="json")
+    if detalle_final != detalle_vigente:
+        campos_corregidos["detalle_clinico"] = {"antes": detalle_vigente, "despues": detalle_final}
+        apply_clinical_detail(document, correccion.detalle_final)
+    return campos_corregidos
+
+
+def _clasificacion_nueva(payload: CorreccionClinica, correccion: _CorreccionValidada) -> dict[str, Any]:
+    return {
+        "tipo_documento": payload.tipo_documento,
+        "nivel_prioridad": payload.nivel_prioridad,
+        "destino_enrutamiento": payload.destino_enrutamiento,
+        "especialidad": correccion.especialidad,
+    }
+
+
+def _registrar_correccion(
+    document: ClinicalDocument,
+    *,
+    origen: str,
+    justificacion: str,
+    cambios: list[dict[str, Any]],
+    user: User,
+    corrected_at: datetime,
+) -> None:
+    """Agrega la entrada al historial (la más reciente primero, como lo carga la relación)."""
+    document.corrections.insert(
+        0,
+        ClinicalDocumentCorrection(
+            origen=origen,
+            justificacion=justificacion,
+            cambios=cambios,
+            corrected_by_id=user.id,
+            corrected_by_username=user.username,
+            corrected_at=corrected_at,
+        ),
+    )
+
+
+# --- Resolver / descartar ----------------------------------------------------
+
+
+async def resolve_audit_case(
+    documento_id: str,
+    payload: AuditResolveRequest,
+    current_user: User,
+    db: AsyncSession,
+) -> ClinicalDocument:
+    """Resuelve un caso: valida la corrección, consolida los datos, deja la entrada en el
+    historial y mueve el JSON en OCI."""
+    document = await _get_document_or_404(documento_id, db)
+    _ensure_workable(document, current_user)
+
+    raw = document.raw_extracted_json or {}
+    correccion = await _validar_correccion(document, payload, raw, db)
+    cambios = cambios_de_correccion(
+        document, raw, _clasificacion_nueva(payload, correccion), correccion.datos, correccion.detalle_final
+    )
+    campos_corregidos = _aplicar_correccion(document, payload, correccion)
 
     audited_at = datetime.now(timezone.utc)
-    auditoria = {
+    final_json = _json_corregido(raw, payload, correccion)
+    final_json.setdefault("triaje", {})["estado"] = ESTADO_AUDITADO
+    final_json["auditoria"] = {
         "accion": ESTADO_AUDITADO,
         "audited_by_id": str(current_user.id),
         "audited_by_username": current_user.username,
@@ -416,7 +490,15 @@ async def resolve_audit_case(
         "audit_notes": payload.audit_notes,
         "campos_corregidos": campos_corregidos,
     }
-    final_json = _final_audited_json(raw, payload, datos, detalle_final, especialidad, auditoria)
+    # Sin cambios también se registra: el auditor validó los valores tal como venían.
+    _registrar_correccion(
+        document,
+        origen=ORIGEN_AUDITORIA,
+        justificacion=payload.audit_notes,
+        cambios=cambios,
+        user=current_user,
+        corrected_at=audited_at,
+    )
 
     return await _finalize(
         document,
@@ -428,6 +510,112 @@ async def resolve_audit_case(
         audited_at=audited_at,
         db=db,
     )
+
+
+# --- Corregir un documento ya procesado o auditado ---------------------------
+
+
+async def _guardar_correccion(
+    document: ClinicalDocument, final_json: dict[str, Any], json_anterior: dict[str, Any], db: AsyncSession
+) -> None:
+    """Sobrescribe el JSON del documento en OCI (misma ruta) y hace commit.
+
+    Si OCI falla no hay nada que deshacer; si falla el commit se vuelve a subir el JSON anterior.
+    """
+    documento_id = document.documento_id
+    ruta = document.oci_json_path
+
+    async def _subir(contenido: dict[str, Any]) -> None:
+        await oci_storage_client.upload_object(
+            ruta, json.dumps(contenido, ensure_ascii=False).encode("utf-8"), content_type="application/json"
+        )
+
+    try:
+        await _subir(final_json)
+    except Exception as exc:
+        logger.exception("Fallo al subir el JSON corregido a OCI para el documento %s", documento_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible almacenar el JSON corregido en OCI Object Storage",
+        ) from exc
+
+    try:
+        await db.commit()
+        await db.refresh(document)
+    except SQLAlchemyError as exc:
+        logger.exception("Fallo al persistir la corrección del documento %s", documento_id)
+        await db.rollback()
+        try:
+            await _subir(json_anterior)
+            logger.warning("Compensación aplicada: JSON anterior restaurado en OCI -> %s", ruta)
+        except Exception:
+            logger.exception("Fallo al restaurar el JSON anterior en OCI para %s", ruta)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar la corrección en la base de datos",
+        ) from exc
+
+
+async def correct_document(
+    documento_id: str,
+    payload: DocumentCorrectionRequest,
+    current_user: User,
+    db: AsyncSession,
+) -> ClinicalDocument:
+    """Corrige un documento PROCESADO o AUDITADO con las mismas validaciones de la auditoría.
+
+    El documento conserva su estado; si cambian el tipo, la prioridad o el destino, queda
+    enrutado a la nueva cola. Cada corrección deja una entrada en el historial con lo que cambió.
+    """
+    document = await _get_document_or_404(documento_id, db)
+    if document.estado not in ESTADOS_CORREGIBLES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Solo se pueden corregir documentos procesados o auditados (estado {document.estado}); "
+                "los pendientes se corrigen desde la auditoría"
+            ),
+        )
+
+    raw = document.raw_extracted_json or {}
+    correccion = await _validar_correccion(document, payload, raw, db)
+    cambios = cambios_de_correccion(
+        document, raw, _clasificacion_nueva(payload, correccion), correccion.datos, correccion.detalle_final
+    )
+    if not cambios:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=["La corrección no modifica ningún valor del documento"],
+        )
+    campos_corregidos = _aplicar_correccion(document, payload, correccion)
+
+    corrected_at = datetime.now(timezone.utc)
+    final_json = _json_corregido(raw, payload, correccion)
+    final_json["correcciones"] = [
+        *(raw.get("correcciones") or []),
+        {
+            "corrected_by_id": str(current_user.id),
+            "corrected_by_username": current_user.username,
+            "corrected_at": corrected_at.isoformat(),
+            "justificacion": payload.justificacion,
+            "campos_corregidos": campos_corregidos,
+        },
+    ]
+    document.raw_extracted_json = final_json
+    _registrar_correccion(
+        document,
+        origen=ORIGEN_CORRECCION,
+        justificacion=payload.justificacion,
+        cambios=cambios,
+        user=current_user,
+        corrected_at=corrected_at,
+    )
+
+    await _guardar_correccion(document, final_json, raw, db)
+    logger.info(
+        "Documento %s corregido por %s (%d cambio(s))", documento_id, current_user.username, len(cambios)
+    )
+    return document
 
 
 async def discard_audit_case(

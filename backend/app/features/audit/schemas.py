@@ -57,8 +57,8 @@ class AuditDetailResponse(BaseModel):
     created_at: datetime
 
 
-class AuditResolveRequest(BaseModel):
-    """Datos corregidos por el auditor humano para resolver un caso pendiente.
+class CorreccionClinica(BaseModel):
+    """Valores corregidos por una persona: los usan la auditoría y la corrección de documentos.
 
     Usa la **misma estructura que la ingesta** (`datos_generales`, `detalle_clinico`) y pasa por las
     mismas normalizaciones y validaciones: identificación (dígito verificador), CIE-10 y
@@ -66,8 +66,8 @@ class AuditResolveRequest(BaseModel):
     diagnóstico principal.
 
     `especialidad` y `detalle_clinico` son opcionales: si no se envían, se conservan los
-    extraídos por la IA. Si el auditor cambia el tipo, debe enviar el detalle del nuevo tipo (o
-    `{}`): el formulario de auditoría muestra los campos que corresponden al tipo elegido.
+    vigentes. Si se cambia el tipo, hay que enviar el detalle del nuevo tipo (o `{}`): el
+    formulario muestra los campos que corresponden al tipo elegido.
     """
 
     tipo_documento: str
@@ -76,7 +76,18 @@ class AuditResolveRequest(BaseModel):
     especialidad: str | None = None
     datos_generales: DatosGeneralesExtract
     detalle_clinico: DetalleClinicoExtract | None = None
+
+
+class AuditResolveRequest(CorreccionClinica):
+    """Resolución de un caso pendiente de auditoría; `audit_notes` justifica las correcciones."""
+
     audit_notes: TextoObligatorio
+
+
+class DocumentCorrectionRequest(CorreccionClinica):
+    """Corrección de un documento ya PROCESADO o AUDITADO; `justificacion` es obligatoria."""
+
+    justificacion: TextoObligatorio
 
 
 class AuditDiscardRequest(BaseModel):

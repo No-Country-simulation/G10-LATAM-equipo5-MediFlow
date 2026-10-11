@@ -1,6 +1,8 @@
 import type { DocumentListItemResponse } from '../../types/medical';
 import PriorityBadge from '../common/PriorityBadge';
 import { formatIdentificacion } from '../../utils/identificacion';
+import { useDocumentDetailModal } from '../../context/documentDetailContext';
+import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clickableCard';
 
 interface TriageCaseCardProps {
   doc: DocumentListItemResponse;
@@ -43,9 +45,13 @@ const TriageCaseCard = ({ doc }: TriageCaseCardProps) => {
     : `DOC-CLIN-${doc.documento_id.slice(0, 8).toUpperCase()}`;
 
   const clinicalDiagnosis = doc.diagnostico_principal || doc.tipo_documento || 'Sin diagnóstico especificado';
+  const { abrirDocumento } = useDocumentDetailModal();
 
   return (
-    <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between gap-3 shadow-md">
+    <div
+      {...tarjetaClickeable(() => abrirDocumento(doc.documento_id), `Ver detalle del documento ${doc.documento_id}`)}
+      className={`${TARJETA_CLICKEABLE_CLASES} p-4 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between gap-3 shadow-md`}
+    >
       <div>
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-bold text-slate-200">

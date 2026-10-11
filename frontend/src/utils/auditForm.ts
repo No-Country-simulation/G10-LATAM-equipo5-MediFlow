@@ -50,10 +50,14 @@ export const datosGeneralesDesdeJson = (raw: Record<string, unknown> | null | un
  * Detalle clínico al cambiar de tipo: se conservan las listas comunes (medicamentos, exámenes) y
  * el bloque del tipo nuevo si ya existía; el bloque del tipo anterior se descarta, porque el
  * backend rechaza un bloque que no corresponde al tipo.
+ *
+ * Sin los esquemas (`forms` aún cargando) no se sabe qué bloques corresponden: el detalle se
+ * devuelve intacto, para no borrar datos por enviar el formulario antes de tiempo.
  */
 export const detalleParaTipo = (detalle: JsonObject, tipo: string, forms: DocumentForms | null): JsonObject => {
-  const bloque = forms?.tipos.find((t) => t.codigo === tipo)?.bloque;
-  const permitidos = new Set([...Object.keys(forms?.comunes ?? {}), ...(bloque ? [bloque] : [])]);
+  if (!forms) return detalle;
+  const bloque = forms.tipos.find((t) => t.codigo === tipo)?.bloque;
+  const permitidos = new Set([...Object.keys(forms.comunes), ...(bloque ? [bloque] : [])]);
   return Object.fromEntries(Object.entries(detalle).filter(([clave]) => permitidos.has(clave)));
 };
 
@@ -63,6 +67,6 @@ export const validarAuditoria = (datos: JsonObject, notas: string): string | nul
   const diagnosticos = Array.isArray(datos.diagnosticos) ? datos.diagnosticos.map(objeto) : [];
   const principal = diagnosticos.find((d) => d.tipo === 'PRINCIPAL') ?? diagnosticos[0];
   if (!principal || !texto(principal.descripcion)) return 'Indica al menos el diagnóstico principal.';
-  if (!notas.trim()) return 'Las notas de auditoría son obligatorias.';
+  if (!notas.trim()) return 'La justificación de las correcciones es obligatoria.';
   return null;
 };

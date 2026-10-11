@@ -10,7 +10,8 @@ El detalle clínico se arma desde dos fuentes:
   `title` de cada propiedad en el JSON Schema del catálogo.
 
 Tanto las tablas como `raw_extracted_json["detalle_clinico"]` se actualizan al resolver una
-auditoría, así que el detalle refleja siempre la versión vigente (corregida si la hubo).
+auditoría o corregir el documento, así que el detalle refleja siempre la versión vigente. El
+historial de esas correcciones viaja en `historial_correcciones`.
 """
 
 import asyncio
@@ -29,6 +30,7 @@ from app.features.documents.schemas import (
     TIPOS_ARCHIVO_PRINCIPAL,
     ArchivoDocumento,
     CampoRelevante,
+    CorreccionResponse,
     DetalleDocumento,
     DiagnosticoExtract,
     DocumentDetailResponse,
@@ -204,7 +206,8 @@ async def get_document_detail(
     """
     document = await _get_visible_document(db, documento_id, uploaded_by_id)
 
-    detalle_clinico: dict[str, Any] = (document.raw_extracted_json or {}).get("detalle_clinico") or {}
+    raw: dict[str, Any] = document.raw_extracted_json or {}
+    detalle_clinico: dict[str, Any] = raw.get("detalle_clinico") or {}
     schema_adicionales = (
         await _schema_campos_adicionales(db, document.tipo_documento)
         if detalle_clinico.get(BLOQUE_CAMPOS_ADICIONALES)
@@ -220,5 +223,10 @@ async def get_document_detail(
                 tablas=build_tablas(document),
                 campos_relevantes=build_campos_relevantes(detalle_clinico, schema_adicionales),
             ),
+            "datos_generales": raw.get("datos_generales") or {},
+            "detalle_clinico": detalle_clinico,
+            "historial_correcciones": [
+                CorreccionResponse.model_validate(correccion) for correccion in document.corrections
+            ],
         }
     )

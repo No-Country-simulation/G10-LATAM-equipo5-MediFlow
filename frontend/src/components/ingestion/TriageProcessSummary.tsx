@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, UserCheck, ArrowRight, Upload, ClipboardCheck } from 'lucide-react';
+import { CheckCircle2, UserCheck, ArrowRight, Upload, ClipboardCheck, Eye } from 'lucide-react';
 import PriorityBadge from '../common/PriorityBadge';
 import type { N8nIngestResponse, N8nProfesional } from '../../types/ingestion';
 import { formatIdentificacion } from '../../utils/identificacion';
+import { useDocumentDetailModal } from '../../context/documentDetailContext';
 
 interface TriageProcessSummaryProps {
   response: N8nIngestResponse;
@@ -32,6 +33,7 @@ const responsable = (profesionales?: N8nProfesional[] | null) => {
 
 const TriageProcessSummary = ({ response, onReset }: TriageProcessSummaryProps) => {
   const navigate = useNavigate();
+  const { abrirDocumento } = useDocumentDetailModal();
   const clinicalData = response.datos_generales ?? response.datos_extraidos;
   const paciente = clinicalData?.paciente;
   const diagnosticos = clinicalData?.diagnosticos ?? [];
@@ -43,6 +45,7 @@ const TriageProcessSummary = ({ response, onReset }: TriageProcessSummaryProps) 
   const ficha = paciente?.numero_ficha ? ` · Ficha ${paciente.numero_ficha}` : '';
 
   const isPending = response.status === 'PENDIENTE_AUDITORIA' || Boolean(routing?.requiere_auditoria_humana);
+  const documentoId = response.documento_id;
   const isDiscarded = response.status === 'DESCARTADO' || response.status === 'error';
 
   return (
@@ -102,6 +105,17 @@ const TriageProcessSummary = ({ response, onReset }: TriageProcessSummaryProps) 
           <Upload className="w-3.5 h-3.5" />
           <span>{isDiscarded ? 'Reintentar subida' : 'Subir otro documento'}</span>
         </button>
+
+        {!isDiscarded && documentoId && (
+          <button
+            type="button"
+            onClick={() => abrirDocumento(documentoId)}
+            className="px-4 py-2 rounded-xl text-xs font-medium text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors cursor-pointer flex items-center justify-center gap-2"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>Ver detalle</span>
+          </button>
+        )}
 
         {isPending ? (
           <button

@@ -10,6 +10,7 @@ import {
   tipoDe,
   valorInicial,
 } from './schemaUtils';
+import { etiquetaDeCodigo } from '../../../utils/etiquetas';
 
 /**
  * Campo de formulario dibujado a partir de un JSON Schema del backend. Se usa en auditoría para
@@ -68,7 +69,7 @@ const ScalarInput = ({ schema, value, onChange, path, label }: FieldProps) => {
           .filter((opcion) => opcion !== null)
           .map((opcion) => (
             <option key={String(opcion)} value={String(opcion)}>
-              {String(opcion)}
+              {etiquetaDeCodigo(opcion)}
             </option>
           ))}
       </select>

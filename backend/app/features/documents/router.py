@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.features.audit.schemas import DocumentCorrectionRequest
+from app.features.audit.service import correct_document
 from app.features.auth.dependencies import require_roles
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
@@ -30,6 +32,8 @@ from app.features.documents.service import (
 router = APIRouter(tags=["Documents"])
 
 _DOCUMENT_ACCESS_ROLES = [UserRole.ADMIN, UserRole.AUDITOR_CLINICO, UserRole.OPERADOR]
+_DOCUMENT_CORRECTION_ROLES = [UserRole.ADMIN, UserRole.AUDITOR_CLINICO]
+_DOCUMENTO_ID = Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 def _own_documents_only(user: User) -> UUID | None:
@@ -130,7 +134,7 @@ async def list_documents(
 
 @router.get("/{documento_id}", response_model=DocumentDetailResponse)
 async def get_document(
-    documento_id: str = Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+    documento_id: str = _DOCUMENTO_ID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(_DOCUMENT_ACCESS_ROLES)),
 ) -> DocumentDetailResponse:
@@ -146,3 +150,26 @@ async def get_document(
     subió; para cualquier otro recibe `404`.
     """
     return await get_document_detail(documento_id, db, uploaded_by_id=_own_documents_only(current_user))
+
+
+@router.put("/{documento_id}", response_model=DocumentListItemResponse)
+async def correct_document_values(
+    payload: DocumentCorrectionRequest,
+    documento_id: str = _DOCUMENTO_ID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_DOCUMENT_CORRECTION_ROLES)),
+) -> DocumentListItemResponse:
+    """Corrige los valores de un documento PROCESADO o AUDITADO.
+
+    Mismo cuerpo y mismas validaciones que la resolución de auditoría (identificación, CIE-10,
+    catálogos, detalle según el tipo), con `justificacion` obligatoria. El documento conserva su
+    estado y queda enrutado según la clasificación corregida; el cambio se registra en
+    `historial_correcciones` del detalle.
+
+    - `409` si el documento está pendiente de auditoría o descartado.
+    - `422` con la lista de problemas si la corrección no es válida o no cambia nada.
+
+    Requiere rol ADMIN o AUDITOR_CLINICO.
+    """
+    document = await correct_document(documento_id, payload, current_user, db)
+    return DocumentListItemResponse.model_validate(document)

@@ -5,6 +5,8 @@ import type {
   AuditClaimResponse,
   AuditDiscardRequest,
   AuditResolveRequest,
+  DocumentCorrectionRequest,
+  DocumentDetailResponse,
   DocumentFilterParams,
   DocumentListItemResponse,
   PaginatedDocumentResponse,
@@ -25,6 +27,12 @@ function buildDocumentQuery(params: DocumentFilterParams): string {
 export const documentService = {
   listDocuments: (params: DocumentFilterParams = {}): Promise<PaginatedDocumentResponse> =>
     api.get<PaginatedDocumentResponse>(`${FASTAPI_ENDPOINTS.documents.base}${buildDocumentQuery(params)}`),
+
+  getDocumentDetail: (documentoId: string): Promise<DocumentDetailResponse> =>
+    api.get<DocumentDetailResponse>(FASTAPI_ENDPOINTS.documents.detail(documentoId)),
+
+  correctDocument: (documentoId: string, payload: DocumentCorrectionRequest): Promise<DocumentListItemResponse> =>
+    api.put<DocumentListItemResponse>(FASTAPI_ENDPOINTS.documents.detail(documentoId), payload),
 
   getAuditDetail: (documentoId: string): Promise<AuditDetailResponse> =>
     api.get<AuditDetailResponse>(FASTAPI_ENDPOINTS.audit.detail(documentoId)),

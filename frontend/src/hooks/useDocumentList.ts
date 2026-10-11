@@ -1,5 +1,6 @@
 import { useReducer, useEffect, useCallback } from 'react';
 import { documentService } from '../services/documentService';
+import { useRevisionDocumentos } from '../context/documentDetailContext';
 import type { DocumentListItemResponse, DocumentFilterParams } from '../types/medical';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
@@ -44,6 +45,8 @@ export interface DocumentListState {
 export const useDocumentList = (params: DocumentFilterParams = {}): DocumentListState => {
   const [{ documents, total, loadState, error }, dispatch] = useReducer(reducer, initialState);
   const [tick, dispatchTick] = useReducer((n: number) => n + 1, 0);
+  // Se recarga también cuando se corrige un documento desde el modal de detalle.
+  const revision = useRevisionDocumentos();
 
   const paramsKey = JSON.stringify(params);
 
@@ -79,7 +82,7 @@ export const useDocumentList = (params: DocumentFilterParams = {}): DocumentList
     return () => {
       cancelled = true;
     };
-  }, [tick, paramsKey]);
+  }, [tick, paramsKey, revision]);
 
   useEffect(() => {
     const handleFocus = () => {

@@ -108,7 +108,7 @@ class ProfesionalExtract(BaseModel):
 
     nombre: TextoCorto = Field(None, title="Nombre")
     identificacion: texto_de(30) = Field(None, title="Identificación")
-    registro_profesional: texto_de(50) = Field(None, title="Registro / matrícula / cédula profesional")
+    registro_profesional: texto_de(50) = Field(None, title="Registro profesional")
     especialidad: texto_de(100) = Field(None, title="Especialidad")
     rol: RolProfesional = Field("OTRO", title="Rol")
 
@@ -549,6 +549,28 @@ class DetalleDocumento(BaseModel):
     campos_relevantes: list[CampoRelevante] = []
 
 
+class CambioCorreccion(BaseModel):
+    """Un valor modificado por una corrección. `campo` es la ruta (`paciente.edad`,
+    `examenes_y_laboratorio.paneles[0].parametros[1].valor`) y `etiqueta` su texto legible."""
+
+    campo: str
+    etiqueta: str
+    antes: Any = None
+    despues: Any = None
+
+
+class CorreccionResponse(BaseModel):
+    """Una entrada del historial de correcciones del documento."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    origen: Literal["AUDITORIA", "CORRECCION"]
+    justificacion: str
+    cambios: list[CambioCorreccion]
+    corrected_by_username: str
+    corrected_at: datetime
+
+
 class DocumentDetailResponse(DocumentListItemResponse):
     """Detalle completo de un documento: datos del caso, archivos originales y detalle clínico."""
 
@@ -567,6 +589,10 @@ class DocumentDetailResponse(DocumentListItemResponse):
     preview_expira_en_minutos: int = settings.DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES
     aviso_archivos: str | None = None
     detalle: DetalleDocumento = Field(default_factory=DetalleDocumento)
+    # Valores vigentes en el formato de la ingesta: precargan el formulario de corrección.
+    datos_generales: dict[str, Any] = {}
+    detalle_clinico: dict[str, Any] = {}
+    historial_correcciones: list[CorreccionResponse] = []
 
 
 class PaginatedDocumentResponse(BaseModel):

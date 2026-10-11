@@ -1,44 +1,29 @@
 import { useState, useEffect } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { documentService } from '../services/documentService';
-import type { AuditDetailResponse, DatosGenerales, NivelPrioridad } from '../types/medical';
-import type { DocumentForms, JsonObject, JsonValue } from '../types/forms';
-import { datosGeneralesDesdeJson, detalleParaTipo, validarAuditoria } from '../utils/auditForm';
+import type { AuditDetailResponse } from '../types/medical';
+import type { DocumentForms } from '../types/forms';
+import { useClinicalForm, valoresDesdeDocumento } from './useClinicalForm';
 import { errorMessage } from '../utils/errors';
 import { createLogger, describeError } from '../utils/logger';
 
+export type { ClasificacionForm } from './useClinicalForm';
+
 const log = createLogger('auditoria');
 
-export interface ClasificacionForm {
-  tipo_documento: string;
-  nivel_prioridad: NivelPrioridad;
-  destino_enrutamiento: string;
-  especialidad: string;
-}
-
-const CLASIFICACION_VACIA: ClasificacionForm = {
-  tipo_documento: '',
-  nivel_prioridad: 'Rutina',
-  destino_enrutamiento: '',
-  especialidad: '',
-};
-
 /**
- * Estado del formulario de auditoría. Usa la misma estructura que la ingesta (`datos_generales` y
- * `detalle_clinico`): el auditor corrige exactamente lo que extrajo la IA, con los campos del tipo
- * elegido (ver GET /catalogs/document-types/forms).
+ * Formulario de auditoría: carga el caso, y lo resuelve o descarta. El estado de los campos
+ * clínicos es el mismo de la corrección de documentos (`useClinicalForm`).
  */
 export const useAuditDetailForm = (documentId: string, onClose: () => void, forms: DocumentForms | null) => {
   const [detail, setDetail] = useState<AuditDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  const [clasificacion, setClasificacion] = useState<ClasificacionForm>(CLASIFICACION_VACIA);
-  const [datosGenerales, setDatosGenerales] = useState<JsonObject>({});
-  const [detalle, setDetalle] = useState<JsonObject>({});
-  const [auditNotes, setAuditNotes] = useState('');
   const [motivoDescarte, setMotivoDescarte] = useState('');
+
+  const form = useClinicalForm(forms);
+  const { cargar } = form;
 
   useEffect(() => {
     let cancelled = false;
@@ -46,16 +31,8 @@ export const useAuditDetailForm = (documentId: string, onClose: () => void, form
       .getAuditDetail(documentId)
       .then((data) => {
         if (cancelled) return;
-        const raw = data.raw_extracted_json ?? {};
         setDetail(data);
-        setClasificacion({
-          tipo_documento: data.tipo_documento,
-          nivel_prioridad: data.nivel_prioridad,
-          destino_enrutamiento: data.destino_enrutamiento || '',
-          especialidad: data.especialidad || '',
-        });
-        setDatosGenerales(datosGeneralesDesdeJson(raw));
-        setDetalle((raw.detalle_clinico as JsonObject | undefined) ?? {});
+        cargar(valoresDesdeDocumento(data, data.raw_extracted_json));
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(errorMessage(err, 'Error al cargar el detalle'));
@@ -66,22 +43,13 @@ export const useAuditDetailForm = (documentId: string, onClose: () => void, form
     return () => {
       cancelled = true;
     };
-  }, [documentId]);
-
-  const handleClasificacionChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setClasificacion((prev) => ({ ...prev, [name]: value }));
-    // Al cambiar de tipo cambian sus campos: el bloque del tipo anterior se descarta.
-    if (name === 'tipo_documento') setDetalle((prev) => detalleParaTipo(prev, value, forms));
-  };
-
-  const setCampoDetalle = (bloque: string, valor: JsonValue) => setDetalle((prev) => ({ ...prev, [bloque]: valor }));
+  }, [documentId, cargar]);
 
   const handleMotivoChange = (e: ChangeEvent<HTMLTextAreaElement>) => setMotivoDescarte(e.target.value);
 
   const handleResolve = async (e: FormEvent) => {
     e.preventDefault();
-    const problema = validarAuditoria(datosGenerales, auditNotes);
+    const problema = form.validar();
     if (problema) {
       setError(problema);
       return;
@@ -89,16 +57,8 @@ export const useAuditDetailForm = (documentId: string, onClose: () => void, form
     setError(null);
     setSubmitting(true);
     try {
-      await documentService.resolveAudit(documentId, {
-        tipo_documento: clasificacion.tipo_documento,
-        nivel_prioridad: clasificacion.nivel_prioridad,
-        destino_enrutamiento: clasificacion.destino_enrutamiento,
-        especialidad: clasificacion.especialidad || null,
-        datos_generales: datosGenerales as unknown as DatosGenerales,
-        detalle_clinico: detalleParaTipo(detalle, clasificacion.tipo_documento, forms),
-        audit_notes: auditNotes,
-      });
-      log.info('Caso resuelto', { documentId, tipo: clasificacion.tipo_documento });
+      await documentService.resolveAudit(documentId, { ...form.valoresParaEnviar(), audit_notes: form.notas });
+      log.info('Caso resuelto', { documentId, tipo: form.clasificacion.tipo_documento });
       onClose();
     } catch (err) {
       setError(errorMessage(err, 'Error al resolver el caso'));
@@ -138,15 +98,15 @@ export const useAuditDetailForm = (documentId: string, onClose: () => void, form
     loading,
     error,
     submitting,
-    clasificacion,
-    datosGenerales,
-    detalle,
-    auditNotes,
+    clasificacion: form.clasificacion,
+    datosGenerales: form.datosGenerales,
+    detalle: form.detalle,
+    auditNotes: form.notas,
     motivoDescarte,
-    handleClasificacionChange,
-    setDatosGenerales,
-    setCampoDetalle,
-    setAuditNotes,
+    handleClasificacionChange: form.handleClasificacionChange,
+    setDatosGenerales: form.setDatosGenerales,
+    setCampoDetalle: form.setCampoDetalle,
+    setAuditNotes: form.setNotas,
     handleMotivoChange,
     handleResolve,
     handleDiscard,

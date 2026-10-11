@@ -1,15 +1,17 @@
 import type { ChangeEvent, FormEvent, ReactNode } from 'react';
-import type { AuditDetailResponse } from '../../types/medical';
 import type { QueueActiveForLLM } from '../../types/catalog';
 import type { DocumentForms, JsonObject, JsonValue } from '../../types/forms';
-import type { ClasificacionForm } from '../../hooks/useAuditDetailForm';
+import type { ClasificacionForm } from '../../hooks/useClinicalForm';
 import { SchemaField } from '../common/schema-form/SchemaField';
 
 interface AuditClinicalFormProps {
   forms: DocumentForms | null;
   formsError: string | null;
   queues: QueueActiveForLLM[];
-  detail: AuditDetailResponse | null;
+  /** Motivos por los que el documento fue a auditoría (se muestran arriba del formulario). */
+  motivos?: string[];
+  /** `id` del <form>, para que los botones de acción externos lo envíen. */
+  formId?: string;
   error: string | null;
   clasificacion: ClasificacionForm;
   datosGenerales: JsonObject;
@@ -37,14 +39,15 @@ const Seccion = ({ titulo, descripcion, children }: { titulo: string; descripcio
 );
 
 /**
- * Formulario de corrección. Los campos del paciente, los diagnósticos y los de cada tipo de
+ * Formulario de corrección (auditoría y corrección de documentos). Los campos del paciente, los diagnósticos y los de cada tipo de
  * documento se dibujan desde los esquemas del backend: al elegir otro tipo, cambian sus campos.
  */
 const AuditClinicalForm = ({
   forms,
   formsError,
   queues,
-  detail,
+  motivos = [],
+  formId = 'audit-form',
   error,
   clasificacion,
   datosGenerales,
@@ -69,16 +72,16 @@ const AuditClinicalForm = ({
         </div>
       )}
 
-      {detail?.motivos_auditoria?.length ? (
+      {motivos.length ? (
         <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
           <span className="font-bold text-amber-400 mb-1 block">Motivos de Auditoría:</span>
           <ul className="list-disc pl-4 text-amber-300/80 space-y-0.5">
-            {detail.motivos_auditoria.map((motivo) => <li key={motivo} className="break-words">{motivo}</li>)}
+            {motivos.map((motivo) => <li key={motivo} className="break-words">{motivo}</li>)}
           </ul>
         </div>
       ) : null}
 
-      <form id="audit-form" onSubmit={handleResolve} className="space-y-5">
+      <form id={formId} onSubmit={handleResolve} className="space-y-5">
         <Seccion titulo="Clasificación">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>

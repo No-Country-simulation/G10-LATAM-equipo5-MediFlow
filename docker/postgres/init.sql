@@ -220,6 +220,22 @@ CREATE TABLE IF NOT EXISTS clinical_document_professionals (
 CREATE INDEX IF NOT EXISTS idx_document_professionals_document_id
 ON clinical_document_professionals(document_id);
 
+-- 2.8 Historial de correcciones humanas: la resolución de una auditoría y cada corrección
+-- posterior de un documento PROCESADO o AUDITADO. `cambios` = [{campo, etiqueta, antes, despues}].
+-- El username se guarda desnormalizado para que el historial sobreviva al borrado del usuario.
+CREATE TABLE IF NOT EXISTS clinical_document_corrections (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    document_id UUID NOT NULL REFERENCES clinical_documents(id) ON DELETE CASCADE,
+    origen VARCHAR(20) NOT NULL,                         -- AUDITORIA | CORRECCION
+    justificacion TEXT NOT NULL,
+    cambios JSONB NOT NULL,
+    corrected_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    corrected_by_username VARCHAR(50) NOT NULL,
+    corrected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_document_corrections_document_id
+ON clinical_document_corrections(document_id, corrected_at DESC);
+
 -- Migración de bases anteriores al modelo v2 (no hace nada si ya está aplicada):
 -- `rut_paciente` y `medico_rut` pasan a `identificacion_paciente` y `medico_identificacion`.
 DO $$

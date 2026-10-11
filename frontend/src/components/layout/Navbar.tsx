@@ -27,7 +27,7 @@ const Navbar = () => {
   const canIngest = !isGestor && canAccessRoute(user?.role, INGEST_ACCESS_ROLES);
 
   return (
-    <header className="h-16 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-2 sm:px-6 gap-2 flex items-center justify-between sticky top-0 z-20">
+    <header className="h-16 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-2 sm:px-6 gap-1.5 sm:gap-2 flex items-center justify-between sticky top-0 z-20">
       <div className="flex items-center gap-3">
         <Link to={isGestor ? '/usuarios' : '/dashboard'} className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20">
@@ -42,15 +42,17 @@ const Navbar = () => {
         </Link>
       </div>
 
-      <nav className="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80">
+      <nav className="flex items-center gap-0.5 sm:gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80">
         {navLinks.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
               key={item.to}
               to={item.to}
+              title={item.label}
+              aria-label={item.label}
               className={({ isActive }) =>
-                `flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                `flex items-center gap-2 px-1.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   isActive
                     ? 'bg-slate-800 text-white border border-slate-700/80 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
@@ -58,19 +60,19 @@ const Navbar = () => {
               }
             >
               <Icon className="w-4 h-4 shrink-0" />
-              <span className="hidden sm:inline">{item.label}</span>
+              <span className="hidden xl:inline">{item.label}</span>
             </NavLink>
           );
         })}
       </nav>
 
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex items-center gap-1.5 sm:gap-4">
         {canIngest && (
           <button
             type="button"
             onClick={() => navigate('/ingesta')}
             title="El documento será clasificado y enrutado automáticamente por el agente de IA"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3.5 py-1.5 rounded-lg text-xs shadow-md shadow-emerald-950/40 border border-emerald-400/30 flex items-center gap-2 transition-all cursor-pointer"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-2 sm:px-3.5 py-1.5 rounded-lg text-xs shadow-md shadow-emerald-950/40 border border-emerald-400/30 flex items-center gap-2 transition-all cursor-pointer"
           >
             <Sparkles className="w-4 h-4 text-emerald-100" />
             <span className="hidden lg:inline">Procesar Documento IA</span>
@@ -93,10 +95,12 @@ const Navbar = () => {
         <button
           type="button"
           onClick={() => void handleLogout()}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 border border-slate-700/60 hover:border-rose-500/40 text-xs font-medium text-slate-200 hover:text-rose-300 transition-all cursor-pointer"
+          title="Cerrar Sesión"
+          aria-label="Cerrar Sesión"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 border border-slate-700/60 hover:border-rose-500/40 text-xs font-medium text-slate-200 hover:text-rose-300 transition-all cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Cerrar Sesión</span>
+          <span className="hidden xl:inline">Cerrar Sesión</span>
         </button>
       </div>
     </header>

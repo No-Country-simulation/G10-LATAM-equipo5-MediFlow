@@ -3,6 +3,8 @@ import type { DocumentListItemResponse } from '../../types/medical';
 import { CATEGORY_LABELS } from '../../types/documents';
 import PriorityBadge from '../common/PriorityBadge';
 import { formatIdentificacion } from '../../utils/identificacion';
+import { useDocumentDetailModal } from '../../context/documentDetailContext';
+import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clickableCard';
 
 interface DocumentsKanbanCardProps {
   doc: DocumentListItemResponse;
@@ -23,9 +25,13 @@ const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
     (doc.estado === 'DESCARTADO' ? 'Expediente descartado en auditoría' : doc.estado) ||
     'Sin diagnóstico registrado';
   const requiresAudit = Boolean(doc.requiere_auditoria || doc.estado === 'PENDIENTE_AUDITORIA');
+  const { abrirDocumento } = useDocumentDetailModal();
 
   return (
-    <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 hover:border-slate-700 transition-all shadow-sm space-y-2.5">
+    <div
+      {...tarjetaClickeable(() => abrirDocumento(doc.documento_id), `Ver detalle del documento ${doc.documento_id}`)}
+      className={`${TARJETA_CLICKEABLE_CLASES} p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 hover:border-slate-700 transition-all shadow-sm space-y-2.5`}
+    >
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-[11px] font-bold text-slate-200 tracking-tight">
           {doc.documento_id}
