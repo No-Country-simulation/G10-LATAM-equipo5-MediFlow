@@ -41,3 +41,11 @@ INSERT INTO users (username, email, hashed_password, full_name, role, area_id) V
 )
 -- En una base ya poblada, completa el área de los usuarios semilla que aún no la tienen.
 ON CONFLICT (username) DO UPDATE SET area_id = EXCLUDED.area_id WHERE users.area_id IS NULL;
+
+-- Colas de la Consola de Triaje para el auditor y el operador de prueba (el ADMIN ve todas).
+INSERT INTO user_queues (user_id, queue_id)
+SELECT u.id, q.id
+FROM users u
+JOIN routing_queues q ON q.codigo IN ('Cola_Emergencia_Medica', 'Gestion_Interconsultas')
+WHERE u.username IN ('auditor_user', 'operador_user')
+ON CONFLICT DO NOTHING;

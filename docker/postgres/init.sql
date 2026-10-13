@@ -327,6 +327,29 @@ CREATE TABLE IF NOT EXISTS document_types (
 ALTER TABLE routing_queues ADD COLUMN IF NOT EXISTS es_sistema BOOLEAN DEFAULT FALSE NOT NULL;
 ALTER TABLE routing_queues
     ADD COLUMN IF NOT EXISTS updated_by_id UUID REFERENCES users(id) ON DELETE SET NULL;
+-- Colas asistenciales (aparecen en la Consola de Triaje). Al agregar la columna en una base
+-- existente se marcan las 4 colas clínicas semilla, una sola vez: si se vuelve a ejecutar, la
+-- columna ya existe y se respeta lo que el administrador haya cambiado.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'routing_queues' AND column_name = 'es_asistencial'
+    ) THEN
+        ALTER TABLE routing_queues ADD COLUMN es_asistencial BOOLEAN DEFAULT FALSE NOT NULL;
+        UPDATE routing_queues SET es_asistencial = TRUE
+        WHERE codigo IN ('Cola_Emergencia_Medica', 'Cola_Oncologia', 'Gestion_Procedimientos', 'Gestion_Interconsultas');
+    END IF;
+END $$;
+
+-- Colas que atiende cada usuario: en la Consola de Triaje, un OPERADOR o AUDITOR_CLINICO solo ve
+-- los casos de sus colas (el ADMIN ve todas).
+CREATE TABLE IF NOT EXISTS user_queues (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    queue_id UUID NOT NULL REFERENCES routing_queues(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, queue_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_queues_queue ON user_queues(queue_id);
 ALTER TABLE document_types ADD COLUMN IF NOT EXISTS campos_extraccion JSONB;
 ALTER TABLE document_types ADD COLUMN IF NOT EXISTS es_sistema BOOLEAN DEFAULT FALSE NOT NULL;
 ALTER TABLE document_types

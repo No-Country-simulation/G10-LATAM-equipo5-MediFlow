@@ -6,6 +6,13 @@ export interface AreaSummary {
   nombre: string;
 }
 
+export interface QueueSummary {
+  id: string;
+  codigo: string;
+  nombre: string;
+  es_asistencial: boolean;
+}
+
 export interface LoginRequest {
   username: string;
   password: string;
@@ -18,6 +25,7 @@ export interface UserOut {
   full_name: string;
   role: UserRole;
   area?: AreaSummary | null;
+  colas?: QueueSummary[];
 }
 
 export interface TokenResponse {
@@ -35,6 +43,7 @@ export interface UserResponse {
   role: UserRole;
   is_active: boolean;
   area?: AreaSummary | null;
+  colas?: QueueSummary[];
   created_at: string;
 }
 
@@ -53,6 +62,7 @@ export interface UserCreateRequest {
   full_name: string;
   role: UserRole;
   area_id: string;
+  cola_ids: string[];
 }
 
 export interface UserAdminUpdateRequest {
@@ -61,6 +71,7 @@ export interface UserAdminUpdateRequest {
   role?: UserRole;
   is_active?: boolean;
   area_id?: string;
+  cola_ids?: string[];
 }
 
 export interface ProfileUpdateRequest {

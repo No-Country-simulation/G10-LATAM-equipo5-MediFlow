@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Building2, Eye, EyeOff, Loader2, Lock, Mail, Save, Shield, User, UserCog, UserPlus } from 'lucide-react';
+import { Building2, Eye, EyeOff, Loader2, Lock, Mail, Route, Save, Shield, User, UserCog, UserPlus } from 'lucide-react';
 import type { UserAdminUpdateRequest, UserCreateRequest, UserResponse, UserRole } from '../../types/auth';
 import { useActiveAreas } from '../../hooks/useActiveAreas';
+import { useQueuesSummary } from '../../hooks/useQueuesSummary';
 import { ModalShell } from '../common/ModalShell';
 import { StatusBanner } from '../common/StatusBanner';
-import { BUTTON_GHOST, BUTTON_PRIMARY, INPUT_BASE, LABEL } from '../common/formStyles';
+import { BUTTON_GHOST, BUTTON_PRIMARY, HINT, INPUT_BASE, LABEL } from '../common/formStyles';
 import { grantableRoles } from './userRoles';
 
 interface UserFormModalProps {
@@ -25,7 +26,11 @@ const initialForm = (user?: UserResponse): UserCreateRequest => ({
   password: '',
   role: user?.role ?? 'AUDITOR_CLINICO',
   area_id: user?.area?.id ?? '',
+  cola_ids: user?.colas?.map((c) => c.id) ?? [],
 });
+
+// Roles que atienden casos en la Consola de Triaje solo de sus colas (el ADMIN ve todas).
+const ROLES_CON_COLAS: UserRole[] = ['OPERADOR', 'AUDITOR_CLINICO'];
 
 /**
  * Alta y edición de usuarios. En edición el `username` es de solo lectura y la contraseña no se
@@ -38,14 +43,25 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({ user, currentUserR
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const { areas, error: areasError } = useActiveAreas(true);
+  const { queues, error: queuesError } = useQueuesSummary(true);
+  const colasAsistenciales = queues.filter((q) => q.es_asistencial);
+  const usaColas = ROLES_CON_COLAS.includes(formData.role);
 
   const setField = <K extends keyof UserCreateRequest>(field: K, value: UserCreateRequest[K]) =>
     setFormData((prev) => ({ ...prev, [field]: value }));
 
+  const toggleCola = (id: string) =>
+    setFormData((prev) => ({
+      ...prev,
+      cola_ids: prev.cola_ids.includes(id) ? prev.cola_ids.filter((c) => c !== id) : [...prev.cola_ids, id],
+    }));
+
   const save = (): Promise<boolean> => {
-    if (!isEdit) return onCreate(formData);
+    // Solo se guardan colas para los roles que las usan.
+    const cola_ids = usaColas ? formData.cola_ids : [];
+    if (!isEdit) return onCreate({ ...formData, cola_ids });
     const { full_name, email, role, area_id } = formData;
-    return onUpdate(user.id, { full_name, email, role, area_id });
+    return onUpdate(user.id, { full_name, email, role, area_id, cola_ids });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -81,6 +97,7 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({ user, currentUserR
       <div className="mt-4 space-y-2 empty:hidden">
         <StatusBanner tone="error" message={localError} />
         <StatusBanner tone="error" message={areasError} />
+        <StatusBanner tone="error" message={queuesError} />
       </div>
 
       <form onSubmit={(e) => void handleSubmit(e)} autoComplete="off" className="mt-4 space-y-3.5">
@@ -141,6 +158,36 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({ user, currentUserR
             </div>
           </div>
         </div>
+
+        {usaColas && (
+          <fieldset>
+            <legend className={`${LABEL} flex items-center gap-1.5`}>
+              <Route className="w-3.5 h-3.5 text-slate-500" />
+              Colas que atiende en Triaje
+            </legend>
+            {colasAsistenciales.length === 0 ? (
+              <p className={HINT}>No hay colas asistenciales activas. Márcalas en Catálogos → Colas.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {colasAsistenciales.map((q) => (
+                  <label
+                    key={q.id}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-800 bg-slate-950/50 text-xs text-slate-300 cursor-pointer hover:border-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formData.cola_ids.includes(q.id)}
+                      onChange={() => toggleCola(q.id)}
+                      className="accent-indigo-500"
+                    />
+                    {q.nombre}
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className={HINT}>Solo verá en la Consola de Triaje los casos de estas colas.</p>
+          </fieldset>
+        )}
 
         <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800/80">
           <button type="button" onClick={onClose} disabled={isSubmitting} className={BUTTON_GHOST}>Cancelar</button>

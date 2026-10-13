@@ -14,6 +14,7 @@ def make_queue(**overrides) -> RoutingQueue:
         "nombre": "Emergencia Médica",
         "descripcion_semantica": "Hallazgos críticos que requieren atención inmediata",
         "notificar_inmediato": True,
+        "es_asistencial": True,
         "is_active": True,
         "es_sistema": False,
         "created_at": datetime.now(timezone.utc),
@@ -423,3 +424,20 @@ async def test_campos_extraccion_guarda_el_orden_de_los_campos(client, login_as,
 
 async def test_document_forms_requiere_token(client):
     assert (await client.get("/api/v1/catalogs/document-types/forms")).status_code == 401
+
+
+async def test_queues_summary_trae_id_y_si_es_asistencial(client, login_as, db):
+    cola = make_queue()
+    db.queue([cola])
+    r = await client.get("/api/v1/catalogs/queues/summary", headers=login_as(UserRole.OPERADOR))
+
+    assert r.status_code == 200
+    assert r.json() == [
+        {"id": str(cola.id), "codigo": "Cola_Emergencia_Medica", "nombre": "Emergencia Médica", "es_asistencial": True}
+    ]
+
+
+async def test_queues_active_para_n8n_no_cambia_de_formato(client, login_as, db):
+    db.queue([make_queue()])
+    r = await client.get("/api/v1/catalogs/queues/active", headers=login_as(UserRole.ADMIN))
+    assert set(r.json()[0]) == {"codigo", "nombre", "descripcion_semantica", "notificar_inmediato"}

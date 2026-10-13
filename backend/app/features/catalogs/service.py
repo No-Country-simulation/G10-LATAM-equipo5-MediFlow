@@ -45,7 +45,9 @@ _CATALOGO_POR_MODELO = {RoutingQueue: "QUEUE", DocumentType: "DOCUMENT_TYPE", Ar
 
 # Campos que se registran en el historial (los demás son técnicos: id, timestamps, autor).
 _CAMPOS_AUDITABLES = {
-    RoutingQueue: ("codigo", "nombre", "descripcion_semantica", "notificar_inmediato", "is_active"),
+    RoutingQueue: (
+        "codigo", "nombre", "descripcion_semantica", "notificar_inmediato", "es_asistencial", "is_active"
+    ),
     DocumentType: ("codigo", "nombre", "descripcion", "campos_extraccion", "is_active"),
     Area: ("codigo", "nombre", "descripcion", "is_active"),
 }

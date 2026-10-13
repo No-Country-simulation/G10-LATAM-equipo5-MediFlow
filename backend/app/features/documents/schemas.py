@@ -30,7 +30,7 @@ from pydantic import (
 )
 
 from app.core.config import settings
-from app.features.catalogs.schemas import AreaSummary
+from app.features.catalogs.schemas import AreaSummary, QueueSummary
 from app.features.documents.fields import (
     Booleano,
     Edad,
@@ -611,7 +611,7 @@ class CorreccionResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    origen: Literal["AUDITORIA", "CORRECCION"]
+    origen: Literal["AUDITORIA", "CORRECCION", "DERIVACION"]
     justificacion: str
     cambios: list[CambioCorreccion]
     corrected_by_username: str
@@ -701,3 +701,25 @@ class DashboardStatsResponse(BaseModel):
     mis_casos: list[DocumentListItemResponse] = []
     pendientes_auditoria: list[DocumentListItemResponse] = []
     urgentes: list[DocumentListItemResponse] = []
+
+
+class TriageResponse(BaseModel):
+    """Consola de Triaje: colas que ve el usuario y sus casos activos (resueltos y sin atender)."""
+
+    colas: list[QueueSummary]
+    items: list[DocumentListItemResponse]
+
+
+class DeriveRequest(BaseModel):
+    """Derivar un caso a otra cola: el motivo queda en el historial del documento."""
+
+    destino: str = Field(min_length=1, max_length=80)
+    motivo: str = Field(min_length=5, max_length=1000)
+
+    @field_validator("motivo")
+    @classmethod
+    def _sin_espacios_extremos(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 5:
+            raise ValueError("El motivo debe tener al menos 5 caracteres")
+        return value

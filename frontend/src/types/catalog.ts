@@ -25,6 +25,7 @@ interface CatalogRecordBase {
 export interface QueueRecord extends CatalogRecordBase {
   descripcion_semantica: string;
   notificar_inmediato: boolean;
+  es_asistencial: boolean;
 }
 
 export interface DocumentTypeRecord extends CatalogRecordBase {

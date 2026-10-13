@@ -11,6 +11,8 @@ import type {
   DocumentFilterParams,
   DocumentListItemResponse,
   PaginatedDocumentResponse,
+  TriageResponse,
+  DeriveRequest,
 } from '../types/medical';
 import type { DocumentTypeActiveForLLM, QueueActiveForLLM } from '../types/catalog';
 import type { DashboardStatsParams, DashboardStatsResponse } from '../types/dashboard';
@@ -44,6 +46,11 @@ export const documentService = {
 
   unmarkAttended: (documentoId: string): Promise<DocumentListItemResponse> =>
     api.delete<DocumentListItemResponse>(FASTAPI_ENDPOINTS.documents.attend(documentoId)),
+
+  getTriage: (): Promise<TriageResponse> => api.get<TriageResponse>(FASTAPI_ENDPOINTS.documents.triage),
+
+  deriveDocument: (documentoId: string, payload: DeriveRequest): Promise<DocumentListItemResponse> =>
+    api.post<DocumentListItemResponse>(FASTAPI_ENDPOINTS.documents.derive(documentoId), payload),
 
   getDocumentDetail: (documentoId: string): Promise<DocumentDetailResponse> =>
     api.get<DocumentDetailResponse>(FASTAPI_ENDPOINTS.documents.detail(documentoId)),

@@ -27,6 +27,8 @@ export const FASTAPI_ENDPOINTS = {
     stats: "/documents/stats",
     detail: (id: string) => `/documents/${encodeURIComponent(id)}`,
     attend: (id: string) => `/documents/${encodeURIComponent(id)}/attend`,
+    derive: (id: string) => `/documents/${encodeURIComponent(id)}/derive`,
+    triage: "/documents/triage",
     duplicatesCheck: "/documents/duplicates/check",
   },
   audit: {
@@ -38,6 +40,7 @@ export const FASTAPI_ENDPOINTS = {
   catalogs: {
     documentTypesActive: "/catalogs/document-types/active",
     queuesActive: "/catalogs/queues/active",
+    queuesSummary: "/catalogs/queues/summary",
     areasActive: "/catalogs/areas/active",
     documentTypeForms: "/catalogs/document-types/forms",
     documentTypes: "/catalogs/document-types",

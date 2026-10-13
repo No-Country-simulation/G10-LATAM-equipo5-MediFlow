@@ -8,7 +8,7 @@ from app.core.security import create_access_token
 from app.features.auth import dependencies as auth_dependencies
 from app.features.auth import router as auth_router
 from app.features.auth.enums import UserRole
-from tests.conftest import make_area, make_user
+from tests.conftest import make_area, make_queue, make_user
 
 
 async def test_login_success(client, monkeypatch):
@@ -357,3 +357,44 @@ async def test_gestor_cannot_delete_admin(client, login_as, db):
 async def test_delete_user_is_role_restricted(client, login_as):
     headers = login_as(UserRole.AUDITOR_CLINICO)
     assert (await client.delete(f"/api/v1/users/{uuid4()}", headers=headers)).status_code == 403
+
+
+async def test_create_user_con_colas_de_triaje(client, login_as, db):
+    area = make_area()
+    cola = make_queue("Cola_Emergencia_Medica", "Urgencias")
+    db.get_result = area
+    db.queue([cola], None)
+    headers = login_as(UserRole.ADMIN)
+    body = _new_user_body(area_id=str(area.id), cola_ids=[str(cola.id)])
+    r = await client.post("/api/v1/users", json=body, headers=headers)
+
+    assert r.status_code == 201
+    assert [c["codigo"] for c in r.json()["colas"]] == ["Cola_Emergencia_Medica"]
+    assert db.added[0].colas == [cola]
+
+
+async def test_create_user_rechaza_cola_inexistente_o_inactiva(client, login_as, db):
+    db.get_result = make_area()
+    db.queue([])
+    body = _new_user_body(cola_ids=[str(uuid4())])
+    r = await client.post("/api/v1/users", json=body, headers=login_as(UserRole.ADMIN))
+
+    assert r.status_code == 422
+    assert r.json()["detail"] == "Alguna de las colas indicadas no existe o está inactiva"
+    assert db.added == []
+
+
+async def test_admin_reemplaza_las_colas_de_un_usuario(client, login_as, db):
+    user = make_user(UserRole.AUDITOR_CLINICO, username="aud", colas=[make_queue("Cola_Oncologia", "Oncología")])
+    nueva = make_queue("Gestion_Interconsultas", "Interconsultas")
+    db.queue(user, [nueva])
+    r = await client.patch(
+        f"/api/v1/users/{user.id}", json={"cola_ids": [str(nueva.id)]}, headers=login_as(UserRole.ADMIN)
+    )
+
+    assert r.status_code == 200
+    assert [c["codigo"] for c in r.json()["colas"]] == ["Gestion_Interconsultas"]
+
+    db.queue(user)
+    r = await client.patch(f"/api/v1/users/{user.id}", json={"cola_ids": []}, headers=login_as(UserRole.ADMIN))
+    assert r.json()["colas"] == []

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_password_hash, verify_password
 from app.features.auth.enums import UserRole
 from app.features.auth.models import RevokedToken, User
-from app.features.catalogs.models import Area, CatalogHistory
+from app.features.catalogs.models import Area, CatalogHistory, RoutingQueue
 from app.features.catalogs.schemas import DeletionType
 from app.features.catalogs.service import get_active_area_or_none
 from app.features.documents.models import ClinicalDocument
@@ -134,10 +134,28 @@ async def _get_assignable_area(db: AsyncSession, area_id: UUID) -> Area:
     return area
 
 
+async def _get_assignable_queues(db: AsyncSession, cola_ids: list[UUID]) -> list[RoutingQueue]:
+    """Colas activas a asignar a un usuario o HTTPException 422 si alguna no existe o está inactiva."""
+    ids = set(cola_ids)
+    if not ids:
+        return []
+    result = await db.execute(
+        select(RoutingQueue).where(RoutingQueue.id.in_(ids), RoutingQueue.is_active.is_(True))
+    )
+    colas = list(result.scalars().all())
+    if len(colas) != len(ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Alguna de las colas indicadas no existe o está inactiva",
+        )
+    return colas
+
+
 async def create_user(payload: UserCreateRequest, db: AsyncSession, requesting_user: User) -> User:
     """Crea un nuevo usuario, validando que `username` y `email` no estén ya en uso y que el área esté activa."""
     _ensure_can_grant_role(requesting_user, payload.role)
     area = await _get_assignable_area(db, payload.area_id)
+    colas = await _get_assignable_queues(db, payload.cola_ids)
 
     result = await db.execute(
         select(User).where(
@@ -157,6 +175,7 @@ async def create_user(payload: UserCreateRequest, db: AsyncSession, requesting_u
         full_name=payload.full_name,
         role=payload.role,
         area=area,
+        colas=colas,
     )
     db.add(user)
     await db.commit()
@@ -174,14 +193,15 @@ async def _get_user_or_404(db: AsyncSession, user_id: UUID) -> User:
 
 
 async def _count_user_activity(db: AsyncSession, user_id: UUID) -> int:
-    """Registros que identifican al usuario como autor: documentos que subió, auditó o tomó, y
-    cambios de catálogos. Borrarlo físicamente dejaría esa trazabilidad en `NULL`."""
+    """Registros que identifican al usuario como autor: documentos que subió, auditó, tomó o marcó
+    como atendidos, y cambios de catálogos. Borrarlo físicamente dejaría esa trazabilidad en `NULL`."""
     documents = await db.execute(
         select(func.count(ClinicalDocument.id)).where(
             or_(
                 ClinicalDocument.uploaded_by_id == user_id,
                 ClinicalDocument.audited_by_id == user_id,
                 ClinicalDocument.asignado_a_id == user_id,
+                ClinicalDocument.atendido_por_id == user_id,
             )
         )
     )
@@ -245,6 +265,8 @@ async def admin_update_user(
     # Se asigna la relación (no solo el FK) para que la respuesta traiga el área nueva.
     if "area_id" in updates:
         user.area = await _get_assignable_area(db, updates.pop("area_id"))
+    if "cola_ids" in updates:
+        user.colas = await _get_assignable_queues(db, updates.pop("cola_ids"))
 
     for field, value in updates.items():
         setattr(user, field, value)

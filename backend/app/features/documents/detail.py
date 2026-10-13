@@ -20,7 +20,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -179,15 +179,17 @@ async def _schema_campos_adicionales(db: AsyncSession, tipo_documento: str) -> d
 
 
 async def _get_visible_document(
-    db: AsyncSession, documento_id: str, uploaded_by_id: UUID | None
+    db: AsyncSession, documento_id: str, uploaded_by_id: UUID | None, colas: list[str] | None = None
 ) -> ClinicalDocument:
-    """Busca el documento; con `uploaded_by_id` (OPERADOR) solo entre los que subió ese usuario.
+    """Busca el documento; con `uploaded_by_id` (OPERADOR) solo entre los que subió ese usuario o
+    los derivados a sus `colas` (los que ve en la Consola de Triaje).
 
     Un documento ajeno responde 404 (no 403) para no revelar qué identificadores existen.
     """
     stmt = select(ClinicalDocument).where(ClinicalDocument.documento_id == documento_id)
     if uploaded_by_id is not None:
-        stmt = stmt.where(ClinicalDocument.uploaded_by_id == uploaded_by_id)
+        propio = ClinicalDocument.uploaded_by_id == uploaded_by_id
+        stmt = stmt.where(or_(propio, ClinicalDocument.destino_enrutamiento.in_(colas)) if colas else propio)
     document = (await db.execute(stmt)).scalar_one_or_none()
     if document is None:
         raise HTTPException(
@@ -198,14 +200,14 @@ async def _get_visible_document(
 
 
 async def get_document_detail(
-    documento_id: str, db: AsyncSession, uploaded_by_id: UUID | None = None
+    documento_id: str, db: AsyncSession, uploaded_by_id: UUID | None = None, colas: list[str] | None = None
 ) -> DocumentDetailResponse:
     """Detalle completo de un documento.
 
     Si OCI no puede generar alguna URL, el detalle se entrega igual: ese archivo queda con
     `url = None` y `aviso_archivos` lo explica, para que el caso siga siendo revisable.
     """
-    document = await _get_visible_document(db, documento_id, uploaded_by_id)
+    document = await _get_visible_document(db, documento_id, uploaded_by_id, colas)
 
     raw: dict[str, Any] = document.raw_extracted_json or {}
     detalle_clinico: dict[str, Any] = raw.get("detalle_clinico") or {}

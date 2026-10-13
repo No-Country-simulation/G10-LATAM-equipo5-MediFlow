@@ -25,6 +25,7 @@ from app.features.catalogs.schemas import (
     QueueActiveForLLM,
     QueueCreate,
     QueueResponse,
+    QueueSummary,
     QueueUpdate,
 )
 
@@ -48,6 +49,17 @@ async def list_active_queues_for_llm(
     """Colas activas en formato compacto para inyectar en el prompt de n8n. Requiere autenticación."""
     queues = await service.get_active_queues_for_llm(db)
     return [QueueActiveForLLM.model_validate(q) for q in queues]
+
+
+@router.get("/queues/summary", response_model=list[QueueSummary])
+async def list_active_queues_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[QueueSummary]:
+    """Colas activas con su `id` y si son asistenciales: para asignar colas a un usuario y para
+    elegir el destino al derivar un caso. Requiere autenticación."""
+    queues = await service.get_active_queues_for_llm(db)
+    return [QueueSummary.model_validate(q) for q in queues]
 
 
 @router.get("/queues", response_model=list[QueueResponse])

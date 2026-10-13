@@ -34,6 +34,8 @@ class RoutingQueue(Base):
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
     descripcion_semantica: Mapped[str] = mapped_column(Text, nullable=False)
     notificar_inmediato: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Cola de atención directa a pacientes: sus casos aparecen en la Consola de Triaje.
+    es_asistencial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     es_sistema: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

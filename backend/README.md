@@ -165,8 +165,8 @@ Todos con prefijo `/api/v1`.
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
 | GET | `/users` | Lista paginada | `ADMIN`, `GESTOR_USUARIOS` |
-| POST | `/users` | Crea un usuario (`username`, `email`, `password`, `full_name`, `role`, `area_id` **obligatorio** y activo) | `ADMIN`, `GESTOR_USUARIOS` |
-| PATCH | `/users/{user_id}` | Cambia nombre, email, rol, área o estado | `ADMIN`, `GESTOR_USUARIOS` |
+| POST | `/users` | Crea un usuario (`username`, `email`, `password`, `full_name`, `role`, `area_id` **obligatorio** y activo; `cola_ids` opcional: colas que atiende en la Consola de Triaje) | `ADMIN`, `GESTOR_USUARIOS` |
+| PATCH | `/users/{user_id}` | Cambia nombre, email, rol, área, estado o colas (`cola_ids` reemplaza todas; `[]` las quita) | `ADMIN`, `GESTOR_USUARIOS` |
 | DELETE | `/users/{user_id}` | Smart Delete: borrado físico si el usuario no tiene actividad; si subió, auditó o tomó documentos, o cambió catálogos, solo se desactiva (el historial de correcciones conserva su username aunque se borre). `409` si es tu propia cuenta; `403` si un no-ADMIN elimina a un ADMIN | `ADMIN`, `GESTOR_USUARIOS` |
 
 Solo un ADMIN puede otorgar el rol ADMIN. Las respuestas de usuario incluyen `area: {id, codigo, nombre}`.
@@ -178,10 +178,12 @@ Solo un ADMIN puede otorgar el rol ADMIN. Las respuestas de usuario incluyen `ar
 | POST | `/documents/ingest` | Recibe el documento procesado por n8n (`201`) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents` | Bandeja paginada con filtros (`estado` y `destino` admiten varios valores separados por coma; `atendido=true` o `false`) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents/stats` | Resumen del inicio: conteos del período (máx. 92 días) por prioridad, estado, día y cola, más las listas de trabajo del rol. Un `OPERADOR` solo cuenta los suyos | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| GET | `/documents/triage` | Consola de Triaje: casos activos (procesados o auditados, sin atender) de las colas asistenciales. El `ADMIN` ve todas; `OPERADOR` y `AUDITOR_CLINICO`, solo sus colas asignadas | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents/{documento_id}` | Detalle completo: archivos con URL pre-firmada, detalle clínico, duplicados e historial | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | PUT | `/documents/{documento_id}` | Corrige un documento `PROCESADO` o `AUDITADO` (ver [Corrección](#corrección-de-documentos-ya-procesados)) | `ADMIN`, `AUDITOR_CLINICO` |
-| POST | `/documents/{documento_id}/attend` | Consola de Triaje: marca el caso como atendido (sale de la consola; no cambia el estado). `409` si no está `PROCESADO` ni `AUDITADO` | `ADMIN`, `AUDITOR_CLINICO` |
+| POST | `/documents/{documento_id}/attend` | Consola de Triaje: marca el caso como atendido (sale de la consola; no cambia el estado). `409` si no está `PROCESADO` ni `AUDITADO`; `403` si el auditor no tiene esa cola | `ADMIN`, `AUDITOR_CLINICO` |
 | DELETE | `/documents/{documento_id}/attend` | Deshace la marca de atendido: el caso vuelve a la consola | `ADMIN`, `AUDITOR_CLINICO` |
+| POST | `/documents/{documento_id}/derive` | Deriva el caso a otra cola con un `motivo` (5+ caracteres) que queda en el historial (origen `DERIVACION`) y en el JSON de OCI; en la nueva cola vuelve a estar activo. `403` si el auditor no tiene la cola actual | `ADMIN`, `AUDITOR_CLINICO` |
 | POST | `/documents/duplicates/check` | ¿Alguno de estos archivos ya fue subido? (por huella SHA-256) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 
 Un `OPERADOR` solo ve los documentos que subió: los ajenos responden `404` (no `403`, para no revelar qué existe).
@@ -370,7 +372,7 @@ Cada resolución de auditoría (`AUDITORIA`, aunque no cambie nada) y cada corre
 | Maestra | Tabla | Notas |
 |---|---|---|
 | Tipos de documento | `document_types` | `descripcion` (la lee el LLM para decidir) y `campos_extraccion` opcional (JSON Schema de campos propios) |
-| Colas de enrutamiento | `routing_queues` | `descripcion_semantica` (cuándo usar y cuándo no) y `notificar_inmediato` |
+| Colas de enrutamiento | `routing_queues` | `descripcion_semantica` (cuándo usar y cuándo no), `notificar_inmediato` y `es_asistencial` (aparece en la Consola de Triaje). `GET /catalogs/queues/summary` las lista con su `id` para asignarlas a usuarios y para derivar |
 | Áreas | `areas` | Área de cada usuario y origen de cada documento. No va al prompt y se referencia por id. La gestionan también los `GESTOR_USUARIOS` |
 
 **Reglas comunes:**

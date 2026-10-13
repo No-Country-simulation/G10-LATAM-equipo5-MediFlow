@@ -99,41 +99,49 @@ ON CONFLICT (codigo) DO UPDATE SET
     descripcion = EXCLUDED.descripcion,
     campos_extraccion = EXCLUDED.campos_extraccion;
 
-INSERT INTO routing_queues (codigo, nombre, descripcion_semantica, notificar_inmediato) VALUES
+-- `es_asistencial` (aparece en la Consola de Triaje) solo se fija al crear la cola: el ON CONFLICT no lo
+-- pisa, para respetar lo que el administrador cambie desde el mantenedor.
+INSERT INTO routing_queues (codigo, nombre, descripcion_semantica, notificar_inmediato, es_asistencial) VALUES
 (
     'Cola_Emergencia_Medica',
     'Urgencias',
     'Usar SOLO si el documento muestra riesgo vital o un valor crítico que requiere acción en minutos u horas: hallazgo como tromboembolismo pulmonar, neumotórax, infarto o hemorragia activa; valor de laboratorio marcado como crítico o de pánico (ej. potasio > 6.5 mEq/L, hemoglobina < 7 g/dL); triaje rojo o naranjo (C1-C2). Aplica a cualquier tipo de documento. NO usar para resultados alterados sin riesgo inmediato ni para urgencia meramente administrativa.',
+    TRUE,
     TRUE
 ),
 (
     'Farmacia_Hospitalaria',
     'Farmacia Hospitalaria',
     'Recetas médicas que requieren validación farmacéutica o dispensación, con prioridad para medicamentos controlados, de alto costo o con posibles interacciones. NO usar si la receta contiene además un hallazgo crítico (ver Urgencias).',
+    FALSE,
     FALSE
 ),
 (
     'Gestion_Procedimientos',
     'Procedimientos y Exámenes',
     'Órdenes que deben agendarse: solicitudes de exámenes de laboratorio o imagenología y de procedimientos o cirugías pendientes (endoscopía, biopsia, procedimiento invasivo). NO usar para exámenes o procedimientos ya realizados (ver Ficha Clínica).',
-    FALSE
+    FALSE,
+    TRUE
 ),
 (
     'Gestion_Interconsultas',
     'Interconsultas y Derivaciones',
     'Interconsultas o derivaciones a otra especialidad, profesional (kinesiología, psicología, nutrición), centro o nivel de atención que deben gestionarse e ingresar a lista de espera o agenda.',
-    FALSE
+    FALSE,
+    TRUE
 ),
 (
     'Cola_Oncologia',
     'Oncología',
     'Documentos con sospecha o confirmación de malignidad (ej. biopsia positiva para carcinoma, imagen sugerente de neoplasia, masa tumoral, metástasis) que requieren ingreso oportuno a la ruta de atención oncológica. Si además hay riesgo vital inmediato, usar Urgencias.',
+    TRUE,
     TRUE
 ),
 (
     'Ficha_Clinica',
     'Ficha Clínica',
     'Destino por defecto: documentos informativos que solo deben incorporarse a la historia clínica del paciente, sin acción pendiente: resultados normales o alterados sin riesgo inmediato, epicrisis, protocolos operatorios, atenciones e informes de control, certificados y licencias médicas.',
+    FALSE,
     FALSE
 )
 ON CONFLICT (codigo) DO UPDATE SET

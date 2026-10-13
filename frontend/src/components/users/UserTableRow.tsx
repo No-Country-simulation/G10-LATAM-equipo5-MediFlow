@@ -84,6 +84,11 @@ export const UserTableRow = ({ user, isSelf, canDelete, isUpdating, onToggleStat
         ) : (
           <span className="text-[11px] text-amber-400/80 italic">Sin área</span>
         )}
+        {user.colas && user.colas.length > 0 && (
+          <div className="text-[10px] text-slate-500 mt-0.5" title="Colas que atiende en la Consola de Triaje">
+            Triaje: {user.colas.map((c) => c.nombre).join(', ')}
+          </div>
+        )}
       </td>
       <td className="px-5 py-3.5">
         <ActiveToggle

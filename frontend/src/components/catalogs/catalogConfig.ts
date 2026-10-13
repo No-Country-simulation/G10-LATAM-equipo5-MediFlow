@@ -25,7 +25,7 @@ export interface CatalogField {
 
 export interface RecordBadge {
   label: string;
-  tone: 'amber' | 'violet';
+  tone: 'amber' | 'violet' | 'emerald';
 }
 
 export interface CatalogDefinition {
@@ -42,8 +42,8 @@ export interface CatalogDefinition {
   fields: CatalogField[];
   /** Campo de texto largo que se muestra (recortado) en la tabla. */
   descriptionField: string;
-  /** Insignia adicional de la fila (ej. notificación inmediata). */
-  badge?: (record: CatalogRecord) => RecordBadge | null;
+  /** Insignias adicionales de la fila (ej. notificación inmediata, aparece en Triaje). */
+  badges?: (record: CatalogRecord) => RecordBadge[];
   /** Roles que ven la pestaña y pueden modificar el catálogo (igual que el backend). */
   managerRoles: UserRole[];
 }
@@ -104,8 +104,8 @@ export const CATALOGS: CatalogDefinition[] = [
         hint: 'Debe ser un objeto con "type": "object". Vacío = sin campos adicionales.',
       },
     ],
-    badge: (record) =>
-      (record as DocumentTypeRecord).campos_extraccion ? { label: 'Campos extra', tone: 'violet' } : null,
+    badges: (record) =>
+      (record as DocumentTypeRecord).campos_extraccion ? [{ label: 'Campos extra', tone: 'violet' }] : [],
   },
   {
     key: 'areas',
@@ -150,9 +150,20 @@ export const CATALOGS: CatalogDefinition[] = [
         kind: 'checkbox',
         hint: 'Genera una alerta al enrutar un documento a esta cola.',
       },
+      {
+        name: 'es_asistencial',
+        label: 'Aparece en la Consola de Triaje',
+        kind: 'checkbox',
+        hint: 'Cola de atención directa a pacientes: sus casos se atienden desde Triaje.',
+      },
     ],
-    badge: (record) =>
-      (record as QueueRecord).notificar_inmediato ? { label: 'Notifica', tone: 'amber' } : null,
+    badges: (record) => {
+      const queue = record as QueueRecord;
+      return [
+        ...(queue.notificar_inmediato ? [{ label: 'Notifica', tone: 'amber' as const }] : []),
+        ...(queue.es_asistencial ? [{ label: 'Triaje', tone: 'emerald' as const }] : []),
+      ];
+    },
   },
 ];
 

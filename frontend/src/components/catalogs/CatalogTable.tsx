@@ -8,6 +8,7 @@ import type { CatalogDefinition, RecordBadge } from './catalogConfig';
 const BADGE_TONES: Record<RecordBadge['tone'], string> = {
   amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
   violet: 'bg-violet-500/10 text-violet-300 border-violet-500/30',
+  emerald: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
 };
 
 const SYSTEM_RECORD_HINT = 'Registro de sistema: el pipeline depende de él, no se puede eliminar ni desactivar';
@@ -43,7 +44,7 @@ interface CatalogRowProps extends Omit<CatalogTableProps, 'records' | 'isLoading
 
 const CatalogRow = ({ definition, record, isUpdating, onToggleActive, onEdit, onDelete }: CatalogRowProps) => {
   const description = String((record as unknown as Record<string, unknown>)[definition.descriptionField] ?? '');
-  const badge = definition.badge?.(record);
+  const badges = definition.badges?.(record) ?? [];
   // Un registro de sistema puede reactivarse, pero no desactivarse.
   const lockToggle = record.es_sistema && record.is_active;
 
@@ -63,11 +64,14 @@ const CatalogRow = ({ definition, record, isUpdating, onToggleActive, onEdit, on
       <td className="px-5 py-3.5 font-medium">
         <div className="flex items-center gap-2">
           <span>{record.nombre}</span>
-          {badge && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${BADGE_TONES[badge.tone]}`}>
+          {badges.map((badge) => (
+            <span
+              key={badge.label}
+              className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${BADGE_TONES[badge.tone]}`}
+            >
               {badge.label}
             </span>
-          )}
+          ))}
         </div>
       </td>
       <td className="px-5 py-3.5 text-slate-400 text-[11px] max-w-md">

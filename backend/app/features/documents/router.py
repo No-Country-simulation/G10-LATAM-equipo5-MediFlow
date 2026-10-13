@@ -12,12 +12,13 @@ from app.features.audit.service import correct_document
 from app.features.auth.dependencies import require_roles
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
-from app.features.documents.attention import mark_attended, unmark_attended
+from app.features.catalogs.schemas import QueueSummary
 from app.features.documents.detail import get_document_detail
 from app.features.documents.duplicates import coincidencias_de_archivo
 from app.features.documents.schemas import (
     AlmacenamientoOci,
     DashboardStatsResponse,
+    DeriveRequest,
     DocumentDetailResponse,
     DocumentListItemResponse,
     DuplicateCheckRequest,
@@ -25,6 +26,7 @@ from app.features.documents.schemas import (
     IngestPayload,
     IngestResponse,
     PaginatedDocumentResponse,
+    TriageResponse,
 )
 from app.features.documents.service import (
     DocumentAlreadyExistsError,
@@ -34,6 +36,7 @@ from app.features.documents.service import (
     ingest_document,
 )
 from app.features.documents.stats import get_dashboard_stats
+from app.features.documents.triage import derive_document, get_triage_cases, mark_attended, unmark_attended
 
 router = APIRouter(tags=["Documents"])
 
@@ -182,6 +185,24 @@ async def dashboard_stats(
     return await get_dashboard_stats(db, current_user, desde, hasta, utc_offset_min)
 
 
+@router.get("/triage", response_model=TriageResponse)
+async def triage_console(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_DOCUMENT_ACCESS_ROLES)),
+) -> TriageResponse:
+    """Consola de Triaje: casos activos (procesados o auditados, sin atender) de las colas
+    asistenciales que ve el usuario, los más recientes primero (máx. 200).
+
+    El ADMIN ve todas las colas asistenciales; un OPERADOR o AUDITOR_CLINICO, solo las que tiene
+    asignadas (sin colas asignadas, la consola viene vacía).
+    """
+    colas, documentos = await get_triage_cases(db, current_user)
+    return TriageResponse(
+        colas=[QueueSummary.model_validate(q) for q in colas],
+        items=[DocumentListItemResponse.model_validate(d) for d in documentos],
+    )
+
+
 @router.post("/duplicates/check", response_model=DuplicateCheckResponse)
 async def check_duplicate_files(
     payload: DuplicateCheckRequest,
@@ -220,9 +241,12 @@ async def get_document(
     - `detalle.campos_relevantes`: campos de texto del tipo que no tienen tabla propia.
 
     Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR. Un OPERADOR solo ve los documentos que
-    subió; para cualquier otro recibe `404`.
+    subió o los derivados a sus colas asistenciales; para cualquier otro recibe `404`.
     """
-    return await get_document_detail(documento_id, db, uploaded_by_id=_own_documents_only(current_user))
+    uploaded_by_id = _own_documents_only(current_user)
+    # El OPERADOR también abre los casos de sus colas, que ve en la Consola de Triaje.
+    colas = [q.codigo for q in current_user.colas if q.es_asistencial] if uploaded_by_id else None
+    return await get_document_detail(documento_id, db, uploaded_by_id=uploaded_by_id, colas=colas)
 
 
 @router.put("/{documento_id}", response_model=DocumentListItemResponse)
@@ -256,6 +280,7 @@ async def attend_document(
 ) -> DocumentListItemResponse:
     """Marca el caso como atendido: sale de la Consola de Triaje (no cambia su estado).
 
+    - `403` si un AUDITOR_CLINICO intenta marcar un caso que no está en sus colas.
     - `409` si el documento no está PROCESADO ni AUDITADO.
     - Si ya estaba atendido, se devuelve sin cambios.
 
@@ -276,4 +301,24 @@ async def unattend_document(
     Requiere rol ADMIN o AUDITOR_CLINICO.
     """
     document = await unmark_attended(documento_id, current_user, db)
+    return DocumentListItemResponse.model_validate(document)
+
+
+@router.post("/{documento_id}/derive", response_model=DocumentListItemResponse)
+async def derive_to_queue(
+    payload: DeriveRequest,
+    documento_id: str = _DOCUMENTO_ID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_DOCUMENT_CORRECTION_ROLES)),
+) -> DocumentListItemResponse:
+    """Deriva el caso a otra cola activa con un motivo, que queda en `historial_correcciones`
+    (origen `DERIVACION`) y en el JSON de OCI. En la nueva cola el caso vuelve a estar activo.
+
+    - `403` si un AUDITOR_CLINICO intenta derivar un caso que no está en sus colas.
+    - `409` si el documento no está PROCESADO ni AUDITADO.
+    - `422` si la cola no existe, está inactiva o es la misma.
+
+    Requiere rol ADMIN o AUDITOR_CLINICO.
+    """
+    document = await derive_document(documento_id, payload.destino, payload.motivo, current_user, db)
     return DocumentListItemResponse.model_validate(document)

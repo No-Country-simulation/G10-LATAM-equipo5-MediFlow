@@ -1,3 +1,5 @@
+import type { QueueSummary } from './auth';
+
 export const SCORE_CONFIANZA_THRESHOLD = 0.85;
 
 export type EstadoDocumento = 'PROCESADO' | 'PENDIENTE_AUDITORIA' | 'AUDITADO' | 'DESCARTADO';
@@ -183,7 +185,7 @@ export interface CambioCorreccion {
 
 /** Entrada del historial: la resolución de la auditoría o una corrección posterior. */
 export interface CorreccionHistorial {
-  origen: 'AUDITORIA' | 'CORRECCION';
+  origen: 'AUDITORIA' | 'CORRECCION' | 'DERIVACION';
   justificacion: string;
   cambios: CambioCorreccion[];
   corrected_by_username: string;
@@ -326,3 +328,14 @@ export const normalizePriority = (val?: string | null): NivelPrioridad => {
   }
   return 'Rutina';
 };
+
+/** Respuesta de `GET /documents/triage`: colas que ve el usuario y sus casos activos. */
+export interface TriageResponse {
+  colas: QueueSummary[];
+  items: DocumentListItemResponse[];
+}
+
+export interface DeriveRequest {
+  destino: string;
+  motivo: string;
+}

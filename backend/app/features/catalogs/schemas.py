@@ -50,6 +50,7 @@ class QueueCreate(BaseModel):
     nombre: str = Field(..., min_length=1, max_length=150)
     descripcion_semantica: str = Field(..., min_length=1)
     notificar_inmediato: bool = False
+    es_asistencial: bool = False
 
 
 class QueueUpdate(BaseModel):
@@ -58,10 +59,11 @@ class QueueUpdate(BaseModel):
     nombre: str | None = Field(None, min_length=1, max_length=150)
     descripcion_semantica: str | None = Field(None, min_length=1)
     notificar_inmediato: bool | None = None
+    es_asistencial: bool | None = None
     is_active: bool | None = None
 
     no_null = field_validator(
-        "nombre", "descripcion_semantica", "notificar_inmediato", "is_active"
+        "nombre", "descripcion_semantica", "notificar_inmediato", "es_asistencial", "is_active"
     )(_reject_null)
 
 
@@ -75,11 +77,23 @@ class QueueResponse(BaseModel):
     nombre: str
     descripcion_semantica: str
     notificar_inmediato: bool
+    es_asistencial: bool
     is_active: bool
     es_sistema: bool
     created_at: datetime
     updated_at: datetime | None = None
     updated_by_id: UUID | None = None
+
+
+class QueueSummary(BaseModel):
+    """Cola en formato compacto (colas de un usuario, colas visibles en la Consola de Triaje)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    codigo: str
+    nombre: str
+    es_asistencial: bool = False
 
 
 class QueueActiveForLLM(BaseModel):

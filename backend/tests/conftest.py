@@ -21,7 +21,7 @@ from app.core.security import create_access_token, get_password_hash  # noqa: E4
 from app.features.auth import dependencies as auth_dependencies  # noqa: E402
 from app.features.auth.enums import UserRole  # noqa: E402
 from app.features.auth.models import User  # noqa: E402
-from app.features.catalogs.models import Area  # noqa: E402
+from app.features.catalogs.models import Area, RoutingQueue  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -158,6 +158,7 @@ def make_user(
     active: bool = True,
     area: Area | None = None,
     id: UUID | None = None,  # noqa: A002 - mismo nombre que la columna
+    colas: list[RoutingQueue] | None = None,
 ) -> User:
     return User(
         id=id or uuid4(),
@@ -169,6 +170,7 @@ def make_user(
         is_active=active,
         area=area,
         area_id=area.id if area else None,
+        colas=colas or [],
         created_at=datetime.now(timezone.utc),
     )
 
@@ -281,3 +283,19 @@ def ingest_body(
     }
     body.update(overrides)
     return body
+
+
+def make_queue(codigo: str = "Cola_Emergencia_Medica", nombre: str = "Urgencias", **overrides) -> RoutingQueue:
+    fields = {
+        "id": uuid4(),
+        "codigo": codigo,
+        "nombre": nombre,
+        "descripcion_semantica": "Cola de prueba",
+        "notificar_inmediato": False,
+        "es_asistencial": True,
+        "is_active": True,
+        "es_sistema": False,
+        "created_at": datetime.now(timezone.utc),
+    }
+    fields.update(overrides)
+    return RoutingQueue(**fields)
