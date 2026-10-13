@@ -1,3 +1,4 @@
+import { Cloud } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { DocumentDetailResponse } from '../../types/medical';
 import { formatIdentificacion } from '../../utils/identificacion';
@@ -199,10 +200,30 @@ const DocumentDetailContent = ({ detail }: { detail: DocumentDetailResponse }) =
         <Dato etiqueta="Destino" valor={detail.destino_enrutamiento} />
         <Dato etiqueta="Confianza IA" valor={`${Math.round(detail.score_confianza * 100)}%`} />
         <Dato etiqueta="Estado" valor={etiquetaDeCodigo(detail.estado)} />
+        {detail.atendido_at && (
+          <Dato
+            etiqueta="Atendido en triaje"
+            valor={unir(
+              new Date(detail.atendido_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' }),
+              detail.atendido_por_username
+            )}
+          />
+        )}
       </Datos>
       {detail.justificacion_enrutamiento && (
         <dl className="pt-1">
           <Dato etiqueta="Justificación del enrutamiento" valor={detail.justificacion_enrutamiento} />
+        </dl>
+      )}
+      {detail.oci_json_path && (
+        <dl className="pt-1">
+          <div className="min-w-0">
+            <dt className={ETIQUETA}>Ruta en OCI (datos extraídos)</dt>
+            <dd className="flex items-start gap-1.5 text-xs text-slate-200 font-mono break-all">
+              <Cloud className="w-3.5 h-3.5 shrink-0 mt-px text-sky-400" />
+              {detail.oci_json_path}
+            </dd>
+          </div>
         </dl>
       )}
     </Seccion>

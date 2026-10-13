@@ -59,6 +59,8 @@ export interface DocumentListItemResponse {
   requiere_auditoria?: boolean | null;
   asignado_a_username?: string | null;
   asignado_at?: string | null;
+  atendido_por_username?: string | null;
+  atendido_at?: string | null;
 }
 
 export interface PaginatedDocumentResponse {
@@ -75,6 +77,7 @@ export interface DocumentFilterParams {
   page_size?: number;
   /** Uno o varios estados separados por coma (`PROCESADO,AUDITADO`). */
   estado?: EstadoDocumento | (string & {});
+  /** Una o varias colas separadas por coma. */
   destino?: string;
   identificacion?: string;
   numero_ficha?: string;
@@ -82,6 +85,8 @@ export interface DocumentFilterParams {
   fecha_desde?: string;
   fecha_hasta?: string;
   area_origen_id?: string;
+  /** `false` = casos aún no marcados como atendidos en la Consola de Triaje. */
+  atendido?: boolean;
 }
 
 export interface ArchivoPreview {

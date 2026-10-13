@@ -88,6 +88,12 @@ class ClinicalDocument(Base):
     asignado_a_username: Mapped[str | None] = mapped_column(String(50))
     asignado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Consola de Triaje: quién marcó el caso como atendido y cuándo (sale de la consola). El
+    # username se guarda desnormalizado, igual que `asignado_a_username`.
+    atendido_por_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    atendido_por_username: Mapped[str | None] = mapped_column(String(50))
+    atendido_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
     )

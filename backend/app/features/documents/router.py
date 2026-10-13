@@ -12,6 +12,7 @@ from app.features.audit.service import correct_document
 from app.features.auth.dependencies import require_roles
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
+from app.features.documents.attention import mark_attended, unmark_attended
 from app.features.documents.detail import get_document_detail
 from app.features.documents.duplicates import coincidencias_de_archivo
 from app.features.documents.schemas import (
@@ -100,7 +101,8 @@ async def list_documents(
         None, description="Filtrar por estado (uno o varios separados por coma): PENDIENTE_AUDITORIA, PROCESADO, AUDITADO, DESCARTADO"
     ),
     destino: str | None = Query(
-        None, description="Filtrar por cola: Cola_Emergencia_Medica, Farmacia_Hospitalaria, etc."
+        None,
+        description="Filtrar por cola (una o varias separadas por coma): Cola_Emergencia_Medica, Farmacia_Hospitalaria, etc.",
     ),
     identificacion: str | None = Query(
         None, max_length=40, description="Filtrar por identificación del paciente (RUT, DNI, cédula...)"
@@ -110,6 +112,9 @@ async def list_documents(
     fecha_desde: datetime | None = Query(None),
     fecha_hasta: datetime | None = Query(None),
     area_origen_id: UUID | None = Query(None, description="Filtrar por área de origen (id del área)"),
+    atendido: bool | None = Query(
+        None, description="Filtrar por si el caso ya se marcó como atendido en la Consola de Triaje"
+    ),
 ) -> PaginatedDocumentResponse:
     """Lista la bandeja documental con filtros dinámicos y paginación.
 
@@ -128,6 +133,7 @@ async def list_documents(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
         area_origen_id=area_origen_id,
+        atendido=atendido,
     )
     return PaginatedDocumentResponse(
         items=[DocumentListItemResponse.model_validate(item) for item in result["items"]],
@@ -239,4 +245,35 @@ async def correct_document_values(
     Requiere rol ADMIN o AUDITOR_CLINICO.
     """
     document = await correct_document(documento_id, payload, current_user, db)
+    return DocumentListItemResponse.model_validate(document)
+
+
+@router.post("/{documento_id}/attend", response_model=DocumentListItemResponse)
+async def attend_document(
+    documento_id: str = _DOCUMENTO_ID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_DOCUMENT_CORRECTION_ROLES)),
+) -> DocumentListItemResponse:
+    """Marca el caso como atendido: sale de la Consola de Triaje (no cambia su estado).
+
+    - `409` si el documento no está PROCESADO ni AUDITADO.
+    - Si ya estaba atendido, se devuelve sin cambios.
+
+    Requiere rol ADMIN o AUDITOR_CLINICO.
+    """
+    document = await mark_attended(documento_id, current_user, db)
+    return DocumentListItemResponse.model_validate(document)
+
+
+@router.delete("/{documento_id}/attend", response_model=DocumentListItemResponse)
+async def unattend_document(
+    documento_id: str = _DOCUMENTO_ID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_DOCUMENT_CORRECTION_ROLES)),
+) -> DocumentListItemResponse:
+    """Deshace la marca de atendido: el caso vuelve a la Consola de Triaje.
+
+    Requiere rol ADMIN o AUDITOR_CLINICO.
+    """
+    document = await unmark_attended(documento_id, current_user, db)
     return DocumentListItemResponse.model_validate(document)

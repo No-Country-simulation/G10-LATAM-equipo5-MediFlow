@@ -8,6 +8,7 @@ import type { DocumentDetailResponse } from '../../types/medical';
 import { DOCUMENT_CORRECTION_ROLES, ESTADOS_CORREGIBLES, canAccessRoute } from '../../utils/permissions';
 import { etiquetaDeCodigo } from '../../utils/etiquetas';
 import PriorityBadge from '../common/PriorityBadge';
+import DocumentStatusBadge from '../common/DocumentStatusBadge';
 import DocumentFilesViewer from '../common/DocumentFilesViewer';
 import DocumentDetailContent from './DocumentDetailContent';
 import DocumentCorrectionPanel from './DocumentCorrectionPanel';
@@ -78,6 +79,7 @@ const DocumentDetailModal = ({ documentoId, onClose }: DocumentDetailModalProps)
             <>
               <span className="text-xs text-slate-400">{etiquetaDeCodigo(detail.tipo_documento)}</span>
               <PriorityBadge prioridad={detail.nivel_prioridad} />
+              <DocumentStatusBadge estado={detail.estado} requiereAuditoria={detail.requiere_auditoria} />
             </>
           )}
         </div>

@@ -1,13 +1,24 @@
-import { useState, useMemo } from 'react';
-import { AlertCircle, CheckCircle2, Clock, Inbox } from 'lucide-react';
+import { useState, useMemo, useCallback } from 'react';
+import { AlertCircle, CheckCircle2, Clock, Inbox, Undo2 } from 'lucide-react';
 import { useDocumentList } from '../hooks/useDocumentList';
+import { useAuth } from '../hooks/useAuth';
 import CriticalAlertBanner from '../components/dashboard/CriticalAlertBanner';
 import TriageCaseCard from '../components/triage/TriageCaseCard';
-import { normalizePriority } from '../types/medical';
+import { documentService } from '../services/documentService';
+import { normalizePriority, type DocumentListItemResponse } from '../types/medical';
+import { AUDIT_ACCESS_ROLES, canAccessRoute } from '../utils/permissions';
 
 type TriageTab = 'ALL' | 'Urgente' | 'Prioritario' | 'Rutina';
 const SEVERITY_ORDER: Record<string, number> = { Urgente: 1, Prioritario: 2, Rutina: 3 };
-const ACTIVE_CLINICAL_QUEUES = new Set(['Cola_Emergencia_Medica', 'Cola_Oncologia', 'Gestion_Procedimientos', 'Gestion_Interconsultas']);
+const ACTIVE_CLINICAL_QUEUES = ['Cola_Emergencia_Medica', 'Cola_Oncologia', 'Gestion_Procedimientos', 'Gestion_Interconsultas'];
+// Casos activos: resueltos, derivados a una cola asistencial y aún no atendidos. El backend filtra
+// todo, así que el tope de 100 se aplica sobre los casos clínicos y no sobre todos los documentos.
+const TRIAGE_QUERY = {
+  page_size: 100,
+  estado: 'PROCESADO,AUDITADO',
+  destino: ACTIVE_CLINICAL_QUEUES.join(','),
+  atendido: false,
+};
 
 const KPI_DEFS = [
   { label: 'Urgente', key: 'Urgente' as const, desc: 'Compromiso vital / Emergencia', icon: AlertCircle, color: 'text-rose-400', border: 'border-rose-500/20', bg: 'bg-rose-500/10' },
@@ -16,18 +27,57 @@ const KPI_DEFS = [
 ];
 
 const TriagePage = () => {
-  const { documents, state, error } = useDocumentList({ page_size: 100 });
+  const { user } = useAuth();
+  const canAttend = canAccessRoute(user?.role, AUDIT_ACCESS_ROLES);
+  const { documents, state, error, reload } = useDocumentList(TRIAGE_QUERY);
   const [selectedFilter, setSelectedFilter] = useState<TriageTab>('ALL');
+  const [attendingId, setAttendingId] = useState<string | null>(null);
+  // Se ocultan al instante, sin esperar la recarga de la lista.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
+  const [lastAttended, setLastAttended] = useState<DocumentListItemResponse | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleAttend = useCallback(async (doc: DocumentListItemResponse) => {
+    setAttendingId(doc.documento_id);
+    setActionError(null);
+    try {
+      await documentService.markAttended(doc.documento_id);
+      setHiddenIds((prev) => new Set(prev).add(doc.documento_id));
+      setLastAttended(doc);
+      reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo marcar el caso como atendido');
+    } finally {
+      setAttendingId(null);
+    }
+  }, [reload]);
+
+  const handleUndo = useCallback(async () => {
+    if (!lastAttended) return;
+    setActionError(null);
+    try {
+      await documentService.unmarkAttended(lastAttended.documento_id);
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        next.delete(lastAttended.documento_id);
+        return next;
+      });
+      setLastAttended(null);
+      reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo deshacer');
+    }
+  }, [lastAttended, reload]);
 
   const triagedCases = useMemo(() => {
     return documents
-      .filter((doc) => !doc.requiere_auditoria && doc.estado !== 'PENDIENTE_AUDITORIA' && Boolean(doc.destino_enrutamiento && ACTIVE_CLINICAL_QUEUES.has(doc.destino_enrutamiento)))
+      .filter((doc) => !hiddenIds.has(doc.documento_id))
       .sort((a, b) => {
         const diff = (SEVERITY_ORDER[normalizePriority(a.nivel_prioridad)] ?? 4) - (SEVERITY_ORDER[normalizePriority(b.nivel_prioridad)] ?? 4);
         if (diff !== 0) return diff;
         return (b.created_at ? new Date(b.created_at).getTime() : 0) - (a.created_at ? new Date(a.created_at).getTime() : 0);
       });
-  }, [documents]);
+  }, [documents, hiddenIds]);
 
   const counts = useMemo(() => ({
     Urgente: triagedCases.filter((d) => normalizePriority(d.nivel_prioridad) === 'Urgente').length,
@@ -85,6 +135,18 @@ const TriagePage = () => {
         </div>
 
         {error && <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">{error}</div>}
+        {actionError && <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">{actionError}</div>}
+        {lastAttended && (
+          <div role="status" className="flex items-center justify-between gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+              {lastAttended.nombre_paciente || lastAttended.documento_id} marcado como atendido; salió de la consola.
+            </span>
+            <button type="button" onClick={handleUndo} className="flex items-center gap-1 font-medium text-emerald-200 hover:text-white cursor-pointer">
+              <Undo2 className="w-3.5 h-3.5" />Deshacer
+            </button>
+          </div>
+        )}
 
         {state === 'loading' ? (
           <div className="space-y-3">{[1, 2].map((i) => <div key={i} className="h-24 rounded-2xl bg-slate-900/50 border border-slate-800 animate-pulse" />)}</div>
@@ -94,7 +156,14 @@ const TriagePage = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {displayedCases.map((doc) => <TriageCaseCard key={doc.documento_id} doc={doc} />)}
+            {displayedCases.map((doc) => (
+              <TriageCaseCard
+                key={doc.documento_id}
+                doc={doc}
+                onAttend={canAttend ? handleAttend : undefined}
+                attending={attendingId === doc.documento_id}
+              />
+            ))}
           </div>
         )}
       </div>

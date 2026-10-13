@@ -39,6 +39,12 @@ export const documentService = {
       })}`
     ),
 
+  markAttended: (documentoId: string): Promise<DocumentListItemResponse> =>
+    api.post<DocumentListItemResponse>(FASTAPI_ENDPOINTS.documents.attend(documentoId)),
+
+  unmarkAttended: (documentoId: string): Promise<DocumentListItemResponse> =>
+    api.delete<DocumentListItemResponse>(FASTAPI_ENDPOINTS.documents.attend(documentoId)),
+
   getDocumentDetail: (documentoId: string): Promise<DocumentDetailResponse> =>
     api.get<DocumentDetailResponse>(FASTAPI_ENDPOINTS.documents.detail(documentoId)),
 

@@ -508,6 +508,8 @@ class DocumentListItemResponse(BaseModel):
     asignado_a_id: UUID | None = None
     asignado_a_username: str | None = None
     asignado_at: datetime | None = None
+    atendido_por_username: str | None = None
+    atendido_at: datetime | None = None
     created_at: datetime
 
 

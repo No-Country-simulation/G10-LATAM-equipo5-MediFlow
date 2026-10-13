@@ -619,6 +619,12 @@ def _identificacion_buscada(valor: str | None) -> str | None:
     return normalizada.numero if normalizada else None
 
 
+def _valores(texto: str | None) -> list[str] | None:
+    """Lista de un filtro que admite varios valores separados por coma; `None` si no trae ninguno."""
+    valores = [v.strip() for v in texto.split(",") if v.strip()] if texto else []
+    return valores or None
+
+
 async def get_paginated_documents(
     db: AsyncSession,
     page: int = 1,
@@ -632,17 +638,18 @@ async def get_paginated_documents(
     fecha_hasta: datetime | None = None,
     uploaded_by_id: UUID | None = None,
     area_origen_id: UUID | None = None,
+    atendido: bool | None = None,
 ) -> dict:
     """Lista la bandeja documental con filtros dinámicos y paginación (se omite cada filtro en `None`).
 
-    `estado` admite varios valores separados por coma (`PROCESADO,AUDITADO`).
+    `estado` y `destino` admiten varios valores separados por coma (`PROCESADO,AUDITADO`).
+    `atendido` filtra por si el caso ya se marcó como atendido en la Consola de Triaje.
     """
-    estados = [e.strip() for e in estado.split(",") if e.strip()] if estado else None
     filters = (
         (ClinicalDocument.uploaded_by_id, operator.eq, uploaded_by_id),
         (ClinicalDocument.area_origen_id, operator.eq, area_origen_id),
-        (ClinicalDocument.estado, ColumnOperators.in_, estados or None),
-        (ClinicalDocument.destino_enrutamiento, operator.eq, destino),
+        (ClinicalDocument.estado, ColumnOperators.in_, _valores(estado)),
+        (ClinicalDocument.destino_enrutamiento, ColumnOperators.in_, _valores(destino)),
         (ClinicalDocument.identificacion_paciente, operator.eq, _identificacion_buscada(identificacion)),
         (ClinicalDocument.numero_ficha, operator.eq, numero_ficha),
         (ClinicalDocument.nivel_prioridad, operator.eq, prioridad),
@@ -650,6 +657,10 @@ async def get_paginated_documents(
         (ClinicalDocument.created_at, operator.le, fecha_hasta),
     )
     conditions = [compare(column, value) for column, compare, value in filters if value is not None]
+    if atendido is not None:
+        conditions.append(
+            ClinicalDocument.atendido_at.is_not(None) if atendido else ClinicalDocument.atendido_at.is_(None)
+        )
 
     total_result = await db.execute(
         select(func.count(ClinicalDocument.id)).where(*conditions)
