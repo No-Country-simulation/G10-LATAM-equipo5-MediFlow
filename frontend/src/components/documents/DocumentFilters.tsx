@@ -87,7 +87,7 @@ const DocumentFilters = ({ filters, onChange, onReset, isDirty, showAreaFilter }
                 type="date"
                 value={filters.fechaDesde}
                 max={filters.fechaHasta || today}
-                onChange={(e) => onChange({ fechaDesde: e.target.value })}
+                onChange={(e) => e.target.value && onChange({ fechaDesde: e.target.value })}
                 className={`${FIELD} mt-1 w-40`}
               />
             </label>
@@ -98,7 +98,7 @@ const DocumentFilters = ({ filters, onChange, onReset, isDirty, showAreaFilter }
                 value={filters.fechaHasta}
                 min={filters.fechaDesde || undefined}
                 max={today}
-                onChange={(e) => onChange({ fechaHasta: e.target.value })}
+                onChange={(e) => e.target.value && onChange({ fechaHasta: e.target.value })}
                 className={`${FIELD} mt-1 w-40`}
               />
             </label>

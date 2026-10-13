@@ -1,5 +1,5 @@
 /** Períodos rápidos para filtrar por fecha de ingreso del documento. */
-export type DatePreset = 'HOY' | 'ULTIMOS_7' | 'MES_ACTUAL' | 'MES_ANTERIOR' | 'RANGO' | 'TODO';
+export type DatePreset = 'HOY' | 'ULTIMOS_7' | 'MES_ACTUAL' | 'MES_ANTERIOR' | 'RANGO';
 
 export const DATE_PRESET_OPTIONS: { id: DatePreset; label: string }[] = [
   { id: 'HOY', label: 'Hoy' },
@@ -7,7 +7,6 @@ export const DATE_PRESET_OPTIONS: { id: DatePreset; label: string }[] = [
   { id: 'MES_ACTUAL', label: 'Mes actual' },
   { id: 'MES_ANTERIOR', label: 'Mes anterior' },
   { id: 'RANGO', label: 'Rango personalizado' },
-  { id: 'TODO', label: 'Todo' },
 ];
 
 /** `YYYY-MM-DD` en hora local (el formato de `<input type="date">`). */
@@ -32,7 +31,7 @@ function endOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
 }
 
-/** Fechas (inclusive, en hora local) que cubre cada período; `null` en un extremo = sin límite. */
+/** Fechas (inclusive, en hora local) que cubre cada período. */
 export function resolveDateRange(
   preset: DatePreset,
   customFrom: string,
@@ -56,7 +55,5 @@ export function resolveDateRange(
       const to = customTo ? fromInputDate(customTo) : null;
       return { from: from && startOfDay(from), to: to && endOfDay(to) };
     }
-    case 'TODO':
-      return { from: null, to: null };
   }
 }
