@@ -1,3 +1,6 @@
+import type { NivelPrioridad } from './medical';
+import type { DatePreset } from '../utils/dateRange';
+
 export type DocumentCategoryFilter =
   | 'ALL'
   | 'RECETA'
@@ -52,3 +55,16 @@ export const CATEGORY_LABELS: Record<Exclude<DocumentCategoryFilter, 'ALL'>, str
   PROTOCOLO_OPERATORIO: 'Protocolo Operatorio',
   OTRO: 'Otro / No clasificable',
 };
+
+export type DocumentStatusFilter = 'TODOS' | 'PROCESADO' | 'AUDITADO' | 'PENDIENTE_AUDITORIA' | 'DESCARTADO';
+
+export interface DocumentFiltersValue {
+  destino: DocumentDestinationFilter;
+  prioridad: NivelPrioridad | 'ALL';
+  estado: DocumentStatusFilter;
+  identificacion: string;
+  areaOrigenId: string;
+  datePreset: DatePreset;
+  fechaDesde: string;
+  fechaHasta: string;
+}

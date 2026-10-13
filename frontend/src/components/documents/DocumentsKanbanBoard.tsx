@@ -52,20 +52,13 @@ const DocumentsKanbanBoard = ({
   const knownCodes = useMemo(() => new Set(effectiveQueues.map((q) => q.codigo)), [effectiveQueues]);
 
   const groupedColumns = useMemo(() => {
-    const validDocs = documents.filter(
-      (doc) =>
-        !doc.requiere_auditoria &&
-        doc.estado !== 'PENDIENTE_AUDITORIA' &&
-        doc.estado !== 'DESCARTADO' &&
-        (doc.estado === 'PROCESADO' || doc.estado === 'AUDITADO')
-    );
-
+    // El filtro por estado lo aplica la página (DocumentsPage); aquí solo se agrupa por cola.
     const queueGroups = activeColumns.map((col) => ({
       ...col,
-      docs: validDocs.filter((doc) => doc.destino_enrutamiento?.trim() === col.code),
+      docs: documents.filter((doc) => doc.destino_enrutamiento?.trim() === col.code),
     }));
 
-    const otherDocs = validDocs.filter(
+    const otherDocs = documents.filter(
       (doc) => !doc.destino_enrutamiento || !knownCodes.has(doc.destino_enrutamiento.trim())
     );
 

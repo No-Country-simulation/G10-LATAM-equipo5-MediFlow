@@ -1,7 +1,8 @@
-import { FileText, User, Stethoscope, ArrowRight, ShieldCheck, AlertTriangle, XCircle } from 'lucide-react';
+import { FileText, User, Stethoscope, ArrowRight, ShieldCheck } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import { DESTINATION_LABELS, CATEGORY_LABELS } from '../../types/documents';
 import PriorityBadge from '../common/PriorityBadge';
+import DocumentStatusBadge from '../common/DocumentStatusBadge';
 import { formatIdentificacion } from '../../utils/identificacion';
 import { useDocumentDetailModal } from '../../context/documentDetailContext';
 import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clickableCard';
@@ -34,10 +35,9 @@ const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
   const categoryLabel = categoryLookup[doc.tipo_documento] ?? doc.tipo_documento;
   const formattedDate = formatDate(doc.created_at);
   const confidencePercent = formatConfidence(doc.score_confianza);
-  const requiresAudit = Boolean(doc.requiere_auditoria || doc.estado === 'PENDIENTE_AUDITORIA');
   const clinicalDiagnosis =
     doc.diagnostico_principal ||
-    (doc.estado === 'DESCARTADO' ? 'Expediente descartado en auditoría' : doc.estado) ||
+    (doc.estado === 'DESCARTADO' ? 'Expediente descartado en auditoría' : null) ||
     'Sin diagnóstico registrado';
 
   return (
@@ -59,18 +59,7 @@ const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-center">
-          {doc.estado === 'DESCARTADO' && (
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-500/15 text-slate-400 border border-slate-600/30 flex items-center gap-1">
-              <XCircle className="w-3 h-3" />
-              Descartado
-            </span>
-          )}
-          {requiresAudit && doc.estado !== 'DESCARTADO' && (
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              Auditoría Requerida
-            </span>
-          )}
+          <DocumentStatusBadge estado={doc.estado} requiereAuditoria={doc.requiere_auditoria} />
           <PriorityBadge prioridad={doc.nivel_prioridad} />
           <span className="text-[10px] text-slate-500 font-mono">{formattedDate}</span>
         </div>

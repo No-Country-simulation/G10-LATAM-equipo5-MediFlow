@@ -1,40 +1,62 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { AlertCircle, Inbox } from 'lucide-react';
 import { useDocumentList } from '../hooks/useDocumentList';
+import { useAuth } from '../hooks/useAuth';
 import DocumentFilters from '../components/documents/DocumentFilters';
 import DocumentsListView from '../components/documents/DocumentsListView';
 import DocumentsKanbanBoard from '../components/documents/DocumentsKanbanBoard';
 import { DocumentsPageHeader } from '../components/documents/DocumentsPageHeader';
-import type { DocumentDestinationFilter } from '../types/documents';
-import type { NivelPrioridad } from '../types/medical';
+import type { DocumentFiltersValue } from '../types/documents';
+import { resolveDateRange, toInputDate } from '../utils/dateRange';
 
 const SKELETON_COUNT = 4;
 
+const DEFAULT_FILTERS: DocumentFiltersValue = {
+  destino: 'ALL',
+  prioridad: 'ALL',
+  estado: 'TODOS',
+  identificacion: '',
+  areaOrigenId: '',
+  datePreset: 'MES_ACTUAL',
+  fechaDesde: '',
+  fechaHasta: '',
+};
+
 const DocumentsPage = () => {
+  const { user } = useAuth();
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
-  const [selectedDestination, setSelectedDestination] = useState<DocumentDestinationFilter>('ALL');
-  const [selectedPrioridad, setSelectedPrioridad] = useState<NivelPrioridad | 'ALL'>('ALL');
-  const [rutSearch, setRutSearch] = useState('');
+  const [filters, setFilters] = useState<DocumentFiltersValue>(DEFAULT_FILTERS);
+
+  const updateFilters = useCallback((patch: Partial<DocumentFiltersValue>) => {
+    setFilters((prev) => {
+      const next = { ...prev, ...patch };
+      // Al abrir el rango personalizado se parte del período que se estaba viendo.
+      if (patch.datePreset === 'RANGO' && !prev.fechaDesde && !prev.fechaHasta) {
+        const { from, to } = resolveDateRange(prev.datePreset, '', '');
+        next.fechaDesde = from ? toInputDate(from) : '';
+        next.fechaHasta = to ? toInputDate(to) : '';
+      }
+      return next;
+    });
+  }, []);
+
+  const resetFilters = useCallback(() => setFilters(DEFAULT_FILTERS), []);
+  const isDirty = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
 
   const queryParams = useMemo(() => {
     const params: Record<string, string | number> = { page_size: 100 };
-    if (selectedDestination !== 'ALL') params.destino = selectedDestination;
-    if (selectedPrioridad !== 'ALL') params.prioridad = selectedPrioridad;
-    if (rutSearch.trim()) params.identificacion = rutSearch.trim();
+    if (filters.destino !== 'ALL') params.destino = filters.destino;
+    if (filters.prioridad !== 'ALL') params.prioridad = filters.prioridad;
+    if (filters.estado !== 'TODOS') params.estado = filters.estado;
+    if (filters.identificacion.trim()) params.identificacion = filters.identificacion.trim();
+    if (filters.areaOrigenId) params.area_origen_id = filters.areaOrigenId;
+    const { from, to } = resolveDateRange(filters.datePreset, filters.fechaDesde, filters.fechaHasta);
+    if (from) params.fecha_desde = from.toISOString();
+    if (to) params.fecha_hasta = to.toISOString();
     return params;
-  }, [selectedDestination, selectedPrioridad, rutSearch]);
+  }, [filters]);
 
-  const { documents, state, error, reload } = useDocumentList(queryParams);
-
-  const authorizedDocuments = useMemo(() => {
-    return documents.filter(
-      (doc) =>
-        !doc.requiere_auditoria &&
-        doc.estado !== 'PENDIENTE_AUDITORIA' &&
-        doc.estado !== 'DESCARTADO' &&
-        (doc.estado === 'PROCESADO' || doc.estado === 'AUDITADO')
-    );
-  }, [documents]);
+  const { documents: visibleDocuments, state, error, reload } = useDocumentList(queryParams);
 
   return (
     <div
@@ -43,7 +65,7 @@ const DocumentsPage = () => {
       }`}
     >
       <DocumentsPageHeader
-        totalCount={authorizedDocuments.length}
+        totalCount={visibleDocuments.length}
         isLoading={state === 'loading'}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -51,12 +73,11 @@ const DocumentsPage = () => {
       />
 
       <DocumentFilters
-        selectedDestination={selectedDestination}
-        onSelectDestination={setSelectedDestination}
-        selectedPrioridad={selectedPrioridad}
-        onSelectPrioridad={setSelectedPrioridad}
-        rutSearch={rutSearch}
-        onRutSearchChange={setRutSearch}
+        filters={filters}
+        onChange={updateFilters}
+        onReset={resetFilters}
+        isDirty={isDirty}
+        showAreaFilter={user?.role !== 'OPERADOR'}
       />
 
       {state === 'error' && (
@@ -80,7 +101,7 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      {state === 'success' && authorizedDocuments.length === 0 && (
+      {state === 'success' && visibleDocuments.length === 0 && (
         <div className="p-10 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-2">
           <Inbox className="w-8 h-8 text-slate-600 mx-auto" />
           <h2 className="text-sm font-semibold text-white">Sin expedientes registrados</h2>
@@ -90,15 +111,15 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      {state === 'success' && authorizedDocuments.length > 0 &&
+      {state === 'success' && visibleDocuments.length > 0 &&
         (viewMode === 'kanban' ? (
           <DocumentsKanbanBoard
-            key={`${selectedDestination}-${selectedPrioridad}-${rutSearch}`}
-            documents={authorizedDocuments}
-            selectedDestination={selectedDestination}
+            key={JSON.stringify(filters)}
+            documents={visibleDocuments}
+            selectedDestination={filters.destino}
           />
         ) : (
-          <DocumentsListView documents={authorizedDocuments} />
+          <DocumentsListView documents={visibleDocuments} />
         ))}
     </div>
   );

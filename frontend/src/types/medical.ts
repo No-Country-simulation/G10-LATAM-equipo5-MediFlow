@@ -78,6 +78,7 @@ export interface DocumentFilterParams {
   prioridad?: NivelPrioridad;
   fecha_desde?: string;
   fecha_hasta?: string;
+  area_origen_id?: string;
 }
 
 export interface ArchivoPreview {

@@ -7,15 +7,8 @@ interface DocumentsListViewProps {
 }
 
 const DocumentsListView = ({ documents }: DocumentsListViewProps) => {
-  const visibleDocs = documents.filter(
-    (doc) =>
-      !doc.requiere_auditoria &&
-      doc.estado !== 'PENDIENTE_AUDITORIA' &&
-      doc.estado !== 'DESCARTADO' &&
-      (doc.estado === 'PROCESADO' || doc.estado === 'AUDITADO')
-  );
-
-  if (visibleDocs.length === 0) {
+  // El filtro por estado lo aplica la página (DocumentsPage).
+  if (documents.length === 0) {
     return (
       <div className="p-8 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-2">
         <Inbox className="w-8 h-8 text-slate-600 mx-auto" />
@@ -31,7 +24,7 @@ const DocumentsListView = ({ documents }: DocumentsListViewProps) => {
 
   return (
     <div className="space-y-3">
-      {visibleDocs.map((doc) => (
+      {documents.map((doc) => (
         <DocumentRepositoryCard key={doc.documento_id} doc={doc} />
       ))}
     </div>
