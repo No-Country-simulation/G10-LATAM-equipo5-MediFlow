@@ -1,6 +1,6 @@
 """Router de la feature de ingesta y consulta de documentos clínicos."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
@@ -16,6 +16,7 @@ from app.features.documents.detail import get_document_detail
 from app.features.documents.duplicates import coincidencias_de_archivo
 from app.features.documents.schemas import (
     AlmacenamientoOci,
+    DashboardStatsResponse,
     DocumentDetailResponse,
     DocumentListItemResponse,
     DuplicateCheckRequest,
@@ -31,11 +32,14 @@ from app.features.documents.service import (
     get_paginated_documents,
     ingest_document,
 )
+from app.features.documents.stats import get_dashboard_stats
 
 router = APIRouter(tags=["Documents"])
 
 _DOCUMENT_ACCESS_ROLES = [UserRole.ADMIN, UserRole.AUDITOR_CLINICO, UserRole.OPERADOR]
 _DOCUMENT_CORRECTION_ROLES = [UserRole.ADMIN, UserRole.AUDITOR_CLINICO]
+_DIAS_DASHBOARD_POR_DEFECTO = 14
+_DIAS_DASHBOARD_MAXIMO = 92
 _DOCUMENTO_ID = Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
@@ -93,7 +97,7 @@ async def list_documents(
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(20, ge=1, le=100, description="Elementos por página"),
     estado: str | None = Query(
-        None, description="Filtrar por estado: PENDIENTE_AUDITORIA, PROCESADO, AUDITADO, DESCARTADO"
+        None, description="Filtrar por estado (uno o varios separados por coma): PENDIENTE_AUDITORIA, PROCESADO, AUDITADO, DESCARTADO"
     ),
     destino: str | None = Query(
         None, description="Filtrar por cola: Cola_Emergencia_Medica, Farmacia_Hospitalaria, etc."
@@ -133,6 +137,43 @@ async def list_documents(
         total_pages=result["total_pages"],
         message="No hay documentos con los filtros utilizados" if result["total"] == 0 else None,
     )
+
+
+def _con_zona(valor: datetime | None) -> datetime | None:
+    """Una fecha sin zona horaria se interpreta en UTC (así se puede comparar con las que la traen)."""
+    if valor is not None and valor.tzinfo is None:
+        return valor.replace(tzinfo=timezone.utc)
+    return valor
+
+
+@router.get("/stats", response_model=DashboardStatsResponse)
+async def dashboard_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_DOCUMENT_ACCESS_ROLES)),
+    fecha_desde: datetime | None = Query(None, description="Inicio del período (por defecto, hace 14 días)"),
+    fecha_hasta: datetime | None = Query(None, description="Fin del período (por defecto, ahora)"),
+    utc_offset_min: int = Query(
+        0, ge=-840, le=840, description="Desfase de la hora local respecto de UTC, en minutos (Chile: -180)"
+    ),
+) -> DashboardStatsResponse:
+    """Resumen del inicio: conteos del período por prioridad, estado, día y cola, más las listas
+    de trabajo del rol (pendientes de auditoría y casos tomados, o las últimas cargas del OPERADOR).
+
+    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo cuenta los documentos que subió.
+    """
+    hasta = _con_zona(fecha_hasta) or datetime.now(timezone.utc)
+    desde = _con_zona(fecha_desde) or hasta - timedelta(days=_DIAS_DASHBOARD_POR_DEFECTO - 1)
+    if desde > hasta:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="fecha_desde no puede ser posterior a fecha_hasta",
+        )
+    if hasta - desde > timedelta(days=_DIAS_DASHBOARD_MAXIMO):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"El período no puede superar {_DIAS_DASHBOARD_MAXIMO} días",
+        )
+    return await get_dashboard_stats(db, current_user, desde, hasta, utc_offset_min)
 
 
 @router.post("/duplicates/check", response_model=DuplicateCheckResponse)

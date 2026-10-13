@@ -57,6 +57,8 @@ export interface DocumentListItemResponse {
   created_at: string;
   diagnostico_principal?: string | null;
   requiere_auditoria?: boolean | null;
+  asignado_a_username?: string | null;
+  asignado_at?: string | null;
 }
 
 export interface PaginatedDocumentResponse {
@@ -71,7 +73,8 @@ export interface PaginatedDocumentResponse {
 export interface DocumentFilterParams {
   page?: number;
   page_size?: number;
-  estado?: EstadoDocumento;
+  /** Uno o varios estados separados por coma (`PROCESADO,AUDITADO`). */
+  estado?: EstadoDocumento | (string & {});
   destino?: string;
   identificacion?: string;
   numero_ficha?: string;

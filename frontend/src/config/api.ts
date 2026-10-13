@@ -24,7 +24,7 @@ export const FASTAPI_ENDPOINTS = {
   documents: {
     base: "/documents",
     ingest: "/documents/ingest",
-    statsOverview: "/documents/stats/overview",
+    stats: "/documents/stats",
     detail: (id: string) => `/documents/${encodeURIComponent(id)}`,
     duplicatesCheck: "/documents/duplicates/check",
   },

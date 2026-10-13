@@ -13,6 +13,7 @@ import type {
   PaginatedDocumentResponse,
 } from '../types/medical';
 import type { DocumentTypeActiveForLLM, QueueActiveForLLM } from '../types/catalog';
+import type { DashboardStatsParams, DashboardStatsResponse } from '../types/dashboard';
 
 function buildDocumentQuery(params: DocumentFilterParams): string {
   const searchParams = new URLSearchParams();
@@ -28,6 +29,15 @@ function buildDocumentQuery(params: DocumentFilterParams): string {
 export const documentService = {
   listDocuments: (params: DocumentFilterParams = {}): Promise<PaginatedDocumentResponse> =>
     api.get<PaginatedDocumentResponse>(`${FASTAPI_ENDPOINTS.documents.base}${buildDocumentQuery(params)}`),
+
+  getDashboardStats: (params: DashboardStatsParams): Promise<DashboardStatsResponse> =>
+    api.get<DashboardStatsResponse>(
+      `${FASTAPI_ENDPOINTS.documents.stats}?${new URLSearchParams({
+        fecha_desde: params.fecha_desde,
+        fecha_hasta: params.fecha_hasta,
+        utc_offset_min: String(params.utc_offset_min),
+      })}`
+    ),
 
   getDocumentDetail: (documentoId: string): Promise<DocumentDetailResponse> =>
     api.get<DocumentDetailResponse>(FASTAPI_ENDPOINTS.documents.detail(documentoId)),

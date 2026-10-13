@@ -16,6 +16,7 @@ from jsonschema import Draft202012Validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.operators import ColumnOperators
 from sqlalchemy.orm import noload
 
 from app.core.config import settings
@@ -632,11 +633,15 @@ async def get_paginated_documents(
     uploaded_by_id: UUID | None = None,
     area_origen_id: UUID | None = None,
 ) -> dict:
-    """Lista la bandeja documental con filtros dinámicos y paginación (se omite cada filtro en `None`)."""
+    """Lista la bandeja documental con filtros dinámicos y paginación (se omite cada filtro en `None`).
+
+    `estado` admite varios valores separados por coma (`PROCESADO,AUDITADO`).
+    """
+    estados = [e.strip() for e in estado.split(",") if e.strip()] if estado else None
     filters = (
         (ClinicalDocument.uploaded_by_id, operator.eq, uploaded_by_id),
         (ClinicalDocument.area_origen_id, operator.eq, area_origen_id),
-        (ClinicalDocument.estado, operator.eq, estado),
+        (ClinicalDocument.estado, ColumnOperators.in_, estados or None),
         (ClinicalDocument.destino_enrutamiento, operator.eq, destino),
         (ClinicalDocument.identificacion_paciente, operator.eq, _identificacion_buscada(identificacion)),
         (ClinicalDocument.numero_ficha, operator.eq, numero_ficha),

@@ -651,3 +651,51 @@ class PaginatedDocumentResponse(BaseModel):
     page_size: int
     total_pages: int
     message: str | None = None
+
+
+class DashboardTotales(BaseModel):
+    """Conteos del período (por prioridad y por estado) más la cola de auditoría pendiente."""
+
+    total: int = 0
+    urgente: int = 0
+    prioritario: int = 0
+    rutina: int = 0
+    procesados: int = 0
+    auditados: int = 0
+    descartados: int = 0
+    # Toda la cola pendiente, sin importar cuándo ingresó: es trabajo que sigue abierto.
+    pendientes_auditoria: int = 0
+
+
+class IngresosDia(BaseModel):
+    """Documentos ingresados en un día (en la hora local del usuario), por prioridad."""
+
+    fecha: date
+    urgente: int = 0
+    prioritario: int = 0
+    rutina: int = 0
+
+
+class ConteoDestino(BaseModel):
+    """Documentos derivados a una cola en el período (`destino` en `None` = sin cola asignada)."""
+
+    destino: str | None
+    total: int
+
+
+class DashboardStatsResponse(BaseModel):
+    """Resumen del inicio: KPIs y gráficos del período más las listas de trabajo según el rol.
+
+    Las listas que no corresponden al rol vienen vacías: `recientes` es para el OPERADOR;
+    `mis_casos`, `pendientes_auditoria` y `urgentes`, para ADMIN y AUDITOR_CLINICO.
+    """
+
+    fecha_desde: datetime
+    fecha_hasta: datetime
+    totales: DashboardTotales
+    por_dia: list[IngresosDia]
+    por_destino: list[ConteoDestino]
+    recientes: list[DocumentListItemResponse] = []
+    mis_casos: list[DocumentListItemResponse] = []
+    pendientes_auditoria: list[DocumentListItemResponse] = []
+    urgentes: list[DocumentListItemResponse] = []

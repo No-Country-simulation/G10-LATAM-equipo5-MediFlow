@@ -175,3 +175,21 @@ async def test_detalle_clinico_solo_trae_el_bloque_del_tipo(client, login_as, db
     r = await client.post("/api/v1/documents/ingest", json=ingest_body(), headers=headers)
     assert list(r.json()["detalle_clinico"]) == ["examenes_y_laboratorio"]
     assert list(db.added[0].raw_extracted_json["detalle_clinico"]) == ["examenes_y_laboratorio"]
+
+
+async def test_list_documents_acepta_varios_estados(client, login_as, db):
+    sentencias = []
+    original = db.execute
+
+    async def execute(stmt, *args, **kwargs):
+        sentencias.append(stmt)
+        return await original(stmt, *args, **kwargs)
+
+    db.execute = execute
+    db.queue(0, [])
+    headers = login_as(UserRole.ADMIN)
+    r = await client.get("/api/v1/documents?estado=PROCESADO,AUDITADO", headers=headers)
+
+    assert r.status_code == 200
+    compilada = sentencias[0].compile(compile_kwargs={"literal_binds": True})
+    assert "clinical_documents.estado IN ('PROCESADO', 'AUDITADO')" in str(compilada)

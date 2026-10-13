@@ -177,6 +177,7 @@ Solo un ADMIN puede otorgar el rol ADMIN. Las respuestas de usuario incluyen `ar
 |---|---|---|---|
 | POST | `/documents/ingest` | Recibe el documento procesado por n8n (`201`) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents` | Bandeja paginada con filtros | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| GET | `/documents/stats` | Resumen del inicio: conteos del período (máx. 92 días) por prioridad, estado, día y cola, más las listas de trabajo del rol. Un `OPERADOR` solo cuenta los suyos | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents/{documento_id}` | Detalle completo: archivos con URL pre-firmada, detalle clínico, duplicados e historial | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | PUT | `/documents/{documento_id}` | Corrige un documento `PROCESADO` o `AUDITADO` (ver [Corrección](#corrección-de-documentos-ya-procesados)) | `ADMIN`, `AUDITOR_CLINICO` |
 | POST | `/documents/duplicates/check` | ¿Alguno de estos archivos ya fue subido? (por huella SHA-256) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
