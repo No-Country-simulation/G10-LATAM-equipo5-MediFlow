@@ -3,6 +3,7 @@ import type { DocumentListItemResponse } from '../../types/medical';
 import { DESTINATION_LABELS, CATEGORY_LABELS } from '../../types/documents';
 import PriorityBadge from '../common/PriorityBadge';
 import DocumentStatusBadge from '../common/DocumentStatusBadge';
+import OciPath from './OciPath';
 import { formatIdentificacion } from '../../utils/identificacion';
 import { useDocumentDetailModal } from '../../context/documentDetailContext';
 import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clickableCard';
@@ -96,7 +97,9 @@ const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
           <ArrowRight className="w-3 h-3 text-slate-600" />
         </div>
 
-        <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+        <OciPath path={doc.oci_json_path} className="sm:max-w-[45%]" />
+
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 shrink-0">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
           <span>Confianza IA:</span>
           <span className="font-mono font-bold text-slate-200">{confidencePercent}</span>

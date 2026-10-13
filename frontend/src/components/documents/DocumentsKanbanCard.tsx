@@ -3,6 +3,7 @@ import type { DocumentListItemResponse } from '../../types/medical';
 import { CATEGORY_LABELS } from '../../types/documents';
 import PriorityBadge from '../common/PriorityBadge';
 import DocumentStatusBadge from '../common/DocumentStatusBadge';
+import OciPath from './OciPath';
 import { formatIdentificacion } from '../../utils/identificacion';
 import { useDocumentDetailModal } from '../../context/documentDetailContext';
 import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clickableCard';
@@ -75,6 +76,8 @@ const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
           </span>
         </div>
       </div>
+
+      <OciPath path={doc.oci_json_path} />
     </div>
   );
 };
