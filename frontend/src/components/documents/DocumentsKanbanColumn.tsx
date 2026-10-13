@@ -23,7 +23,7 @@ const DocumentsKanbanColumn = ({
 }: DocumentsKanbanColumnProps) => {
   if (isExpanded) {
     return (
-      <div className={`w-full max-w-5xl mx-auto rounded-xl bg-slate-900/50 border ${borderClass} p-5 flex flex-col`}>
+      <div className={`w-full rounded-xl bg-slate-900/50 border ${borderClass} p-5 flex flex-col`}>
         <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
           <div className="flex items-center gap-2.5">
             {icon}
@@ -34,7 +34,7 @@ const DocumentsKanbanColumn = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4 overflow-y-auto max-h-[calc(100vh-290px)] pr-1.5 scrollbar-thin">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 mt-4 overflow-y-auto max-h-[calc(100vh-290px)] pr-1.5 scrollbar-thin">
           {docs.length === 0 ? (
             <div className="col-span-full py-16 text-center text-xs text-slate-500 font-medium">
               Sin derivaciones activas

@@ -88,13 +88,7 @@ const DocumentsKanbanBoard = ({
 
   if (selectedDestination !== 'ALL' && groupedColumns.length === 1) {
     const single = groupedColumns[0];
-    return (
-      <div className="w-full">
-        <div className="max-w-4xl mx-auto">
-          <DocumentsKanbanColumn {...single} count={single.docs.length} isExpanded />
-        </div>
-      </div>
-    );
+    return <DocumentsKanbanColumn {...single} count={single.docs.length} isExpanded />;
   }
 
   const totalPages = Math.ceil(groupedColumns.length / PAGE_SIZE);
