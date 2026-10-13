@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.catalogs.models import Area
-from app.features.documents.models import ClinicalDocument, ClinicalDocumentAttachment
+from app.features.documents.models import ESTADO_ELIMINADO, ClinicalDocument, ClinicalDocumentAttachment
 from app.features.documents.schemas import (
     CoincidenciaArchivo,
     DatosGeneralesExtract,
@@ -78,7 +78,7 @@ async def coincidencias_de_archivo(
             )
             .join(ClinicalDocument, ClinicalDocumentAttachment.document_id == ClinicalDocument.id)
             .outerjoin(Area, ClinicalDocument.area_origen_id == Area.id)
-            .where(ClinicalDocumentAttachment.sha256.in_(huellas))
+            .where(ClinicalDocumentAttachment.sha256.in_(huellas), ClinicalDocument.estado != ESTADO_ELIMINADO)
             .order_by(ClinicalDocument.created_at.desc())
             .limit(_MAX_CANDIDATOS)
         )
@@ -112,6 +112,7 @@ async def _documentos_con_huella(db: AsyncSession, huellas: list[str], excluir: 
             .where(
                 ClinicalDocumentAttachment.sha256.in_(huellas),
                 ClinicalDocument.documento_id != excluir,
+                ClinicalDocument.estado != ESTADO_ELIMINADO,
             )
             .distinct()
             .limit(_MAX_CANDIDATOS)
@@ -155,7 +156,7 @@ async def _documentos_similares(
                 ClinicalDocument.identificacion_paciente == numero,
                 ClinicalDocument.tipo_documento == tipo_documento,
                 ClinicalDocument.fecha_documento == fecha,
-                ClinicalDocument.estado != _ESTADO_DESCARTADO,
+                ClinicalDocument.estado.not_in((_ESTADO_DESCARTADO, ESTADO_ELIMINADO)),
                 ClinicalDocument.documento_id != excluir,
             )
             .limit(_MAX_CANDIDATOS)

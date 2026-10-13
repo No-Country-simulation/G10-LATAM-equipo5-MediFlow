@@ -25,6 +25,7 @@ from app.features.catalogs.models import DocumentType, RoutingQueue
 from app.features.documents.forms import BLOQUE_CAMPOS_ADICIONALES, BLOQUE_POR_TIPO
 from app.features.documents.duplicates import detectar_duplicados, huella, motivos_de_duplicados
 from app.features.documents.models import (
+    ESTADO_ELIMINADO,
     ClinicalDocument,
     ClinicalDocumentAttachment,
     ClinicalDocumentDiagnosis,
@@ -644,6 +645,7 @@ async def get_paginated_documents(
 
     `estado` y `destino` admiten varios valores separados por coma (`PROCESADO,AUDITADO`).
     `atendido` filtra por si el caso ya se marcó como atendido en la Consola de Triaje.
+    Los documentos eliminados se excluyen salvo que `estado` incluya ELIMINADO.
     """
     filters = (
         (ClinicalDocument.uploaded_by_id, operator.eq, uploaded_by_id),
@@ -657,6 +659,9 @@ async def get_paginated_documents(
         (ClinicalDocument.created_at, operator.le, fecha_hasta),
     )
     conditions = [compare(column, value) for column, compare, value in filters if value is not None]
+    # Los eliminados solo aparecen si se piden explícitamente (filtro "Eliminados" del ADMIN).
+    if ESTADO_ELIMINADO not in (_valores(estado) or []):
+        conditions.append(ClinicalDocument.estado != ESTADO_ELIMINADO)
     if atendido is not None:
         conditions.append(
             ClinicalDocument.atendido_at.is_not(None) if atendido else ClinicalDocument.atendido_at.is_(None)

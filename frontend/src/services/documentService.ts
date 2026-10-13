@@ -52,6 +52,12 @@ export const documentService = {
   deriveDocument: (documentoId: string, payload: DeriveRequest): Promise<DocumentListItemResponse> =>
     api.post<DocumentListItemResponse>(FASTAPI_ENDPOINTS.documents.derive(documentoId), payload),
 
+  deleteDocument: (documentoId: string, motivo: string): Promise<DocumentListItemResponse> =>
+    api.post<DocumentListItemResponse>(FASTAPI_ENDPOINTS.documents.remove(documentoId), { motivo }),
+
+  restoreDocument: (documentoId: string, motivo: string): Promise<DocumentListItemResponse> =>
+    api.post<DocumentListItemResponse>(FASTAPI_ENDPOINTS.documents.restore(documentoId), { motivo }),
+
   getDocumentDetail: (documentoId: string): Promise<DocumentDetailResponse> =>
     api.get<DocumentDetailResponse>(FASTAPI_ENDPOINTS.documents.detail(documentoId)),
 

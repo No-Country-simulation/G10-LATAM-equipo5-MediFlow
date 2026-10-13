@@ -16,6 +16,8 @@ interface DocumentFiltersProps {
   isDirty: boolean;
   /** Un operador solo ve sus propios documentos: el filtro por área no le aporta. */
   showAreaFilter: boolean;
+  /** Solo el ADMIN puede ver los documentos eliminados. */
+  showDeletedFilter: boolean;
 }
 
 const SECTION_LABEL = 'text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2';
@@ -37,7 +39,7 @@ const estadoOptions: { id: DocumentStatusFilter; label: string }[] = [
   { id: 'DESCARTADO', label: 'Descartados' },
 ];
 
-const DocumentFilters = ({ filters, onChange, onReset, isDirty, showAreaFilter }: DocumentFiltersProps) => {
+const DocumentFilters = ({ filters, onChange, onReset, isDirty, showAreaFilter, showDeletedFilter }: DocumentFiltersProps) => {
   const { queues } = useCatalogs();
   const { areas } = useActiveAreas(showAreaFilter);
   const today = toInputDate(new Date());
@@ -110,7 +112,7 @@ const DocumentFilters = ({ filters, onChange, onReset, isDirty, showAreaFilter }
         <div>
           <span className={SECTION_LABEL}>Estado</span>
           <FilterButtonGroup
-            options={estadoOptions}
+            options={showDeletedFilter ? [...estadoOptions, { id: 'ELIMINADO', label: 'Eliminados' }] : estadoOptions}
             selectedValue={filters.estado}
             onSelect={(estado) => onChange({ estado })}
             activeColorClass="bg-violet-500/15 text-violet-300 border border-violet-500/30"

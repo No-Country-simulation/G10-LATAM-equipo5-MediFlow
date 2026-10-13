@@ -2,7 +2,7 @@ import type { QueueSummary } from './auth';
 
 export const SCORE_CONFIANZA_THRESHOLD = 0.85;
 
-export type EstadoDocumento = 'PROCESADO' | 'PENDIENTE_AUDITORIA' | 'AUDITADO' | 'DESCARTADO';
+export type EstadoDocumento = 'PROCESADO' | 'PENDIENTE_AUDITORIA' | 'AUDITADO' | 'DESCARTADO' | 'ELIMINADO';
 export type NivelPrioridad = 'Urgente' | 'Prioritario' | 'Rutina';
 export type TipoArchivo = 'PDF' | 'IMAGEN';
 
@@ -63,6 +63,9 @@ export interface DocumentListItemResponse {
   asignado_at?: string | null;
   atendido_por_username?: string | null;
   atendido_at?: string | null;
+  eliminado_por_username?: string | null;
+  eliminado_at?: string | null;
+  motivo_eliminacion?: string | null;
 }
 
 export interface PaginatedDocumentResponse {
@@ -185,7 +188,7 @@ export interface CambioCorreccion {
 
 /** Entrada del historial: la resolución de la auditoría o una corrección posterior. */
 export interface CorreccionHistorial {
-  origen: 'AUDITORIA' | 'CORRECCION' | 'DERIVACION';
+  origen: 'AUDITORIA' | 'CORRECCION' | 'DERIVACION' | 'ELIMINACION' | 'RESTAURACION';
   justificacion: string;
   cambios: CambioCorreccion[];
   corrected_by_username: string;

@@ -12,7 +12,7 @@ from sqlalchemy.orm import noload
 
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
-from app.features.documents.models import ClinicalDocument
+from app.features.documents.models import ESTADO_ELIMINADO, ClinicalDocument
 from app.features.documents.schemas import (
     ConteoDestino,
     DashboardStatsResponse,
@@ -65,7 +65,10 @@ async def get_dashboard_stats(
 
     Un OPERADOR solo cuenta y ve los documentos que subió.
     """
-    alcance = [ClinicalDocument.uploaded_by_id == user.id] if user.role == UserRole.OPERADOR else []
+    # Los eliminados no cuentan en ningún número ni lista del inicio.
+    alcance = [ClinicalDocument.estado != ESTADO_ELIMINADO]
+    if user.role == UserRole.OPERADOR:
+        alcance.append(ClinicalDocument.uploaded_by_id == user.id)
     periodo = [
         *alcance,
         ClinicalDocument.created_at >= fecha_desde,

@@ -176,7 +176,7 @@ Solo un ADMIN puede otorgar el rol ADMIN. Las respuestas de usuario incluyen `ar
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
 | POST | `/documents/ingest` | Recibe el documento procesado por n8n (`201`) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
-| GET | `/documents` | Bandeja paginada con filtros (`estado` y `destino` admiten varios valores separados por coma; `atendido=true` o `false`) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| GET | `/documents` | Bandeja paginada con filtros (`estado` y `destino` admiten varios valores separados por coma; `atendido=true` o `false`). Excluye los eliminados salvo `estado=ELIMINADO`, que solo puede pedir un `ADMIN` | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents/stats` | Resumen del inicio: conteos del período (máx. 92 días) por prioridad, estado, día y cola, más las listas de trabajo del rol. Un `OPERADOR` solo cuenta los suyos | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents/triage` | Consola de Triaje: casos activos (procesados o auditados, sin atender) de las colas asistenciales. El `ADMIN` ve todas; `OPERADOR` y `AUDITOR_CLINICO`, solo sus colas asignadas | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents/{documento_id}` | Detalle completo: archivos con URL pre-firmada, detalle clínico, duplicados e historial | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
@@ -184,6 +184,8 @@ Solo un ADMIN puede otorgar el rol ADMIN. Las respuestas de usuario incluyen `ar
 | POST | `/documents/{documento_id}/attend` | Consola de Triaje: marca el caso como atendido (sale de la consola; no cambia el estado). `409` si no está `PROCESADO` ni `AUDITADO`; `403` si el auditor no tiene esa cola | `ADMIN`, `AUDITOR_CLINICO` |
 | DELETE | `/documents/{documento_id}/attend` | Deshace la marca de atendido: el caso vuelve a la consola | `ADMIN`, `AUDITOR_CLINICO` |
 | POST | `/documents/{documento_id}/derive` | Deriva el caso a otra cola con un `motivo` (5+ caracteres) que queda en el historial (origen `DERIVACION`) y en el JSON de OCI; en la nueva cola vuelve a estar activo. `403` si el auditor no tiene la cola actual | `ADMIN`, `AUDITOR_CLINICO` |
+| POST | `/documents/{documento_id}/delete` | Eliminación lógica con `motivo`: pasa a `ELIMINADO` (se conserva en la base y en OCI) y sale de todos los listados; queda en el historial (origen `ELIMINACION`). `409` si ya estaba eliminado | `ADMIN` |
+| POST | `/documents/{documento_id}/restore` | Restaura un documento eliminado al estado que tenía, con `motivo` (origen `RESTAURACION`). `409` si no está eliminado | `ADMIN` |
 | POST | `/documents/duplicates/check` | ¿Alguno de estos archivos ya fue subido? (por huella SHA-256) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 
 Un `OPERADOR` solo ve los documentos que subió: los ajenos responden `404` (no `403`, para no revelar qué existe).

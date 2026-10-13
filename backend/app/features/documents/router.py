@@ -13,11 +13,14 @@ from app.features.auth.dependencies import require_roles
 from app.features.auth.enums import UserRole
 from app.features.auth.models import User
 from app.features.catalogs.schemas import QueueSummary
+from app.features.documents.deletion import delete_document, restore_document
 from app.features.documents.detail import get_document_detail
 from app.features.documents.duplicates import coincidencias_de_archivo
+from app.features.documents.models import ESTADO_ELIMINADO
 from app.features.documents.schemas import (
     AlmacenamientoOci,
     DashboardStatsResponse,
+    DeleteDocumentRequest,
     DeriveRequest,
     DocumentDetailResponse,
     DocumentListItemResponse,
@@ -26,6 +29,7 @@ from app.features.documents.schemas import (
     IngestPayload,
     IngestResponse,
     PaginatedDocumentResponse,
+    RestoreDocumentRequest,
     TriageResponse,
 )
 from app.features.documents.service import (
@@ -122,7 +126,13 @@ async def list_documents(
     """Lista la bandeja documental con filtros dinámicos y paginación.
 
     Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo ve los documentos que subió.
+    Los eliminados no aparecen salvo con `estado=ELIMINADO`, que solo puede pedir un ADMIN (`403`).
     """
+    if estado and ESTADO_ELIMINADO in estado.split(",") and current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un ADMIN puede consultar los documentos eliminados",
+        )
     result = await get_paginated_documents(
         db,
         uploaded_by_id=_own_documents_only(current_user),
@@ -241,12 +251,19 @@ async def get_document(
     - `detalle.campos_relevantes`: campos de texto del tipo que no tienen tabla propia.
 
     Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR. Un OPERADOR solo ve los documentos que
-    subió o los derivados a sus colas asistenciales; para cualquier otro recibe `404`.
+    subió o los derivados a sus colas asistenciales; para cualquier otro recibe `404`. Un documento
+    eliminado solo lo ve un ADMIN.
     """
     uploaded_by_id = _own_documents_only(current_user)
     # El OPERADOR también abre los casos de sus colas, que ve en la Consola de Triaje.
     colas = [q.codigo for q in current_user.colas if q.es_asistencial] if uploaded_by_id else None
-    return await get_document_detail(documento_id, db, uploaded_by_id=uploaded_by_id, colas=colas)
+    return await get_document_detail(
+        documento_id,
+        db,
+        uploaded_by_id=uploaded_by_id,
+        colas=colas,
+        incluir_eliminados=current_user.role == UserRole.ADMIN,
+    )
 
 
 @router.put("/{documento_id}", response_model=DocumentListItemResponse)
@@ -321,4 +338,39 @@ async def derive_to_queue(
     Requiere rol ADMIN o AUDITOR_CLINICO.
     """
     document = await derive_document(documento_id, payload.destino, payload.motivo, current_user, db)
+    return DocumentListItemResponse.model_validate(document)
+
+
+@router.post("/{documento_id}/delete", response_model=DocumentListItemResponse)
+async def delete_document_logically(
+    payload: DeleteDocumentRequest,
+    documento_id: str = _DOCUMENTO_ID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN])),
+) -> DocumentListItemResponse:
+    """Elimina lógicamente el documento: pasa a estado ELIMINADO (se conservan la base y OCI) y sale
+    de todos los listados. El motivo queda en el historial (origen `ELIMINACION`).
+
+    - `409` si ya estaba eliminado.
+
+    Requiere rol ADMIN.
+    """
+    document = await delete_document(documento_id, payload.motivo, current_user, db)
+    return DocumentListItemResponse.model_validate(document)
+
+
+@router.post("/{documento_id}/restore", response_model=DocumentListItemResponse)
+async def restore_deleted_document(
+    payload: RestoreDocumentRequest,
+    documento_id: str = _DOCUMENTO_ID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN])),
+) -> DocumentListItemResponse:
+    """Restaura un documento eliminado al estado que tenía. Queda en el historial (origen `RESTAURACION`).
+
+    - `409` si el documento no está eliminado.
+
+    Requiere rol ADMIN.
+    """
+    document = await restore_document(documento_id, payload.motivo, current_user, db)
     return DocumentListItemResponse.model_validate(document)

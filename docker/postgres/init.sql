@@ -99,6 +99,11 @@ CREATE TABLE IF NOT EXISTS clinical_documents (
     atendido_por_id UUID REFERENCES users(id) ON DELETE SET NULL,
     atendido_por_username VARCHAR(50),
     atendido_at TIMESTAMP WITH TIME ZONE,
+    eliminado_por_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    eliminado_por_username VARCHAR(50),
+    eliminado_at TIMESTAMP WITH TIME ZONE,
+    motivo_eliminacion TEXT,
+    estado_previo VARCHAR(30),
 
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -121,6 +126,13 @@ ALTER TABLE clinical_documents
 ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS atendido_por_username VARCHAR(50);
 ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS atendido_at TIMESTAMP WITH TIME ZONE;
 CREATE INDEX IF NOT EXISTS idx_clinical_docs_atendido_at ON clinical_documents(atendido_at);
+-- Eliminación lógica (solo ADMIN): estado ELIMINADO, con quién, cuándo, por qué y el estado previo.
+ALTER TABLE clinical_documents
+    ADD COLUMN IF NOT EXISTS eliminado_por_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS eliminado_por_username VARCHAR(50);
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS eliminado_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS motivo_eliminacion TEXT;
+ALTER TABLE clinical_documents ADD COLUMN IF NOT EXISTS estado_previo VARCHAR(30);
 
 -- 2.1 Archivos binarios del documento (un documento puede traer más de uno: varias placas
 -- de una orden de Rx, o múltiples capturas de una ecotomografía más su informe)

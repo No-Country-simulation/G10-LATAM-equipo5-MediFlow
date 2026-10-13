@@ -58,6 +58,7 @@ const ETIQUETAS: Record<string, string> = {
   PENDIENTE_AUDITORIA: 'Pendiente de auditoría',
   AUDITADO: 'Auditado',
   DESCARTADO: 'Descartado',
+  ELIMINADO: 'Eliminado',
   // Genéricos
   OTRO: 'Otro',
   OTRA: 'Otra',

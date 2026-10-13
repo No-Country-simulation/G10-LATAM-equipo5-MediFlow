@@ -21,6 +21,12 @@ from app.core.database import Base
 from app.features.catalogs.models import Area
 
 
+# Eliminación lógica (solo ADMIN): el documento se conserva con quién, cuándo y por qué, y se puede
+# restaurar al estado que tenía (`estado_previo`). Sale de todos los listados salvo el filtro
+# "Eliminados" del ADMIN.
+ESTADO_ELIMINADO = "ELIMINADO"
+
+
 class ClinicalDocument(Base):
     """Documento clínico ingresado, clasificado y enrutado por el pipeline de triaje."""
 
@@ -93,6 +99,13 @@ class ClinicalDocument(Base):
     atendido_por_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     atendido_por_username: Mapped[str | None] = mapped_column(String(50))
     atendido_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+    # Eliminación lógica (ver `ESTADO_ELIMINADO`).
+    eliminado_por_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    eliminado_por_username: Mapped[str | None] = mapped_column(String(50))
+    eliminado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    motivo_eliminacion: Mapped[str | None] = mapped_column(Text)
+    estado_previo: Mapped[str | None] = mapped_column(String(30))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()

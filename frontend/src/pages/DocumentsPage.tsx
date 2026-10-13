@@ -105,6 +105,7 @@ const DocumentsPage = () => {
         onReset={resetFilters}
         isDirty={isDirty}
         showAreaFilter={user?.role !== 'OPERADOR'}
+        showDeletedFilter={user?.role === 'ADMIN'}
       />
 
       {state === 'error' && (

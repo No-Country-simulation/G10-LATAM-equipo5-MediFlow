@@ -1,4 +1,4 @@
-import { CheckCircle2, ShieldCheck, AlertTriangle, XCircle, type LucideIcon } from 'lucide-react';
+import { CheckCircle2, ShieldCheck, AlertTriangle, Trash2, XCircle, type LucideIcon } from 'lucide-react';
 import type { EstadoDocumento } from '../../types/medical';
 
 const ESTADO_LABELS: Record<EstadoDocumento, string> = {
@@ -6,6 +6,7 @@ const ESTADO_LABELS: Record<EstadoDocumento, string> = {
   AUDITADO: 'Auditado',
   PENDIENTE_AUDITORIA: 'Auditoría Requerida',
   DESCARTADO: 'Descartado',
+  ELIMINADO: 'Eliminado',
 };
 
 const ESTADO_STYLES: Record<EstadoDocumento, { badge: string; icon: LucideIcon }> = {
@@ -13,6 +14,7 @@ const ESTADO_STYLES: Record<EstadoDocumento, { badge: string; icon: LucideIcon }
   AUDITADO: { badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30', icon: ShieldCheck },
   PENDIENTE_AUDITORIA: { badge: 'bg-amber-500/10 text-amber-400 border-amber-500/30', icon: AlertTriangle },
   DESCARTADO: { badge: 'bg-slate-500/15 text-slate-400 border-slate-600/30', icon: XCircle },
+  ELIMINADO: { badge: 'bg-rose-500/10 text-rose-400 border-rose-500/30', icon: Trash2 },
 };
 
 interface DocumentStatusBadgeProps {

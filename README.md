@@ -261,7 +261,7 @@ Prefijo `/api/v1`. Salvo `health`, `login` y `refresh`, todo requiere `Authoriza
 | Salud | `GET /health`, `GET /health/live` |
 | Autenticación | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me` |
 | Perfil y usuarios | `/users/me`, `/users/me/change-password`, `/users` (CRUD) |
-| Documentos | `POST /documents/ingest` · `GET /documents` (bandeja con filtros) · `GET /documents/stats` (resumen del inicio) · `GET /documents/{id}` (detalle con URLs pre-firmadas, duplicados e historial) · `PUT /documents/{id}` (corregir) · `GET /documents/triage` (consola por colas) · `POST`/`DELETE /documents/{id}/attend` (atendido) · `POST /documents/{id}/derive` (derivar con motivo) · `POST /documents/duplicates/check` (¿archivo ya subido?) |
+| Documentos | `POST /documents/ingest` · `GET /documents` (bandeja con filtros) · `GET /documents/stats` (resumen del inicio) · `GET /documents/{id}` (detalle con URLs pre-firmadas, duplicados e historial) · `PUT /documents/{id}` (corregir) · `GET /documents/triage` (consola por colas) · `POST`/`DELETE /documents/{id}/attend` (atendido) · `POST /documents/{id}/derive` (derivar con motivo) · `POST /documents/{id}/delete` y `/restore` (eliminación lógica, solo ADMIN) · `POST /documents/duplicates/check` (¿archivo ya subido?) |
 | Auditoría | `GET /audit/{id}`, `POST`/`DELETE /audit/{id}/claim`, `PUT /audit/{id}/resolve`, `PUT /audit/{id}/discard` |
 | Catálogos | CRUD en `/catalogs/document-types`, `/catalogs/queues` y `/catalogs/areas` (+ `/active` y `/{id}/history`), y `GET /catalogs/document-types/forms` |
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, ClipboardCheck, PencilLine, Shuffle } from 'lucide-react';
+import { ArrowRight, ClipboardCheck, PencilLine, RotateCcw, Shuffle, Trash2 } from 'lucide-react';
 import type { CorreccionHistorial } from '../../types/medical';
 import { textoDeValor } from '../../utils/etiquetas';
 
@@ -10,6 +10,8 @@ const ORIGEN = {
   AUDITORIA: { texto: 'Auditoría', icono: ClipboardCheck, clase: 'bg-amber-500/10 text-amber-300 border-amber-500/30' },
   CORRECCION: { texto: 'Corrección', icono: PencilLine, clase: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30' },
   DERIVACION: { texto: 'Derivación', icono: Shuffle, clase: 'bg-sky-500/10 text-sky-300 border-sky-500/30' },
+  ELIMINACION: { texto: 'Eliminación', icono: Trash2, clase: 'bg-rose-500/10 text-rose-300 border-rose-500/30' },
+  RESTAURACION: { texto: 'Restauración', icono: RotateCcw, clase: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' },
 } as const;
 
 const formatoFecha = (iso: string): string => {

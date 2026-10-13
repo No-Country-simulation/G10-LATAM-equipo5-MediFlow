@@ -56,7 +56,7 @@ export const CATEGORY_LABELS: Record<Exclude<DocumentCategoryFilter, 'ALL'>, str
   OTRO: 'Otro / No clasificable',
 };
 
-export type DocumentStatusFilter = 'TODOS' | 'PROCESADO' | 'AUDITADO' | 'PENDIENTE_AUDITORIA' | 'DESCARTADO';
+export type DocumentStatusFilter = 'TODOS' | 'PROCESADO' | 'AUDITADO' | 'PENDIENTE_AUDITORIA' | 'DESCARTADO' | 'ELIMINADO';
 
 export interface DocumentFiltersValue {
   destino: DocumentDestinationFilter;

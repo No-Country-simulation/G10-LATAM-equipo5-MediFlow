@@ -28,6 +28,8 @@ export const FASTAPI_ENDPOINTS = {
     detail: (id: string) => `/documents/${encodeURIComponent(id)}`,
     attend: (id: string) => `/documents/${encodeURIComponent(id)}/attend`,
     derive: (id: string) => `/documents/${encodeURIComponent(id)}/derive`,
+    remove: (id: string) => `/documents/${encodeURIComponent(id)}/delete`,
+    restore: (id: string) => `/documents/${encodeURIComponent(id)}/restore`,
     triage: "/documents/triage",
     duplicatesCheck: "/documents/duplicates/check",
   },

@@ -510,6 +510,9 @@ class DocumentListItemResponse(BaseModel):
     asignado_at: datetime | None = None
     atendido_por_username: str | None = None
     atendido_at: datetime | None = None
+    eliminado_por_username: str | None = None
+    eliminado_at: datetime | None = None
+    motivo_eliminacion: str | None = None
     created_at: datetime
 
 
@@ -611,7 +614,7 @@ class CorreccionResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    origen: Literal["AUDITORIA", "CORRECCION", "DERIVACION"]
+    origen: Literal["AUDITORIA", "CORRECCION", "DERIVACION", "ELIMINACION", "RESTAURACION"]
     justificacion: str
     cambios: list[CambioCorreccion]
     corrected_by_username: str
@@ -723,3 +726,26 @@ class DeriveRequest(BaseModel):
         if len(value) < 5:
             raise ValueError("El motivo debe tener al menos 5 caracteres")
         return value
+
+
+def _motivo_sin_espacios(value: str) -> str:
+    value = value.strip()
+    if len(value) < 5:
+        raise ValueError("El motivo debe tener al menos 5 caracteres")
+    return value
+
+
+class DeleteDocumentRequest(BaseModel):
+    """Eliminar (lógicamente) un documento: el motivo queda en el historial."""
+
+    motivo: str = Field(min_length=5, max_length=1000)
+
+    motivo_valido = field_validator("motivo")(_motivo_sin_espacios)
+
+
+class RestoreDocumentRequest(BaseModel):
+    """Restaurar un documento eliminado a su estado anterior."""
+
+    motivo: str = Field(min_length=5, max_length=1000)
+
+    motivo_valido = field_validator("motivo")(_motivo_sin_espacios)

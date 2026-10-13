@@ -1,4 +1,4 @@
-import { Cloud } from 'lucide-react';
+import { Cloud, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { DocumentDetailResponse } from '../../types/medical';
 import { formatIdentificacion } from '../../utils/identificacion';
@@ -168,6 +168,25 @@ const DetalleClinico = ({ detail }: { detail: DocumentDetailResponse }) => {
 /** Datos del documento para leer: paciente, documento, detalle clínico e historial de correcciones. */
 const DocumentDetailContent = ({ detail }: { detail: DocumentDetailResponse }) => (
   <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4">
+    {detail.estado === 'ELIMINADO' && (
+      <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs space-y-1">
+        <span className="font-bold text-rose-400 flex items-center gap-1.5">
+          <Trash2 className="w-3.5 h-3.5" />
+          Documento eliminado
+        </span>
+        <p className="text-rose-300/80">
+          {unir(
+            detail.eliminado_por_username,
+            detail.eliminado_at &&
+              new Date(detail.eliminado_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })
+          )}
+        </p>
+        {detail.motivo_eliminacion && (
+          <p className="text-rose-200/90 whitespace-pre-line break-words">{detail.motivo_eliminacion}</p>
+        )}
+      </div>
+    )}
+
     <PossibleDuplicatesNotice duplicados={detail.duplicados ?? []} />
 
     {detail.motivos_auditoria.length > 0 && (
