@@ -95,6 +95,7 @@ const TriageCaseCard = ({ doc, queueName, onAttend, onDerive, attending = false 
               type="button"
               onClick={() => onAttend(doc)}
               disabled={attending}
+              aria-haspopup="dialog"
               className={`${ACTION_BUTTON} bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20`}
             >
               {attending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCheck className="w-3.5 h-3.5" />}

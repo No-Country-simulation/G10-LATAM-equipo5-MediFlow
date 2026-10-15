@@ -6,6 +6,7 @@ import { useDocumentDetailModal } from '../context/documentDetailContext';
 import CriticalAlertBanner from '../components/dashboard/CriticalAlertBanner';
 import TriageCaseCard from '../components/triage/TriageCaseCard';
 import DeriveCaseModal from '../components/triage/DeriveCaseModal';
+import ConfirmAttendModal from '../components/triage/ConfirmAttendModal';
 import { FilterButtonGroup } from '../components/documents/FilterButtonGroup';
 import { documentService } from '../services/documentService';
 import { normalizePriority, type DocumentListItemResponse } from '../types/medical';
@@ -36,6 +37,7 @@ const TriagePage = () => {
   const [selectedFilter, setSelectedFilter] = useState<TriageTab>('ALL');
   const [selectedQueue, setSelectedQueue] = useState<string>(ALL_QUEUES);
   const [attendingId, setAttendingId] = useState<string | null>(null);
+  const [attendTargetCase, setAttendTargetCase] = useState<DocumentListItemResponse | null>(null);
   const [derivingDoc, setDerivingDoc] = useState<DocumentListItemResponse | null>(null);
   // Se ocultan al instante, sin esperar la recarga de la consola.
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
@@ -69,7 +71,15 @@ const TriagePage = () => {
     setDerivingDoc(doc);
   }, []);
 
-  const handleAttend = useCallback(async (doc: DocumentListItemResponse) => {
+  const openAttend = useCallback((doc: DocumentListItemResponse) => {
+    setFeedback(null);
+    setActionError(null);
+    setAttendTargetCase(doc);
+  }, []);
+
+  const handleConfirmAttend = useCallback(async (caseId: string) => {
+    const doc = attendTargetCase;
+    if (!doc || doc.documento_id !== caseId) return;
     setAttendingId(doc.documento_id);
     setActionError(null);
     setFeedback(null);
@@ -77,13 +87,15 @@ const TriagePage = () => {
       await documentService.markAttended(doc.documento_id);
       hide(doc.documento_id);
       setFeedback({ kind: 'attended', doc });
+      setAttendTargetCase(null);
       reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'No se pudo marcar el caso como atendido');
+      throw err;
     } finally {
       setAttendingId(null);
     }
-  }, [reload]);
+  }, [attendTargetCase, reload]);
 
   const handleUndo = useCallback(async () => {
     if (feedback?.kind !== 'attended') return;
@@ -265,7 +277,7 @@ const TriagePage = () => {
                     key={doc.documento_id}
                     doc={doc}
                     queueName={queueName(doc.destino_enrutamiento)}
-                    onAttend={canAct ? handleAttend : undefined}
+                    onAttend={canAct ? openAttend : undefined}
                     onDerive={canAct ? openDerive : undefined}
                     attending={attendingId === doc.documento_id}
                   />
@@ -284,6 +296,14 @@ const TriagePage = () => {
           onDerive={handleDerive}
         />
       )}
+
+      <ConfirmAttendModal
+        isOpen={Boolean(attendTargetCase)}
+        caseItem={attendTargetCase}
+        loading={attendingId === attendTargetCase?.documento_id}
+        onClose={() => setAttendTargetCase(null)}
+        onConfirm={handleConfirmAttend}
+      />
     </div>
   );
 };
