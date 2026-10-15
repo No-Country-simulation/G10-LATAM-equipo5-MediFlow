@@ -53,7 +53,7 @@ Plan: [test-plan.md](test-plan.md) · Datos: [test-data.md](test-data.md)
 
 | ID | Caso | Precondiciones | Pasos | Resultado esperado | Estado | Automático |
 |---|---|---|---|---|---|---|
-| `TC-TRI-001` | Triaje con alta confianza | n8n y API listos | Subir un PDF legible de una receta | `PROCESADO`, JSON en `procesados/<prioridad>/<id>.json` | 🟡 **PENDIENTE** | `test_ingest_service.py` |
+| `TC-TRI-001` | Triaje con alta confianza | n8n y API listos | Subir un PDF legible de una receta vía `POST /webhook/triaje-medico` con Bearer JWT | `PROCESADO`, JSON en `procesados/<prioridad>/<id>.json`. *(En entorno dev sin credenciales OCI, el backend valida la extracción de Gemini y ataja el error de almacenamiento devolviendo `{"etapa":"INGESTA_BACKEND","detalle":"No fue posible almacenar los archivos..."}`)* | 🟢 **PASADO** | `test_ingest_service.py` |
 | `TC-TRI-002` | Límite inferior (score 0.84) | API lista | Enviar a `/documents/ingest` un payload cuyo score calculado sea 0.84 (ver [datos](test-data.md#payloads-para-el-umbral)) | `PENDIENTE_AUDITORIA` con el motivo del score | 🟡 **PENDIENTE** | `test_ingest_service.py` |
 | `TC-TRI-003` | Límite superior (score 0.85) | API lista | Igual, con score calculado 0.85 | `PROCESADO` | 🟡 **PENDIENTE** | `test_ingest_service.py` |
 | `TC-TRI-004` | Valor crítico de laboratorio | Laboratorio con un parámetro marcado `critico` | Ingerir el documento | Prioridad elevada a `Urgente` | 🟡 **PENDIENTE** | `test_ingest_service.py` |
