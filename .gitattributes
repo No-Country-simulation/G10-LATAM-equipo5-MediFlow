@@ -1,0 +1,2 @@
+# Scripts que corren en Linux (VM de despliegue): siempre LF, aunque se clone en Windows.
+*.sh text eol=lf
