@@ -322,7 +322,11 @@ export const requiresHumanAudit = (score: number, requiereAuditoria = false): bo
 
 export const normalizePriority = (val?: string | null): NivelPrioridad => {
   if (!val) return 'Rutina';
-  const clean = val.trim().toLowerCase();
+  const clean = val
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
   if (clean === 'urgente' || clean === 'critica' || clean === 'alta') {
     return 'Urgente';
   }

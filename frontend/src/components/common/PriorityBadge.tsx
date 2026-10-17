@@ -16,8 +16,8 @@ const PRIORITY_STYLES: Record<NivelPrioridad, { badge: string; dot: string }> = 
     dot: 'bg-amber-500',
   },
   Rutina: {
-    badge: 'bg-teal-950/40 text-teal-400 border-teal-500/30',
-    dot: 'bg-teal-500',
+    badge: 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30',
+    dot: 'bg-emerald-500',
   },
 };
 

@@ -32,7 +32,11 @@ export class ApiError extends Error {
 export const describeEndpoint = (endpoint: string): string => {
   const [path, query] = endpoint.replace(API_BASE_URL, '').split('?');
   if (!query) return path;
-  const names = [...new Set([...new URLSearchParams(query).keys()])].sort((a, b) => a.localeCompare(b));
+  const keySet = new Set<string>();
+  new URLSearchParams(query).forEach((_, key) => {
+    keySet.add(key);
+  });
+  const names = Array.from(keySet).sort((a, b) => a.localeCompare(b));
   return `${path}?${names.join(',')}`;
 };
 
