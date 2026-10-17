@@ -18,12 +18,50 @@ const initialValue = (field: CatalogField, value: unknown): string | boolean => 
 export const initialValues = (fields: CatalogField[], record?: CatalogRecord): FormValues =>
   Object.fromEntries(fields.map((field) => [field.name, initialValue(field, recordValue(record, field.name))]));
 
-const parseJsonObject = (raw: string, label: string): { value: unknown; error?: string } => {
-  if (!raw.trim()) return { value: null };
+/** Detecta si un valor corresponde a un JSON Schema configurado con propiedades o claves. */
+export const hasConfiguredSchema = (value: unknown): boolean => {
+  if (!value) return false;
+  if (typeof value === 'object') {
+    return !Array.isArray(value) && Object.keys(value).length > 0;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === '{}') return false;
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) && Object.keys(parsed).length > 0;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
+
+/** Validación sintáctica en tiempo real del JSON Schema para advertir al usuario antes de enviar. */
+export const validateJsonSyntax = (raw: string): string | null => {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
   try {
-    const parsed: unknown = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(trimmed);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return 'Formato JSON inválido: revise comillas, llaves y comas.';
+    }
+    return null;
+  } catch {
+    return 'Formato JSON inválido: revise comillas, llaves y comas.';
+  }
+};
+
+const parseJsonObject = (raw: string, label: string): { value: unknown; error?: string } => {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === '{}') return { value: null };
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       return { value: null, error: `${label}: debe ser un objeto JSON` };
+    }
+    if (Object.keys(parsed).length === 0) {
+      return { value: null };
     }
     return { value: parsed };
   } catch {
@@ -38,7 +76,7 @@ const textValue = (field: CatalogField, raw: string): string | null => {
 
 /**
  * Convierte el formulario en el body del backend. En edición omite los campos `createOnly`
- * (el `codigo`); los textos opcionales vacíos se envían como `null`.
+ * (el `codigo`); esquemas JSON vacíos y textos opcionales vacíos se envían como `null` para evitar 422.
  */
 export const buildPayload = (fields: CatalogField[], values: FormValues, isEdit: boolean): PayloadResult => {
   const payload: CatalogPayload = {};
