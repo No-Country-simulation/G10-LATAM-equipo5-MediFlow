@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { catalogService } from '../services/catalogService';
 import { createSharedLoader } from '../utils/sharedLoader';
+import { createLogger, describeError } from '../utils/logger';
 
 type NameMap = ReadonlyMap<string, string>;
 
@@ -11,13 +12,23 @@ interface CatalogNames {
 
 const EMPTY: CatalogNames = { queues: new Map(), documentTypes: new Map() };
 
+const log = createLogger('catalogos');
+
 /** Nombres de todas las colas y tipos desde la base de datos (incluye inactivos): una carga compartida. */
 const catalogNames = createSharedLoader(async (): Promise<CatalogNames> => {
-  const { colas, tipos_documento } = await catalogService.getLabels();
-  return {
-    queues: new Map(colas.map((c) => [c.codigo, c.nombre])),
-    documentTypes: new Map(tipos_documento.map((t) => [t.codigo, t.nombre])),
-  };
+  try {
+    const { colas, tipos_documento } = await catalogService.getLabels();
+    return {
+      queues: new Map(colas.map((c) => [c.codigo, c.nombre])),
+      documentTypes: new Map(tipos_documento.map((t) => [t.codigo, t.nombre])),
+    };
+  } catch (error) {
+    // Se registra aquí (una vez por carga) y no en cada componente que muestra nombres.
+    log.warn('No se pudieron cargar los nombres del catálogo: se muestran los códigos', {
+      error: describeError(error),
+    });
+    throw error;
+  }
 });
 
 /** Descarta los nombres cargados: se llama tras crear, editar o eliminar un registro de catálogo. */
@@ -37,7 +48,7 @@ export const useCatalogLabels = () => {
       .then((loaded) => {
         if (!cancelled) setNames(loaded);
       })
-      // Sin nombres se muestran los códigos: la pantalla sigue siendo usable.
+      // Ya registrado en el cargador; sin nombres se muestran los códigos y la pantalla sigue usable.
       .catch(() => undefined);
     return () => {
       cancelled = true;

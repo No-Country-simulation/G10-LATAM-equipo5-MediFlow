@@ -40,8 +40,13 @@ from app.features.documents.service import (
     ingest_document,
 )
 from app.features.documents.stats import get_dashboard_stats
+from app.features.documents.triage import (
+    derive_document,
+    get_triage_cases,
+    mark_attended,
+    unmark_attended,
+)
 from app.features.documents.visibility import visible_documents_condition
-from app.features.documents.triage import derive_document, get_triage_cases, mark_attended, unmark_attended
 
 router = APIRouter(tags=["Documents"])
 
@@ -52,8 +57,8 @@ _DIAS_DASHBOARD_MAXIMO = 92
 _DOCUMENTO_ID = Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
-def _own_documents_only(user: User) -> UUID | None:
-    """Para los duplicados: a un OPERADOR solo se le detallan los que subió; los demás roles ven todos.
+def _duplicates_owner(user: User) -> UUID | None:
+    """Dueño de los duplicados que se detallan: a un OPERADOR, solo los que subió (`None` = todos).
 
     Qué documentos ve cada rol lo define `visibility.visible_documents_condition`.
     """
@@ -66,7 +71,7 @@ async def ingest(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(_DOCUMENT_ACCESS_ROLES)),
 ) -> IngestResponse:
-    """Recibe un documento clínico procesado por n8n, lo respalda en OCI y lo registra en la base de datos.
+    """Registra en la base de datos un documento clínico procesado por n8n y lo respalda en OCI.
 
     Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR. n8n reenvía el token Bearer del usuario que
     subió el documento desde el front, y ese usuario queda registrado en `uploaded_by_id`.
@@ -109,28 +114,42 @@ async def list_documents(
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(20, ge=1, le=100, description="Elementos por página"),
     estado: str | None = Query(
-        None, description="Filtrar por estado (uno o varios separados por coma): PENDIENTE_AUDITORIA, PROCESADO, AUDITADO, DESCARTADO"
+        None,
+        description=(
+            "Filtrar por estado (uno o varios separados por coma): "
+            "PENDIENTE_AUDITORIA, PROCESADO, AUDITADO, DESCARTADO"
+        ),
     ),
     destino: str | None = Query(
         None,
-        description="Filtrar por cola (una o varias separadas por coma): Cola_Emergencia_Medica, Farmacia_Hospitalaria, etc.",
+        description=(
+            "Filtrar por cola (una o varias separadas por coma): "
+            "Cola_Emergencia_Medica, Farmacia_Hospitalaria, etc."
+        ),
     ),
     identificacion: str | None = Query(
-        None, max_length=40, description="Filtrar por identificación del paciente (RUT, DNI, cédula...)"
+        None,
+        max_length=40,
+        description="Filtrar por identificación del paciente (RUT, DNI, cédula...)",
     ),
-    numero_ficha: str | None = Query(None, max_length=50, description="Filtrar por N° de ficha clínica"),
+    numero_ficha: str | None = Query(
+        None, max_length=50, description="Filtrar por N° de ficha clínica"
+    ),
     prioridad: str | None = Query(None, description="Rutina, Prioritario, Urgente"),
     fecha_desde: datetime | None = Query(None),
     fecha_hasta: datetime | None = Query(None),
-    area_origen_id: UUID | None = Query(None, description="Filtrar por área de origen (id del área)"),
+    area_origen_id: UUID | None = Query(
+        None, description="Filtrar por área de origen (id del área)"
+    ),
     atendido: bool | None = Query(
         None, description="Filtrar por si el caso ya se marcó como atendido en la Consola de Triaje"
     ),
 ) -> PaginatedDocumentResponse:
     """Lista la bandeja documental con filtros dinámicos y paginación.
 
-    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo ve los documentos que subió
-    y los derivados a sus colas asistenciales asignadas. Los eliminados no aparecen salvo con `estado=ELIMINADO`, que solo puede pedir un ADMIN (`403`).
+    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo ve los documentos que subió,
+    los derivados a sus colas asistenciales asignadas y los de Ficha Clínica (ver `visibility`).
+    Los eliminados no aparecen salvo con `estado=ELIMINADO`, que solo puede pedir un ADMIN (`403`).
     """
     if estado and ESTADO_ELIMINADO in estado.split(",") and current_user.role != UserRole.ADMIN:
         raise HTTPException(
@@ -163,7 +182,7 @@ async def list_documents(
 
 
 def _con_zona(valor: datetime | None) -> datetime | None:
-    """Una fecha sin zona horaria se interpreta en UTC (así se puede comparar con las que la traen)."""
+    """Interpreta en UTC una fecha sin zona horaria, para poder compararla con las que la traen."""
     if valor is not None and valor.tzinfo is None:
         return valor.replace(tzinfo=timezone.utc)
     return valor
@@ -173,17 +192,22 @@ def _con_zona(valor: datetime | None) -> datetime | None:
 async def dashboard_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(_DOCUMENT_ACCESS_ROLES)),
-    fecha_desde: datetime | None = Query(None, description="Inicio del período (por defecto, hace 14 días)"),
+    fecha_desde: datetime | None = Query(
+        None, description="Inicio del período (por defecto, hace 14 días)"
+    ),
     fecha_hasta: datetime | None = Query(None, description="Fin del período (por defecto, ahora)"),
     utc_offset_min: int = Query(
-        0, ge=-840, le=840, description="Desfase de la hora local respecto de UTC, en minutos (Chile: -180)"
+        0,
+        ge=-840,
+        le=840,
+        description="Desfase de la hora local respecto de UTC, en minutos (Chile: -180)",
     ),
 ) -> DashboardStatsResponse:
     """Resumen del inicio: conteos del período por prioridad, estado, día y cola, más las listas
     de trabajo del rol (pendientes de auditoría y casos tomados, o las últimas cargas del OPERADOR).
 
-    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo cuenta los documentos que subió
-    y los derivados a sus colas asistenciales asignadas.
+    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo cuenta los documentos que ve
+    (ver `visibility`), y sus "últimas cargas" son solo las que subió.
     """
     hasta = _con_zona(fecha_hasta) or datetime.now(timezone.utc)
     desde = _con_zona(fecha_desde) or hasta - timedelta(days=_DIAS_DASHBOARD_POR_DEFECTO - 1)
@@ -236,7 +260,7 @@ async def check_duplicate_files(
         db,
         payload.sha256,
         solicitante_id=current_user.id,
-        ver_todo=_own_documents_only(current_user) is None,
+        ver_todo=_duplicates_owner(current_user) is None,
     )
     return DuplicateCheckResponse(coincidencias=coincidencias)
 
@@ -247,7 +271,7 @@ async def get_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(_DOCUMENT_ACCESS_ROLES)),
 ) -> DocumentDetailResponse:
-    """Detalle de un documento: datos del caso, área de origen, archivos originales y detalle clínico.
+    """Detalle de un documento: datos del caso, área de origen, archivos y detalle clínico.
 
     - `archivos`: una URL pre-firmada de solo lectura por archivo, válida por
       `preview_expira_en_minutos`. Si OCI no puede generar alguna, el detalle se entrega igual
@@ -255,15 +279,15 @@ async def get_document(
     - `detalle.tablas`: medicamentos, paneles de laboratorio o procedimientos, según el tipo.
     - `detalle.campos_relevantes`: campos de texto del tipo que no tienen tabla propia.
 
-    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR. Un OPERADOR solo ve los documentos que
-    subió o los derivados a sus colas asistenciales; para cualquier otro recibe `404`. Un documento
-    eliminado solo lo ve un ADMIN.
+    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR. Un OPERADOR solo ve los documentos que subió,
+    los derivados a sus colas asistenciales y los de Ficha Clínica (ver `visibility`); para
+    cualquier otro recibe `404`. Un documento eliminado solo lo ve un ADMIN.
     """
     return await get_document_detail(
         documento_id,
         db,
         alcance=visible_documents_condition(current_user),
-        uploaded_by_id=_own_documents_only(current_user),
+        uploaded_by_id=_duplicates_owner(current_user),
         incluir_eliminados=current_user.role == UserRole.ADMIN,
     )
 
@@ -339,7 +363,9 @@ async def derive_to_queue(
 
     Requiere rol ADMIN o AUDITOR_CLINICO.
     """
-    document = await derive_document(documento_id, payload.destino, payload.motivo, current_user, db)
+    document = await derive_document(
+        documento_id, payload.destino, payload.motivo, current_user, db
+    )
     return DocumentListItemResponse.model_validate(document)
 
 
@@ -368,7 +394,7 @@ async def restore_deleted_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.ADMIN])),
 ) -> DocumentListItemResponse:
-    """Restaura un documento eliminado al estado que tenía. Queda en el historial (origen `RESTAURACION`).
+    """Restaura un documento eliminado a su estado anterior (historial: origen `RESTAURACION`).
 
     - `409` si el documento no está eliminado.
 

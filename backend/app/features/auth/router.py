@@ -259,7 +259,8 @@ async def update_user(
 ) -> UserResponse:
     """Actualiza el estado o rol de un usuario existente. Requiere rol ADMIN o GESTOR_USUARIOS.
 
-    Solo un ADMIN puede otorgar el rol ADMIN a otro usuario.
+    Solo un ADMIN puede otorgar el rol ADMIN a otro usuario. `409` si se intenta cambiar el estado,
+    el rol o las colas de la propia cuenta (el nombre y el email propios se editan en `/users/me`).
     """
     user = await admin_update_user(user_id, payload, db, current_user)
     return UserResponse.model_validate(user)
