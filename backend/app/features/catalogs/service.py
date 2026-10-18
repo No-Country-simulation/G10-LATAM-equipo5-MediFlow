@@ -158,6 +158,9 @@ async def _update(
     updates = payload.model_dump(exclude_unset=True)
     if updates.get("is_active") is False:
         _ensure_not_system(entity, label, "desactivar")
+    # Solo existe en las colas: la de sistema (Ficha Clínica) es visible para todos y no va a Triaje.
+    if updates.get("es_asistencial") is True:
+        _ensure_not_system(entity, label, "mostrar en la Consola de Triaje")
 
     antes = _snapshot(entity)
     for field, value in updates.items():

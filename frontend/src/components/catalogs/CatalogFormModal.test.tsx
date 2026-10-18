@@ -3,7 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CatalogFormModal } from './CatalogFormModal';
 import { CATALOGS } from './catalogConfig';
-import type { DocumentTypeRecord } from '../../types/catalog';
+import type { DocumentTypeRecord, QueueRecord } from '../../types/catalog';
 
 describe('CatalogFormModal integration', () => {
   const docTypeDefinition = CATALOGS.find((c) => c.key === 'documentTypes')!;
@@ -169,5 +169,51 @@ describe('CatalogFormModal integration', () => {
     );
     expect(handleUpdate.mock.calls[0][1]).not.toHaveProperty('codigo');
     expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CatalogFormModal system queues', () => {
+  const queueDefinition = CATALOGS.find((c) => c.key === 'queues')!;
+
+  const buildQueue = (overrides: Partial<QueueRecord> = {}): QueueRecord => ({
+    id: 'q-1',
+    codigo: 'Gestion_Interconsultas',
+    nombre: 'Interconsultas',
+    descripcion_semantica: 'Interconsultas a otra especialidad',
+    notificar_inmediato: false,
+    es_asistencial: true,
+    is_active: true,
+    es_sistema: false,
+    created_at: '2026-01-01',
+    ...overrides,
+  });
+
+  const renderQueueForm = (record: QueueRecord, onUpdate = vi.fn().mockResolvedValue(true)) =>
+    render(
+      <CatalogFormModal
+        definition={queueDefinition}
+        record={record}
+        onClose={vi.fn()}
+        onCreate={vi.fn().mockResolvedValue(true)}
+        onUpdate={onUpdate}
+      />
+    );
+
+  it('lets a regular queue be shown in the Triage console', () => {
+    renderQueueForm(buildQueue());
+    expect(screen.getByRole('checkbox', { name: /aparece en la consola de triaje/i })).toBeChecked();
+  });
+
+  it('hides the Triage option for a system queue (Ficha Clínica) and does not send it', async () => {
+    const handleUpdate = vi.fn().mockResolvedValue(true);
+    renderQueueForm(buildQueue({ codigo: 'Ficha_Clinica', es_sistema: true, es_asistencial: false }), handleUpdate);
+
+    expect(screen.queryByRole('checkbox', { name: /aparece en la consola de triaje/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /notificar de inmediato/i })).toBeInTheDocument();
+
+    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => expect(handleUpdate).toHaveBeenCalled());
+    expect(handleUpdate.mock.calls[0][1]).not.toHaveProperty('es_asistencial');
   });
 });

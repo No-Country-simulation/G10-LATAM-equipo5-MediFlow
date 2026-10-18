@@ -136,18 +136,23 @@ async def _get_assignable_area(db: AsyncSession, area_id: UUID) -> Area:
 
 
 async def _get_assignable_queues(db: AsyncSession, cola_ids: list[UUID]) -> list[RoutingQueue]:
-    """Colas activas a asignar a un usuario o HTTPException 422 si alguna no existe o está inactiva."""
+    """Colas a asignar a un usuario o HTTPException 422 si alguna no existe, está inactiva o no es
+    asistencial (de la Consola de Triaje; las de sistema, como Ficha Clínica, las ven todos)."""
     ids = set(cola_ids)
     if not ids:
         return []
     result = await db.execute(
-        select(RoutingQueue).where(RoutingQueue.id.in_(ids), RoutingQueue.is_active.is_(True))
+        select(RoutingQueue).where(
+            RoutingQueue.id.in_(ids),
+            RoutingQueue.is_active.is_(True),
+            RoutingQueue.es_asistencial.is_(True),
+        )
     )
     colas = list(result.scalars().all())
     if len(colas) != len(ids):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Alguna de las colas indicadas no existe o está inactiva",
+            detail="Alguna de las colas indicadas no existe, está inactiva o no es de la Consola de Triaje",
         )
     return colas
 

@@ -18,6 +18,8 @@ export interface CatalogField {
   hint?: string;
   /** Solo se envía al crear (el `codigo` es inmutable). */
   createOnly?: boolean;
+  /** No aplica a los registros `es_sistema`: al editarlos se oculta y no se envía. */
+  hiddenForSystem?: boolean;
   pattern?: string;
   patternTitle?: string;
   uppercase?: boolean;
@@ -155,6 +157,8 @@ export const CATALOGS: CatalogDefinition[] = [
         label: 'Aparece en la Consola de Triaje',
         kind: 'checkbox',
         hint: 'Cola de atención directa a pacientes: sus casos se atienden desde Triaje.',
+        // Ficha Clínica (de sistema) la ven todos los usuarios: no va a Triaje ni se asigna.
+        hiddenForSystem: true,
       },
     ],
     badges: (record) => {

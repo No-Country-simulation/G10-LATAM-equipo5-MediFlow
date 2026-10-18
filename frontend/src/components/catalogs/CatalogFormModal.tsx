@@ -5,7 +5,7 @@ import { ModalShell } from '../common/ModalShell';
 import { StatusBanner } from '../common/StatusBanner';
 import { BUTTON_GHOST, BUTTON_PRIMARY } from '../common/formStyles';
 import type { CatalogDefinition } from './catalogConfig';
-import { buildPayload, initialValues, validateJsonSyntax, type FormValues } from './catalogForm';
+import { buildPayload, editableFields, initialValues, validateJsonSyntax, type FormValues } from './catalogForm';
 import { FieldInput } from './FieldInput';
 import { JsonSchemaAccordion } from './JsonSchemaAccordion';
 
@@ -27,12 +27,13 @@ export const CatalogFormModal: React.FC<CatalogFormModalProps> = ({
   onUpdate,
 }) => {
   const isEdit = record !== undefined;
-  const [values, setValues] = useState<FormValues>(() => initialValues(definition.fields, record));
+  const fields = editableFields(definition.fields, record);
+  const [values, setValues] = useState<FormValues>(() => initialValues(fields, record));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const mainFields = definition.fields.filter((field) => field.kind !== 'json');
-  const jsonField = definition.fields.find((field) => field.kind === 'json');
+  const mainFields = fields.filter((field) => field.kind !== 'json');
+  const jsonField = fields.find((field) => field.kind === 'json');
 
   const jsonValue = jsonField ? String(values[jsonField.name] ?? '') : '';
   const jsonSyntaxError = jsonField ? validateJsonSyntax(jsonValue) : null;
@@ -42,7 +43,7 @@ export const CatalogFormModal: React.FC<CatalogFormModalProps> = ({
     e.preventDefault();
     if (jsonSyntaxError) return;
 
-    const { payload, error } = buildPayload(definition.fields, values, isEdit);
+    const { payload, error } = buildPayload(fields, values, isEdit);
     if (error !== undefined) {
       setLocalError(error);
       return;

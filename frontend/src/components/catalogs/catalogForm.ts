@@ -14,6 +14,10 @@ const initialValue = (field: CatalogField, value: unknown): string | boolean => 
   return typeof value === 'string' ? value : '';
 };
 
+/** Campos que se muestran y envían para `record` (al editar uno de sistema se quitan los `hiddenForSystem`). */
+export const editableFields = (fields: CatalogField[], record?: CatalogRecord): CatalogField[] =>
+  record?.es_sistema ? fields.filter((field) => !field.hiddenForSystem) : fields;
+
 /** Valores del formulario: vacíos al crear, los del registro al editar. */
 export const initialValues = (fields: CatalogField[], record?: CatalogRecord): FormValues =>
   Object.fromEntries(fields.map((field) => [field.name, initialValue(field, recordValue(record, field.name))]));

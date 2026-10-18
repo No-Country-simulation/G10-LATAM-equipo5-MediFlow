@@ -326,6 +326,29 @@ async def test_system_record_cannot_be_deleted_or_deactivated(client, login_as, 
     assert queue.is_active is True and db.deleted == []
 
 
+async def test_system_queue_cannot_be_shown_in_triage(client, login_as, db):
+    queue = make_queue(codigo="Ficha_Clinica", es_sistema=True, es_asistencial=False)
+    db.get_result = queue
+    headers = login_as(UserRole.ADMIN)
+
+    r = await client.put(
+        f"/api/v1/catalogs/queues/{queue.id}", json={"es_asistencial": True}, headers=headers
+    )
+    assert r.status_code == 409
+    assert "Consola de Triaje" in r.json()["detail"]
+    assert queue.es_asistencial is False
+
+
+async def test_system_queue_accepts_es_asistencial_false(client, login_as, db):
+    # El formulario de edición envía todos sus campos: dejarla fuera de Triaje no debe fallar.
+    queue = make_queue(codigo="Ficha_Clinica", es_sistema=True, es_asistencial=False)
+    db.get_result = queue
+    r = await client.put(
+        f"/api/v1/catalogs/queues/{queue.id}", json={"es_asistencial": False}, headers=login_as(UserRole.ADMIN)
+    )
+    assert r.status_code == 200
+
+
 async def test_system_record_description_can_be_edited(client, login_as, db):
     doc_type = make_doc_type(codigo="OTRO", es_sistema=True)
     db.get_result = doc_type
