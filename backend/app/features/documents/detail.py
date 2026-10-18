@@ -20,7 +20,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -181,21 +181,18 @@ async def _schema_campos_adicionales(db: AsyncSession, tipo_documento: str) -> d
 async def _get_visible_document(
     db: AsyncSession,
     documento_id: str,
-    uploaded_by_id: UUID | None,
-    colas: list[str] | None = None,
+    alcance: ColumnElement[bool] | None,
     incluir_eliminados: bool = False,
 ) -> ClinicalDocument:
-    """Busca el documento; con `uploaded_by_id` (OPERADOR) solo entre los que subió ese usuario o
-    los derivados a sus `colas` (los que ve en la Consola de Triaje).
+    """Busca el documento dentro del `alcance` del usuario (ver `visibility`; `None` = todos).
 
-    Un documento ajeno responde 404 (no 403) para no revelar qué identificadores existen.
+    Un documento fuera del alcance responde 404 (no 403) para no revelar qué identificadores existen.
     """
     stmt = select(ClinicalDocument).where(ClinicalDocument.documento_id == documento_id)
     if not incluir_eliminados:
         stmt = stmt.where(ClinicalDocument.estado != ESTADO_ELIMINADO)
-    if uploaded_by_id is not None:
-        propio = ClinicalDocument.uploaded_by_id == uploaded_by_id
-        stmt = stmt.where(or_(propio, ClinicalDocument.destino_enrutamiento.in_(colas)) if colas else propio)
+    if alcance is not None:
+        stmt = stmt.where(alcance)
     document = (await db.execute(stmt)).scalar_one_or_none()
     if document is None:
         raise HTTPException(
@@ -208,16 +205,18 @@ async def _get_visible_document(
 async def get_document_detail(
     documento_id: str,
     db: AsyncSession,
+    alcance: ColumnElement[bool] | None = None,
     uploaded_by_id: UUID | None = None,
-    colas: list[str] | None = None,
     incluir_eliminados: bool = False,
 ) -> DocumentDetailResponse:
     """Detalle completo de un documento.
 
+    `uploaded_by_id` (OPERADOR) limita los duplicados informados a los que subió ese usuario.
+
     Si OCI no puede generar alguna URL, el detalle se entrega igual: ese archivo queda con
     `url = None` y `aviso_archivos` lo explica, para que el caso siga siendo revisable.
     """
-    document = await _get_visible_document(db, documento_id, uploaded_by_id, colas, incluir_eliminados)
+    document = await _get_visible_document(db, documento_id, alcance, incluir_eliminados)
 
     raw: dict[str, Any] = document.raw_extracted_json or {}
     detalle_clinico: dict[str, Any] = raw.get("detalle_clinico") or {}

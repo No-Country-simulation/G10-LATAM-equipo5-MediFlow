@@ -40,7 +40,7 @@ En producción (`docker-compose.prod.yml`) no se usa este archivo: el front se c
 | `/login` | Inicio de sesión | Todos | Ingresar con usuario y contraseña |
 | `/dashboard` | **Inicio** | ADMIN, AUDITOR, OPERADOR | KPIs por prioridad, carga rápida de un documento y bandeja de documentos clínicos |
 | `/triaje` | **Triaje** | ADMIN, AUDITOR, OPERADOR | Casos con derivación asistencial activa, ordenados por severidad |
-| `/documentos` | **Expedientes** (OPERADOR: *Mis Documentos*) | ADMIN, AUDITOR, OPERADOR | Repositorio en vista kanban o lista, con filtros por destino, prioridad e identificación |
+| `/documentos` | **Expedientes** (OPERADOR: *Documentos*) | ADMIN, AUDITOR, OPERADOR | Repositorio en vista kanban o lista, con filtros por destino, prioridad e identificación |
 | `/ingesta` | **Procesar Documento IA** | ADMIN, AUDITOR, OPERADOR | Subir un PDF/PNG/JPG y ver el resultado del triaje |
 | `/auditoria` | **Auditoría** | ADMIN, AUDITOR | Bandeja de casos pendientes; tomar, corregir, resolver o descartar |
 | `/usuarios` | **Usuarios** | ADMIN, GESTOR | CRUD de usuarios con su área |

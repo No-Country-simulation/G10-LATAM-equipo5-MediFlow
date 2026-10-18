@@ -13,7 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from jsonschema import Draft202012Validator
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.operators import ColumnOperators
@@ -637,18 +637,18 @@ async def get_paginated_documents(
     prioridad: str | None = None,
     fecha_desde: datetime | None = None,
     fecha_hasta: datetime | None = None,
-    uploaded_by_id: UUID | None = None,
+    alcance: ColumnElement[bool] | None = None,
     area_origen_id: UUID | None = None,
     atendido: bool | None = None,
 ) -> dict:
     """Lista la bandeja documental con filtros dinámicos y paginación (se omite cada filtro en `None`).
 
+    `alcance` restringe a los documentos que ve el usuario (ver `visibility`; `None` = todos).
     `estado` y `destino` admiten varios valores separados por coma (`PROCESADO,AUDITADO`).
     `atendido` filtra por si el caso ya se marcó como atendido en la Consola de Triaje.
     Los documentos eliminados se excluyen salvo que `estado` incluya ELIMINADO.
     """
     filters = (
-        (ClinicalDocument.uploaded_by_id, operator.eq, uploaded_by_id),
         (ClinicalDocument.area_origen_id, operator.eq, area_origen_id),
         (ClinicalDocument.estado, ColumnOperators.in_, _valores(estado)),
         (ClinicalDocument.destino_enrutamiento, ColumnOperators.in_, _valores(destino)),
@@ -659,6 +659,8 @@ async def get_paginated_documents(
         (ClinicalDocument.created_at, operator.le, fecha_hasta),
     )
     conditions = [compare(column, value) for column, compare, value in filters if value is not None]
+    if alcance is not None:
+        conditions.append(alcance)
     # Los eliminados solo aparecen si se piden explícitamente (filtro "Eliminados" del ADMIN).
     if ESTADO_ELIMINADO not in (_valores(estado) or []):
         conditions.append(ClinicalDocument.estado != ESTADO_ELIMINADO)

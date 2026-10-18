@@ -131,7 +131,7 @@ La API usa **JWT** con *refresh token* rotativo:
 |---|---|
 | `ADMIN` | Todo |
 | `AUDITOR_CLINICO` | Documentos (todos), auditoría y corrección |
-| `OPERADOR` | Ingesta y documentos **que subió**; sin auditoría ni corrección |
+| `OPERADOR` | Ingesta, documentos **que subió**, los derivados a **sus colas asignadas** y los de **Ficha Clínica**; sin auditoría ni corrección |
 | `GESTOR_USUARIOS` | Usuarios y áreas; sin documentos |
 
 Cualquier usuario autenticado puede **consultar** los catálogos. Sin token válido → `401`; sin el rol requerido → `403`. Usuarios de desarrollo: ver el [README principal](../README.md#usuarios-de-prueba).
@@ -178,7 +178,7 @@ Solo un ADMIN puede otorgar el rol ADMIN. Las respuestas de usuario incluyen `ar
 |---|---|---|---|
 | POST | `/documents/ingest` | Recibe el documento procesado por n8n (`201`) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents` | Bandeja paginada con filtros (`estado` y `destino` admiten varios valores separados por coma; `atendido=true` o `false`). Excluye los eliminados salvo `estado=ELIMINADO`, que solo puede pedir un `ADMIN` | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
-| GET | `/documents/stats` | Resumen del inicio: conteos del período (máx. 92 días) por prioridad, estado, día y cola, más las listas de trabajo del rol. Un `OPERADOR` solo cuenta los suyos | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
+| GET | `/documents/stats` | Resumen del inicio: conteos del período (máx. 92 días) por prioridad, estado, día y cola, más las listas de trabajo del rol. Un `OPERADOR` cuenta los que subió y los de sus colas asignadas; `recientes` son solo sus cargas | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents/triage` | Consola de Triaje: casos activos (procesados o auditados, sin atender) de las colas asistenciales. El `ADMIN` ve todas; `OPERADOR` y `AUDITOR_CLINICO`, solo sus colas asignadas | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | GET | `/documents/{documento_id}` | Detalle completo: archivos con URL pre-firmada, detalle clínico, duplicados e historial | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 | PUT | `/documents/{documento_id}` | Corrige un documento `PROCESADO` o `AUDITADO` (ver [Corrección](#corrección-de-documentos-ya-procesados)) | `ADMIN`, `AUDITOR_CLINICO` |
@@ -189,7 +189,7 @@ Solo un ADMIN puede otorgar el rol ADMIN. Las respuestas de usuario incluyen `ar
 | POST | `/documents/{documento_id}/restore` | Restaura un documento eliminado al estado que tenía, con `motivo` (origen `RESTAURACION`). `409` si no está eliminado | `ADMIN` |
 | POST | `/documents/duplicates/check` | ¿Alguno de estos archivos ya fue subido? (por huella SHA-256) | `ADMIN`, `AUDITOR_CLINICO`, `OPERADOR` |
 
-Un `OPERADOR` solo ve los documentos que subió: los ajenos responden `404` (no `403`, para no revelar qué existe).
+Un `OPERADOR` solo ve (en bandeja, detalle e inicio) los documentos que subió, los derivados a sus colas asistenciales asignadas y los de Ficha Clínica, la cola de sistema que ven todos y no se asigna (`app/features/documents/visibility.py`): los demás responden `404` (no `403`, para no revelar qué existe).
 
 ### Auditoría
 

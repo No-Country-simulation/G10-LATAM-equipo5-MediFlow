@@ -230,7 +230,7 @@ Para un cliente gráfico (DBeaver, pgAdmin): `localhost:5432` con el usuario, co
 |---|---|---|
 | `ADMIN` | Inicio · Triaje · Expedientes · Auditoría · Usuarios · Catálogos | Todo |
 | `AUDITOR_CLINICO` | Inicio · Triaje · Expedientes · Auditoría | Subir documentos, ver todos, auditar y **corregir** documentos procesados o auditados |
-| `OPERADOR` | Inicio · Triaje · Mis Documentos | Subir documentos y ver **solo los que subió** |
+| `OPERADOR` | Inicio · Triaje · Documentos | Subir documentos y ver **solo los que subió, los derivados a sus colas asignadas y los de Ficha Clínica** |
 | `GESTOR_USUARIOS` | Usuarios · Catálogos (solo Áreas) | Gestionar usuarios y áreas; sin acceso a documentos |
 
 Todos pueden editar su propio perfil, cambiar su contraseña y **consultar** los catálogos.
