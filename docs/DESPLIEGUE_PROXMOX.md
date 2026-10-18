@@ -172,6 +172,9 @@ Tras cada push a `main` con los tests en verde:
 ## 8. Operación
 
 - **Logs**: `cd /opt/mediflow && sudo -u gha-runner docker compose -p mediflow -f docker-compose.prod.yml logs -f backend n8n`
+- **Base de datos (DBeaver u otro cliente)**: Postgres escucha solo en `127.0.0.1:5432` de la VM. Conexión
+  PostgreSQL a `localhost:5432`, base `mediflow_db`, usuario `mediflow_admin`, con *SSH tunnel* a `<IP_VM>:22`.
+  La contraseña es el secret `POSTGRES_PASSWORD` (`sudo grep POSTGRES_PASSWORD /opt/mediflow/.env`).
 - **Rollback**: *Actions →* el run del commit bueno *→ Re-run all jobs*, o `git revert` + push.
 - **Respaldo**: backup de la VM en Proxmox (*Datacenter → Backup*) y, si los datos importan,
   `docker compose ... exec -T postgres pg_dump -U mediflow_admin mediflow_db | gzip > backup_$(date +%F).sql.gz`.

@@ -1,7 +1,8 @@
 # Despliegue completo en una VM (OCI: docs/DESPLIEGUE_OCI.md; Proxmox + CI/CD: docs/DESPLIEGUE_PROXMOX.md):
 #   cp .env.prod.example .env   # y completar
 #   docker compose -f docker-compose.prod.yml up -d --build
-# Solo `web` (Caddy) publica puertos (80/443). Postgres, backend y n8n quedan en la red interna.
+# Solo `web` (Caddy) publica puertos (80/443). Postgres y n8n se publican únicamente en 127.0.0.1 de la VM
+# (acceso por túnel SSH); el backend queda solo en la red interna.
 
 # Logs de los contenedores (`docker compose logs`) con rotación: sin límite, el disco de la VM
 # se llena con el tiempo. Se ven con `docker compose -f docker-compose.prod.yml logs -f backend`.
@@ -25,6 +26,9 @@ services:
       # Sin seed_dev_users.sql: en producción no hay usuarios con contraseñas conocidas.
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - ./docker/postgres/init_catalogo.sql:/docker-entrypoint-initdb.d/init_catalogo.sql:ro
+    ports:
+      # Solo por túnel SSH (ej. DBeaver con SSH tunnel a la VM); no queda expuesto a la red.
+      - "127.0.0.1:5432:5432"
     networks: [internal]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
