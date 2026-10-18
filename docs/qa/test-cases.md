@@ -54,12 +54,12 @@ Plan: [test-plan.md](test-plan.md) · Datos: [test-data.md](test-data.md)
 | ID | Caso | Precondiciones | Pasos | Resultado esperado | Estado | Automático |
 |---|---|---|---|---|---|---|
 | `TC-TRI-001` | Triaje con alta confianza | n8n y API listos | Subir un PDF legible de una receta vía `POST /webhook/triaje-medico` con Bearer JWT | `PROCESADO`, JSON en `procesados/<prioridad>/<id>.json`. *(En entorno dev sin credenciales OCI, el backend valida la extracción de Gemini y ataja el error de almacenamiento devolviendo `{"etapa":"INGESTA_BACKEND","detalle":"No fue posible almacenar los archivos..."}`)* | 🟢 **PASADO** | `test_ingest_service.py` |
-| `TC-TRI-002` | Límite inferior (score 0.84) | API lista | Enviar a `/documents/ingest` un payload cuyo score calculado sea 0.84 (ver [datos](test-data.md#payloads-para-el-umbral)) | `PENDIENTE_AUDITORIA` con el motivo del score | 🟡 **PENDIENTE** | `test_ingest_service.py` |
-| `TC-TRI-003` | Límite superior (score 0.85) | API lista | Igual, con score calculado 0.85 | `PROCESADO` | 🟡 **PENDIENTE** | `test_ingest_service.py` |
-| `TC-TRI-004` | Valor crítico de laboratorio | Laboratorio con un parámetro marcado `critico` | Ingerir el documento | Prioridad elevada a `Urgente` | 🟡 **PENDIENTE** | `test_ingest_service.py` |
+| `TC-TRI-002` | Límite inferior (score 0.84) | API lista | Enviar a `/documents/ingest` un payload cuyo score calculado sea 0.84 (ver [datos](test-data.md#payloads-para-el-umbral)) | `PENDIENTE_AUDITORIA` con el motivo del score | 🟢 **PASADO** | `test_ingest_service.py` |
+| `TC-TRI-003` | Límite superior (score 0.85) | API lista | Igual, con score calculated 0.85 | `PROCESADO` | 🟢 **PASADO** | `test_ingest_service.py` |
+| `TC-TRI-004` | Valor crítico de laboratorio | Laboratorio con un parámetro marcado `critico` | Ingerir el documento | Prioridad elevada a `Urgente` | 🟢 **PASADO** | `test_ingest_service.py` |
 | `TC-TRI-005` | Archivo no soportado | Front activo | Elegir un `.exe` o un archivo de más de 10 MB | El front lo rechaza antes de enviarlo; por API, `422` o `400` | 🟡 **PENDIENTE** | `test_documents_api.py` |
-| `TC-TRI-006` | Identificación con dígito verificador inválido | API lista | Ingerir con RUT `12.345.678-9` | Queda en auditoría con el motivo `Identificación RUT con formato o dígito verificador inválido` | 🟡 **PENDIENTE** | `test_ingest_service.py` |
-| `TC-TRI-007` | Identificación de otro país | API lista | Ingerir con DNI, CPF o CURP válidos | Se normaliza sin descontar score | 🟡 **PENDIENTE** | `test_normalization.py` |
+| `TC-TRI-006` | Identificación con dígito verificador inválido | API lista | Ingerir con RUT `12.345.678-9` | Queda en auditoría con el motivo `Identificación RUT con formato o dígito verificador inválido` | 🟢 **PASADO** | `test_ingest_service.py` |
+| `TC-TRI-007` | Identificación de otro país | API lista | Ingerir con DNI, CPF o CURP válidos | Se normaliza sin descontar score | 🟢 **PASADO** | `test_normalization.py` |
 
 ## Módulo 5: Duplicados (DUP)
 
