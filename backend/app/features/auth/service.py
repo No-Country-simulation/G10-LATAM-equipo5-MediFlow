@@ -19,6 +19,7 @@ from app.features.catalogs.service import get_active_area_or_none
 from app.features.documents.models import ClinicalDocument
 from app.features.auth.schemas import (
     PasswordChangeRequest,
+    PasswordResetRequest,
     ProfileUpdateRequest,
     UserAdminUpdateRequest,
     UserCreateRequest,
@@ -211,6 +212,36 @@ async def _count_user_activity(db: AsyncSession, user_id: UUID) -> int:
     return documents.scalar_one() + catalog_changes.scalar_one()
 
 
+def _ensure_can_manage_admin(requesting_user: User, target: User, action: str) -> None:
+    """Lanza HTTPException 403 si un usuario no-ADMIN intenta `action` sobre un ADMIN."""
+    if target.role == UserRole.ADMIN and requesting_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Solo un usuario con rol ADMIN puede {action} a otro ADMIN",
+        )
+
+
+async def reset_password(
+    user_id: UUID, payload: PasswordResetRequest, db: AsyncSession, requesting_user: User
+) -> None:
+    """Asigna una nueva contraseña a otro usuario sin exigir la actual.
+
+    La propia se cambia con `change_password` (que valida la actual) y solo un ADMIN puede
+    restablecer la de otro ADMIN.
+    """
+    user = await _get_user_or_404(db, user_id)
+    if user.id == requesting_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tu propia contraseña se cambia desde Mi Perfil, indicando la actual",
+        )
+    _ensure_can_manage_admin(requesting_user, user, "restablecer la contraseña de")
+
+    user.hashed_password = get_password_hash(payload.new_password)
+    await db.commit()
+    logger.info("Contraseña de %s restablecida por %s", user.username, requesting_user.username)
+
+
 async def delete_user(
     user_id: UUID, db: AsyncSession, requesting_user: User
 ) -> tuple[DeletionType, str]:
@@ -223,11 +254,7 @@ async def delete_user(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="No puedes eliminar tu propia cuenta"
         )
-    if user.role == UserRole.ADMIN and requesting_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo un usuario con rol ADMIN puede eliminar a otro ADMIN",
-        )
+    _ensure_can_manage_admin(requesting_user, user, "eliminar")
 
     activity = await _count_user_activity(db, user.id)
     if activity == 0:

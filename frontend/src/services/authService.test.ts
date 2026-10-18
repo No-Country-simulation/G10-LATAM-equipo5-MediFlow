@@ -37,4 +37,13 @@ describe('authService', () => {
     );
     expect(FASTAPI_ENDPOINTS.users.changePassword).toBe('/users/me/change-password');
   });
+
+  it('calls POST /users/{id}/reset-password with only the new password', async () => {
+    const mockPost = vi.mocked(api.post);
+    mockPost.mockResolvedValueOnce(undefined);
+
+    await authService.resetPassword('user-123', { new_password: 'Reestablecida123' });
+
+    expect(mockPost).toHaveBeenCalledWith('/users/user-123/reset-password', { new_password: 'Reestablecida123' });
+  });
 });

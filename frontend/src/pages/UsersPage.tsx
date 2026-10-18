@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Users, RefreshCw, UserPlus } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUsersManagement } from '../hooks/useUsersManagement';
@@ -8,7 +8,6 @@ import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import { PageHeader } from '../components/common/PageHeader';
 import { StatusBanner } from '../components/common/StatusBanner';
 import { BUTTON_CREATE, BUTTON_SECONDARY } from '../components/common/formStyles';
-import { authService } from '../services/authService';
 import type { UserResponse } from '../types/auth';
 
 /** `null`: cerrado; `'new'`: alta; un usuario: edición. */
@@ -28,9 +27,13 @@ const UsersPage = () => {
     toggleUserStatus,
     createNewUser,
     updateExistingUser,
+    resetUserPassword,
     deleteUser,
     dismissMessages,
   } = useUsersManagement();
+
+  // La cuenta propia se gestiona desde Mi Perfil (/perfil), no desde el directorio.
+  const otherUsers = useMemo(() => users.filter((u) => u.id !== currentUser?.id), [users, currentUser?.id]);
 
   const handleConfirmDelete = async () => {
     if (!userToDelete) return;
@@ -63,9 +66,8 @@ const UsersPage = () => {
       <StatusBanner tone="success" message={successMessage} onDismiss={dismissMessages} />
 
       <UsersTable
-        users={users}
+        users={otherUsers}
         isLoading={isLoading}
-        currentUserId={currentUser?.id}
         currentUserRole={currentUser?.role}
         updatingUserId={updatingUserId}
         onToggleStatus={(u) => void toggleUserStatus(u)}
@@ -78,11 +80,10 @@ const UsersPage = () => {
           key={formTarget === 'new' ? 'new' : formTarget.id}
           user={formTarget === 'new' ? undefined : formTarget}
           currentUserRole={currentUser?.role}
-          currentUserId={currentUser?.id}
           onClose={() => setFormTarget(null)}
           onCreate={createNewUser}
           onUpdate={updateExistingUser}
-          onChangePassword={authService.changePassword}
+          onResetPassword={resetUserPassword}
         />
       )}
 

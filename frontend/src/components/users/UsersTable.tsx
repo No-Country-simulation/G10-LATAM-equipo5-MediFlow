@@ -6,7 +6,6 @@ import { UserTableRow } from './UserTableRow';
 interface UsersTableProps {
   users: UserResponse[];
   isLoading: boolean;
-  currentUserId?: string;
   currentUserRole?: UserRole;
   updatingUserId: string | null;
   onToggleStatus: (u: UserResponse) => void;
@@ -27,7 +26,6 @@ const MessageRow = ({ children }: { children: ReactNode }) => (
 export const UsersTable = ({
   users,
   isLoading,
-  currentUserId,
   currentUserRole,
   updatingUserId,
   onToggleStatus,
@@ -50,7 +48,6 @@ export const UsersTable = ({
       <UserTableRow
         key={u.id}
         user={u}
-        isSelf={u.id === currentUserId}
         canDelete={u.role !== 'ADMIN' || currentUserRole === 'ADMIN'}
         isUpdating={updatingUserId === u.id}
         onToggleStatus={onToggleStatus}

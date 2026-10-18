@@ -84,3 +84,8 @@ export interface PasswordChangeRequest {
   new_password: string;
 }
 
+/** Contraseña que un ADMIN o GESTOR_USUARIOS asigna a otro usuario (sin la actual). */
+export interface PasswordResetRequest {
+  new_password: string;
+}
+

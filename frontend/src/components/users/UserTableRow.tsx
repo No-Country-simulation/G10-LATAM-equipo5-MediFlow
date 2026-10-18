@@ -32,7 +32,6 @@ const ROLE_BADGES: Record<UserRole, { bg: string; text: string; border: string; 
 
 interface UserTableRowProps {
   user: UserResponse;
-  isSelf: boolean;
   /** Solo un ADMIN puede eliminar a otro ADMIN (el backend también lo valida). */
   canDelete: boolean;
   isUpdating: boolean;
@@ -41,12 +40,7 @@ interface UserTableRowProps {
   onDelete: (u: UserResponse) => void;
 }
 
-const deleteTitle = (isSelf: boolean, canDelete: boolean): string => {
-  if (isSelf) return 'No puedes eliminar tu propia cuenta';
-  return canDelete ? 'Eliminar usuario' : 'Solo un ADMIN puede eliminar a otro ADMIN';
-};
-
-export const UserTableRow = ({ user, isSelf, canDelete, isUpdating, onToggleStatus, onEdit, onDelete }: UserTableRowProps) => {
+export const UserTableRow = ({ user, canDelete, isUpdating, onToggleStatus, onEdit, onDelete }: UserTableRowProps) => {
   const roleCfg = ROLE_BADGES[user.role];
   const Icon = roleCfg.icon;
 
@@ -58,11 +52,6 @@ export const UserTableRow = ({ user, isSelf, canDelete, isUpdating, onToggleStat
             {user.username.charAt(0).toUpperCase()}
           </span>
           <span>{user.username}</span>
-          {isSelf && (
-            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-              Tú
-            </span>
-          )}
         </div>
       </td>
       <td className="px-5 py-3.5 font-medium">{user.full_name}</td>
@@ -94,8 +83,6 @@ export const UserTableRow = ({ user, isSelf, canDelete, isUpdating, onToggleStat
         <ActiveToggle
           isActive={user.is_active}
           isUpdating={isUpdating}
-          disabled={isSelf}
-          disabledReason="No puedes desactivar tu propia cuenta"
           onToggle={() => onToggleStatus(user)}
         />
       </td>
@@ -120,8 +107,8 @@ export const UserTableRow = ({ user, isSelf, canDelete, isUpdating, onToggleStat
           <button
             type="button"
             onClick={() => onDelete(user)}
-            disabled={isSelf || !canDelete}
-            title={deleteTitle(isSelf, canDelete)}
+            disabled={!canDelete}
+            title={canDelete ? 'Eliminar usuario' : 'Solo un ADMIN puede eliminar a otro ADMIN'}
             aria-label={`Eliminar ${user.username}`}
             className={`${ICON_BUTTON} hover:text-rose-300 hover:bg-rose-500/10 hover:border-rose-500/30`}
           >

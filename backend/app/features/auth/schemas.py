@@ -69,6 +69,12 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=72)
 
 
+class PasswordResetRequest(BaseModel):
+    """Nueva contraseña que un administrador o gestor asigna a otro usuario (sin la actual)."""
+
+    new_password: str = Field(min_length=8, max_length=72)
+
+
 class UserCreateRequest(BaseModel):
     """Datos para crear un nuevo usuario (uso administrativo)."""
 

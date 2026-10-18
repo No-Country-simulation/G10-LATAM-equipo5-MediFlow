@@ -398,3 +398,60 @@ async def test_admin_reemplaza_las_colas_de_un_usuario(client, login_as, db):
     db.queue(user)
     r = await client.patch(f"/api/v1/users/{user.id}", json={"cola_ids": []}, headers=login_as(UserRole.ADMIN))
     assert r.json()["colas"] == []
+
+
+# --- Restablecer contraseña de otro usuario ---
+
+
+async def test_gestor_restablece_la_contrasena_de_otro_usuario(client, login_as, db):
+    from app.core.security import verify_password
+
+    target = make_user(UserRole.OPERADOR, username="op")
+    db.queue(target)
+    headers = login_as(UserRole.GESTOR_USUARIOS)
+    r = await client.post(
+        f"/api/v1/users/{target.id}/reset-password", json={"new_password": "NuevaClave123"}, headers=headers
+    )
+
+    assert r.status_code == 204
+    assert verify_password("NuevaClave123", target.hashed_password)
+
+
+async def test_reset_password_exige_largo_minimo(client, login_as):
+    headers = login_as(UserRole.ADMIN)
+    r = await client.post(f"/api/v1/users/{uuid4()}/reset-password", json={"new_password": "corta"}, headers=headers)
+    assert r.status_code == 422
+
+
+async def test_no_se_restablece_la_propia_contrasena(client, login_as, db):
+    headers = login_as(UserRole.ADMIN)
+    me = await auth_dependencies.get_user_by_username(None, "tester")
+    original_hash = me.hashed_password
+    db.queue(me)
+    r = await client.post(
+        f"/api/v1/users/{me.id}/reset-password", json={"new_password": "NuevaClave123"}, headers=headers
+    )
+
+    assert r.status_code == 409
+    assert me.hashed_password == original_hash
+
+
+async def test_gestor_no_restablece_la_contrasena_de_un_admin(client, login_as, db):
+    admin = make_user(UserRole.ADMIN, username="root")
+    original_hash = admin.hashed_password
+    db.queue(admin)
+    headers = login_as(UserRole.GESTOR_USUARIOS)
+    r = await client.post(
+        f"/api/v1/users/{admin.id}/reset-password", json={"new_password": "NuevaClave123"}, headers=headers
+    )
+
+    assert r.status_code == 403
+    assert admin.hashed_password == original_hash
+
+
+async def test_reset_password_es_restringido_por_rol(client, login_as):
+    headers = login_as(UserRole.OPERADOR)
+    r = await client.post(
+        f"/api/v1/users/{uuid4()}/reset-password", json={"new_password": "NuevaClave123"}, headers=headers
+    )
+    assert r.status_code == 403
