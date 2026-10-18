@@ -4,7 +4,7 @@
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     "module": "esnext",
-    "types": ["vite/client"],
+    "types": ["vite/client", "@testing-library/jest-dom", "@testing-library/jest-dom/vitest"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
@@ -25,7 +25,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
-  // Los tests corren con vitest (vitest.config.ts) y no forman parte del build de producción.
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test"]
+  "include": ["src"]
 }
