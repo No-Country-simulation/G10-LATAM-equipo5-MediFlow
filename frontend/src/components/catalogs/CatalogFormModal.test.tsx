@@ -204,12 +204,24 @@ describe('CatalogFormModal system queues', () => {
     expect(screen.getByRole('checkbox', { name: /aparece en la consola de triaje/i })).toBeChecked();
   });
 
+  it('does not offer "Notificar de inmediato" nor send it (no alert is delivered anywhere)', async () => {
+    const handleUpdate = vi.fn().mockResolvedValue(true);
+    renderQueueForm(buildQueue({ notificar_inmediato: true }), handleUpdate);
+
+    expect(screen.queryByRole('checkbox', { name: /notificar de inmediato/i })).not.toBeInTheDocument();
+    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    // Sin el campo en el payload, el backend conserva el valor que la cola ya tenía.
+    await waitFor(() => expect(handleUpdate).toHaveBeenCalled());
+    expect(handleUpdate.mock.calls[0][1]).not.toHaveProperty('notificar_inmediato');
+  });
+
   it('hides the Triage option for a system queue (Ficha Clínica) and does not send it', async () => {
     const handleUpdate = vi.fn().mockResolvedValue(true);
     renderQueueForm(buildQueue({ codigo: 'Ficha_Clinica', es_sistema: true, es_asistencial: false }), handleUpdate);
 
     expect(screen.queryByRole('checkbox', { name: /aparece en la consola de triaje/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: /notificar de inmediato/i })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /descripción semántica/i })).toBeInTheDocument();
 
     fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
 

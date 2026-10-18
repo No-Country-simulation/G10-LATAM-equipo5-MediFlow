@@ -147,12 +147,6 @@ export const CATALOGS: CatalogDefinition[] = [
         hint: 'El LLM la lee para decidir cuándo enrutar a esta cola.',
       },
       {
-        name: 'notificar_inmediato',
-        label: 'Notificar de inmediato',
-        kind: 'checkbox',
-        hint: 'Genera una alerta al enrutar un documento a esta cola.',
-      },
-      {
         name: 'es_asistencial',
         label: 'Aparece en la Consola de Triaje',
         kind: 'checkbox',
@@ -161,13 +155,7 @@ export const CATALOGS: CatalogDefinition[] = [
         hiddenForSystem: true,
       },
     ],
-    badges: (record) => {
-      const queue = record as QueueRecord;
-      return [
-        ...(queue.notificar_inmediato ? [{ label: 'Notifica', tone: 'amber' as const }] : []),
-        ...(queue.es_asistencial ? [{ label: 'Triaje', tone: 'emerald' as const }] : []),
-      ];
-    },
+    badges: (record) => ((record as QueueRecord).es_asistencial ? [{ label: 'Triaje', tone: 'emerald' }] : []),
   },
 ];
 
