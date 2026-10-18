@@ -280,6 +280,21 @@ async def delete_user(
     return result
 
 
+def _ensure_not_self_privilege_change(user: User, updates: dict) -> None:
+    """Lanza HTTPException 409 si un usuario intenta cambiar su propio estado, rol o colas.
+
+    Evita que alguien se desactive o se quite el rol (y deje el sistema sin ADMIN). El nombre y
+    el email propios se editan en `PATCH /users/me`. Reenviar el mismo valor no cuenta como cambio.
+    """
+    current = {"is_active": user.is_active, "role": user.role, "cola_ids": {q.id for q in user.colas}}
+    requested = {**updates, "cola_ids": set(updates["cola_ids"])} if "cola_ids" in updates else updates
+    if any(field in requested and requested[field] != value for field, value in current.items()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No puedes cambiar el estado, el rol ni las colas de tu propia cuenta",
+        )
+
+
 async def admin_update_user(
     user_id: UUID, payload: UserAdminUpdateRequest, db: AsyncSession, requesting_user: User
 ) -> User:
@@ -287,6 +302,8 @@ async def admin_update_user(
     user = await _get_user_or_404(db, user_id)
     updates = payload.model_dump(exclude_unset=True, exclude_none=True)
 
+    if user.id == requesting_user.id:
+        _ensure_not_self_privilege_change(user, updates)
     if "role" in updates:
         _ensure_can_grant_role(requesting_user, updates["role"])
 

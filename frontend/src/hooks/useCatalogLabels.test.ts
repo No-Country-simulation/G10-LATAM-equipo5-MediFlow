@@ -3,6 +3,13 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { invalidateCatalogLabels, useCatalogLabels } from './useCatalogLabels';
 import { catalogService } from '../services/catalogService';
 
+const { mockWarn } = vi.hoisted(() => ({ mockWarn: vi.fn() }));
+
+vi.mock('../utils/logger', () => ({
+  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: mockWarn, error: vi.fn() }),
+  describeError: (err: unknown) => String(err),
+}));
+
 vi.mock('../services/catalogService', () => ({
   catalogService: { getLabels: vi.fn() },
 }));
@@ -55,11 +62,13 @@ describe('useCatalogLabels', () => {
     expect(catalogService.getLabels).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps showing codes when the catalog cannot be loaded', async () => {
+  it('keeps showing codes when the catalog cannot be loaded, and logs the failure once', async () => {
     vi.mocked(catalogService.getLabels).mockRejectedValueOnce(new Error('Sin conexión'));
     const { result } = renderHook(() => useCatalogLabels());
+    renderHook(() => useCatalogLabels());
 
-    await waitFor(() => expect(catalogService.getLabels).toHaveBeenCalled());
+    await waitFor(() => expect(mockWarn).toHaveBeenCalledTimes(1));
+    expect(catalogService.getLabels).toHaveBeenCalledTimes(1);
     expect(result.current.documentTypeName('ATENCION_URGENCIA')).toBe('ATENCION_URGENCIA');
   });
 });

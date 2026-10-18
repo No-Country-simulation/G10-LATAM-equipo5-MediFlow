@@ -455,3 +455,55 @@ async def test_reset_password_es_restringido_por_rol(client, login_as):
         f"/api/v1/users/{uuid4()}/reset-password", json={"new_password": "NuevaClave123"}, headers=headers
     )
     assert r.status_code == 403
+
+
+# --- Cambios sobre la propia cuenta por el endpoint administrativo ---
+
+
+async def _me_after_login(login_as, db, role=UserRole.ADMIN, **kwargs):
+    headers = login_as(role, **kwargs)
+    me = await auth_dependencies.get_user_by_username(None, "tester")
+    db.queue(me)
+    return me, headers
+
+
+async def test_admin_no_puede_desactivarse_a_si_mismo(client, login_as, db):
+    me, headers = await _me_after_login(login_as, db)
+    r = await client.patch(f"/api/v1/users/{me.id}", json={"is_active": False}, headers=headers)
+
+    assert r.status_code == 409
+    assert me.is_active is True
+    assert db.commits == 0
+
+
+async def test_admin_no_puede_quitarse_el_rol(client, login_as, db):
+    me, headers = await _me_after_login(login_as, db)
+    r = await client.patch(f"/api/v1/users/{me.id}", json={"role": "OPERADOR"}, headers=headers)
+
+    assert r.status_code == 409
+    assert me.role == UserRole.ADMIN
+
+
+async def test_gestor_no_puede_cambiar_sus_propias_colas(client, login_as, db):
+    me, headers = await _me_after_login(login_as, db, role=UserRole.GESTOR_USUARIOS)
+    r = await client.patch(f"/api/v1/users/{me.id}", json={"cola_ids": [str(uuid4())]}, headers=headers)
+    assert r.status_code == 409
+
+
+async def test_reenviar_los_mismos_valores_propios_no_es_un_cambio(client, login_as, db):
+    # Un formulario que reenvía todo (mismo estado, rol y colas) junto con el nombre no falla.
+    me, headers = await _me_after_login(login_as, db)
+    body = {"full_name": "Nuevo Nombre", "is_active": True, "role": "ADMIN", "cola_ids": []}
+    r = await client.patch(f"/api/v1/users/{me.id}", json=body, headers=headers)
+
+    assert r.status_code == 200
+    assert me.full_name == "Nuevo Nombre"
+
+
+async def test_admin_si_puede_desactivar_a_otro_usuario(client, login_as, db):
+    target = make_user(UserRole.OPERADOR, username="op")
+    db.queue(target)
+    r = await client.patch(f"/api/v1/users/{target.id}", json={"is_active": False}, headers=login_as(UserRole.ADMIN))
+
+    assert r.status_code == 200
+    assert target.is_active is False

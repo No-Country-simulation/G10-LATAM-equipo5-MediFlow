@@ -49,6 +49,7 @@ async def get_catalog_labels(
     para que el front muestre nombres en lugar de códigos. Requiere autenticación."""
     return await service.get_catalog_labels(db)
 
+
 # --- Colas de enrutamiento ---------------------------------------------------
 
 
