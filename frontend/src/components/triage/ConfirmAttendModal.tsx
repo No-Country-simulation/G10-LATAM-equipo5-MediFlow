@@ -6,6 +6,7 @@ import { ModalShell } from '../common/ModalShell';
 import { StatusBanner } from '../common/StatusBanner';
 import { BUTTON_GHOST } from '../common/formStyles';
 import { formatIdentificacion } from '../../utils/identificacion';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 
 export type TriageCase = DocumentListItemResponse;
 
@@ -23,6 +24,7 @@ const BUTTON_EMERALD =
 export const ConfirmAttendModal = ({ isOpen, caseItem, onConfirm, onClose, loading = false }: ConfirmAttendModalProps) => {
   const [internalSubmitting, setInternalSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { documentTypeName } = useCatalogLabels();
 
   if (!isOpen || !caseItem) return null;
 
@@ -31,7 +33,7 @@ export const ConfirmAttendModal = ({ isOpen, caseItem, onConfirm, onClose, loadi
   const docCode = caseItem.documento_id.startsWith('DOC-')
     ? caseItem.documento_id
     : `DOC-CLIN-${caseItem.documento_id.slice(0, 8).toUpperCase()}`;
-  const clinicalDiagnosis = caseItem.diagnostico_principal || caseItem.tipo_documento || 'Sin diagnóstico especificado';
+  const clinicalDiagnosis = caseItem.diagnostico_principal || documentTypeName(caseItem.tipo_documento) || 'Sin diagnóstico especificado';
 
   const handleConfirm = async () => {
     try {

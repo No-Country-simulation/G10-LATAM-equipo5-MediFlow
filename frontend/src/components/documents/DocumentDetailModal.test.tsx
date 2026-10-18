@@ -43,6 +43,15 @@ vi.mock('../../hooks/useCatalogs', () => ({
   }),
 }));
 
+vi.mock('../../services/catalogService', () => ({
+  catalogService: {
+    getLabels: vi.fn().mockResolvedValue({
+      colas: [{ codigo: 'Farmacia_Hospitalaria', nombre: 'Farmacia Hospitalaria', is_active: true }],
+      tipos_documento: [],
+    }),
+  },
+}));
+
 vi.mock('../../hooks/useDocumentForms', () => ({
   useDocumentForms: () => ({
     forms: {
@@ -174,6 +183,15 @@ describe('DocumentDetailModal patient safety and RBAC', () => {
 
       expect(screen.queryByRole('button', { name: /corregir/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /eliminar/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Routing destination', () => {
+    it('shows the routing queue name from the catalog API instead of its code', async () => {
+      render(<DocumentDetailModal documentoId="DOC-99881122" onClose={vi.fn()} />);
+
+      expect(await screen.findByText('Farmacia Hospitalaria')).toBeInTheDocument();
+      expect(screen.queryByText('Farmacia_Hospitalaria')).not.toBeInTheDocument();
     });
   });
 

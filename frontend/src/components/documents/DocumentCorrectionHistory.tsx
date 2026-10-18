@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowRight, ClipboardCheck, PencilLine, RotateCcw, Shuffle, Trash2 } from 'lucide-react';
 import type { CorreccionHistorial } from '../../types/medical';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 import { textoDeValor } from '../../utils/etiquetas';
 
 /** Cambios que se muestran de entrada en cada entrada; el resto, con "Ver todos". */
@@ -27,6 +28,13 @@ const EntradaHistorial = ({ entrada }: { entrada: CorreccionHistorial }) => {
   const Icono = origen.icono;
   const cambios = verTodos ? entrada.cambios : entrada.cambios.slice(0, CAMBIOS_VISIBLES);
   const ocultos = entrada.cambios.length - cambios.length;
+  const { queueName, documentTypeName } = useCatalogLabels();
+  // La clasificación guarda códigos de catálogo: se muestran con su nombre.
+  const valorLegible = (campo: string, valor: unknown): string => {
+    if (typeof valor === 'string' && campo === 'tipo_documento') return documentTypeName(valor) ?? '';
+    if (typeof valor === 'string' && campo === 'destino_enrutamiento') return queueName(valor) ?? '';
+    return textoDeValor(valor);
+  };
 
   return (
     <li className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs space-y-2 break-words">
@@ -47,9 +55,9 @@ const EntradaHistorial = ({ entrada }: { entrada: CorreccionHistorial }) => {
           {cambios.map((cambio) => (
             <li key={cambio.campo} className="text-[11px]">
               <span className="text-slate-400">{cambio.etiqueta}: </span>
-              <span className="text-slate-500 line-through decoration-slate-600">{textoDeValor(cambio.antes)}</span>
+              <span className="text-slate-500 line-through decoration-slate-600">{valorLegible(cambio.campo, cambio.antes)}</span>
               <ArrowRight className="inline w-3 h-3 mx-1 text-slate-600" aria-label="cambió a" />
-              <span className="text-slate-100">{textoDeValor(cambio.despues)}</span>
+              <span className="text-slate-100">{valorLegible(cambio.campo, cambio.despues)}</span>
             </li>
           ))}
         </ul>

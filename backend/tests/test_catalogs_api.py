@@ -464,3 +464,27 @@ async def test_queues_active_para_n8n_no_cambia_de_formato(client, login_as, db)
     db.queue([make_queue()])
     r = await client.get("/api/v1/catalogs/queues/active", headers=login_as(UserRole.ADMIN))
     assert set(r.json()[0]) == {"codigo", "nombre", "descripcion_semantica", "notificar_inmediato"}
+
+
+async def test_catalog_labels_requires_token(client):
+    assert (await client.get("/api/v1/catalogs/labels")).status_code == 401
+
+
+async def test_catalog_labels_include_inactive_records_for_any_role(client, login_as, db):
+    # Una consulta por catálogo: (codigo, nombre, is_active), sin descripciones ni esquemas.
+    db.queue(
+        [("Ficha_Clinica", "Ficha Clínica", True), ("Cola_Antigua", "Cola Antigua", False)],
+        [("ATENCION_URGENCIA", "Dato de Atención de Urgencia", True)],
+    )
+    r = await client.get("/api/v1/catalogs/labels", headers=login_as(UserRole.OPERADOR))
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "colas": [
+            {"codigo": "Ficha_Clinica", "nombre": "Ficha Clínica", "is_active": True},
+            {"codigo": "Cola_Antigua", "nombre": "Cola Antigua", "is_active": False},
+        ],
+        "tipos_documento": [
+            {"codigo": "ATENCION_URGENCIA", "nombre": "Dato de Atención de Urgencia", "is_active": True},
+        ],
+    }

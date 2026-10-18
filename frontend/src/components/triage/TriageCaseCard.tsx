@@ -3,6 +3,7 @@ import type { DocumentListItemResponse } from '../../types/medical';
 import PriorityBadge from '../common/PriorityBadge';
 import { formatIdentificacion } from '../../utils/identificacion';
 import { useDocumentDetailModal } from '../../context/documentDetailContext';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clickableCard';
 import { timeAgo } from '../../utils/timeAgo';
 
@@ -38,7 +39,8 @@ const TriageCaseCard = ({ doc, queueName, onAttend, onDerive, attending = false 
     ? doc.documento_id
     : `DOC-CLIN-${doc.documento_id.slice(0, 8).toUpperCase()}`;
 
-  const clinicalDiagnosis = doc.diagnostico_principal || doc.tipo_documento || 'Sin diagnóstico especificado';
+  const { documentTypeName } = useCatalogLabels();
+  const clinicalDiagnosis = doc.diagnostico_principal || documentTypeName(doc.tipo_documento) || 'Sin diagnóstico especificado';
   const { abrirDocumento } = useDocumentDetailModal();
 
   return (

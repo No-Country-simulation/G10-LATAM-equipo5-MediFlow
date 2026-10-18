@@ -206,6 +206,7 @@ Un `OPERADOR` solo ve (en bandeja, detalle e inicio) los documentos que subió, 
 |---|---|---|---|
 | GET | `/catalogs/document-types/forms` | Campos de cada tipo activo (bloque y JSON Schema), listas comunes y esquema de `datos_generales`. Lo usan n8n y el formulario de auditoría | Autenticado |
 | GET | `/catalogs/{document-types \| queues \| areas}/active` | Registros activos en formato compacto | Autenticado |
+| GET | `/catalogs/labels` | `codigo`, `nombre` e `is_active` de **todas** las colas y tipos de documento (también los inactivos, que pueden seguir en documentos antiguos). El front muestra con esto los nombres en vez de los códigos | Autenticado |
 | GET | `/catalogs/{...}` · `/catalogs/{...}/{id}` | Listar (filtro `?is_active=`) u obtener un registro | Autenticado |
 | GET | `/catalogs/{...}/{id}/history` | Historial de cambios (aunque el registro se haya eliminado) | `ADMIN` (áreas: también `GESTOR_USUARIOS`) |
 | POST · PUT · DELETE | `/catalogs/{...}` · `/catalogs/{...}/{id}` | Crear, modificar (solo los campos enviados) o eliminar (Smart Delete) | `ADMIN` (áreas: también `GESTOR_USUARIOS`) |

@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
 import type { DocumentDestinationFilter } from '../../types/documents';
-import { CANONICAL_QUEUES, DESTINATION_LABELS } from '../../types/documents';
 import { useCatalogs } from '../../hooks/useCatalogs';
 import DocumentsKanbanColumn from './DocumentsKanbanColumn';
 import {
@@ -23,20 +22,12 @@ const DocumentsKanbanBoard = ({
   documents,
   selectedDestination = 'ALL',
 }: DocumentsKanbanBoardProps) => {
-  const { queues } = useCatalogs();
+  // Columnas = colas activas del catálogo (API); los documentos de otras van a "Otras Derivaciones".
+  const { queues, loading: queuesLoading } = useCatalogs();
   const [currentPage, setCurrentPage] = useState(0);
 
-  const effectiveQueues = useMemo(() => {
-    if (queues.length > 0) return queues;
-    return CANONICAL_QUEUES.map((code) => ({
-      codigo: code,
-      nombre: DESTINATION_LABELS[code] ?? code,
-      descripcion_semantica: '',
-    }));
-  }, [queues]);
-
   const activeColumns = useMemo<ColumnConfig[]>(() => {
-    return effectiveQueues.map((q) => {
+    return queues.map((q) => {
       const visual = QUEUE_VISUALS[q.codigo] ?? DEFAULT_QUEUE_VISUAL;
       return {
         id: q.codigo,
@@ -47,9 +38,9 @@ const DocumentsKanbanBoard = ({
         code: q.codigo,
       };
     });
-  }, [effectiveQueues]);
+  }, [queues]);
 
-  const knownCodes = useMemo(() => new Set(effectiveQueues.map((q) => q.codigo)), [effectiveQueues]);
+  const knownCodes = useMemo(() => new Set(queues.map((q) => q.codigo)), [queues]);
 
   const groupedColumns = useMemo(() => {
     // El filtro por estado lo aplica la página (DocumentsPage); aquí solo se agrupa por cola.
@@ -76,6 +67,18 @@ const DocumentsKanbanBoard = ({
 
     return allGroups.filter((col) => col.docs.length > 0);
   }, [activeColumns, documents, knownCodes, selectedDestination]);
+
+  // Sin las colas aún, todo caería en "Otras Derivaciones" y luego saltaría de columna.
+  if (queuesLoading) {
+    return (
+      <div role="status" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 w-full">
+        <span className="sr-only">Cargando colas de enrutamiento...</span>
+        {Array.from({ length: PAGE_SIZE }, (_, i) => (
+          <div key={i} className="h-40 rounded-xl bg-slate-900/50 border border-slate-800 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
 
   if (groupedColumns.length === 0) {
     return (

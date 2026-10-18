@@ -22,6 +22,8 @@ from app.features.catalogs.models import Area, CatalogHistory, DocumentType, Rou
 from app.features.catalogs.schemas import (
     AreaCreate,
     AreaUpdate,
+    CatalogLabel,
+    CatalogLabelsResponse,
     DeletionType,
     DocumentFormsResponse,
     DocumentTypeForm,
@@ -256,6 +258,20 @@ async def _history(
 
 _QUEUE = "Cola"
 _QUEUE_USAGES = (_documents_by_codigo(ClinicalDocument.destino_enrutamiento),)
+
+
+async def _labels(db: AsyncSession, model: type[CatalogEntity]) -> list[CatalogLabel]:
+    """Solo código, nombre y estado: sin descripciones ni esquemas, que no hacen falta para mostrar."""
+    result = await db.execute(select(model.codigo, model.nombre, model.is_active).order_by(model.nombre))
+    return [CatalogLabel(codigo=codigo, nombre=nombre, is_active=activo) for codigo, nombre, activo in result.all()]
+
+
+async def get_catalog_labels(db: AsyncSession) -> CatalogLabelsResponse:
+    """Nombres de todas las colas y tipos de documento, para mostrarlos en lugar de su código."""
+    return CatalogLabelsResponse(
+        colas=await _labels(db, RoutingQueue),
+        tipos_documento=await _labels(db, DocumentType),
+    )
 
 
 async def get_active_queues_for_llm(db: AsyncSession) -> list[RoutingQueue]:

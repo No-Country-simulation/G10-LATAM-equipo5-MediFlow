@@ -3,6 +3,7 @@ import type { DocumentListItemResponse } from '../../types/medical';
 import PriorityBadge from '../common/PriorityBadge';
 import { formatIdentificacion } from '../../utils/identificacion';
 import { useDocumentDetailModal } from '../../context/documentDetailContext';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 
 interface AuditDocumentCardProps {
   doc: DocumentListItemResponse;
@@ -27,6 +28,7 @@ const AuditDocumentCard = ({ doc, onReview, isClaiming }: AuditDocumentCardProps
   const formattedDate = formatDate(doc.created_at);
   const diagnosis = doc.diagnostico_principal || 'Diagnóstico preliminar en evaluación clínica';
   const { abrirDocumento } = useDocumentDetailModal();
+  const { documentTypeName } = useCatalogLabels();
 
   return (
     <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition-all space-y-3.5">
@@ -40,7 +42,7 @@ const AuditDocumentCard = ({ doc, onReview, isClaiming }: AuditDocumentCardProps
               {doc.documento_id}
             </div>
             <div className="text-[11px] text-slate-400">
-              {doc.tipo_documento} • {formattedDate}
+              {documentTypeName(doc.tipo_documento)} • {formattedDate}
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { User, Stethoscope, ShieldCheck } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
-import { CATEGORY_LABELS } from '../../types/documents';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 import PriorityBadge from '../common/PriorityBadge';
 import DocumentStatusBadge from '../common/DocumentStatusBadge';
 import OciPath from './OciPath';
@@ -12,8 +12,6 @@ interface DocumentsKanbanCardProps {
   doc: DocumentListItemResponse;
 }
 
-const categoryLookup: Record<string, string> = CATEGORY_LABELS;
-
 function formatConfidence(score: number | null | undefined): string {
   if (typeof score !== 'number' || Number.isNaN(score)) return '—';
   return `${(score * 100).toFixed(0)}%`;
@@ -21,7 +19,8 @@ function formatConfidence(score: number | null | undefined): string {
 
 const DocumentsKanbanCard = ({ doc }: DocumentsKanbanCardProps) => {
   const confidencePercent = formatConfidence(doc.score_confianza);
-  const categoryLabel = categoryLookup[doc.tipo_documento] ?? doc.tipo_documento;
+  const { documentTypeName } = useCatalogLabels();
+  const categoryLabel = documentTypeName(doc.tipo_documento);
   const clinicalDiagnosis =
     doc.diagnostico_principal ||
     (doc.estado === 'DESCARTADO' ? 'Expediente descartado en auditoría' : null) ||
