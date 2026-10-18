@@ -17,25 +17,23 @@ Plan: [test-plan.md](test-plan.md) · Datos: [test-data.md](test-data.md)
 ---
 
 ## Módulo 1: Autenticación y Control de Acceso (AUTH)
-
 | ID | Caso | Precondiciones | Pasos | Resultado esperado | Estado | Automático |
 |---|---|---|---|---|---|---|
 | `TC-AUTH-001` | Login exitoso | Base iniciada | `POST /api/v1/auth/login` con `admin_user` / `admin123` | `200`, `access_token`, `refresh_token` y objeto de usuario con su área | 🟢 **PASADO** | `test_auth_api.py` |
 | `TC-AUTH-002` | Login con contraseña incorrecta | Backend activo | `POST /auth/login` con contraseña errónea | `401` con mensaje claro | 🟢 **PASADO** | `test_auth_api.py` |
 | `TC-AUTH-003` | Endpoint protegido sin token | Backend activo | `GET /catalogs/queues/active` sin Bearer | `401` | 🟢 **PASADO** | `test_auth_api.py` |
-| `TC-AUTH-004` | Logout y revocación | Token válido | 1. `POST /auth/logout` · 2. Reintentar con el mismo token | `204` en el logout y `401` al reintentar | 🟡 **PENDIENTE** | `test_auth_api.py` |
-| `TC-AUTH-005` | Renovación con refresh token | Login hecho | 1. `POST /auth/refresh` con el refresh token · 2. Repetir con el **mismo** refresh token | 1: `200` con un par nuevo · 2: `401` (es de un solo uso) | 🟡 **PENDIENTE** | `test_auth_api.py` |
+| `TC-AUTH-004` | Logout y revocación | Token válido | 1. `POST /auth/logout` · 2. Reintentar con el mismo token | `204` en el logout y `401` al reintentar | 🟢 **PASADO** | `test_auth_api.py` |
+| `TC-AUTH-005` | Renovación con refresh token | Login hecho | 1. `POST /auth/refresh` con el refresh token · 2. Repetir con el **mismo** refresh token | 1: `200` con un par nuevo · 2: `401` (es de un solo uso) | 🟢 **PASADO** | `test_auth_api.py` |
 | `TC-AUTH-006` | Bloqueo por intentos fallidos | Backend activo | 5 logins fallidos seguidos del mismo usuario y luego uno correcto | `429` durante 15 minutos, incluso con la contraseña correcta | 🟡 **PENDIENTE** | `test_hardening.py` |
-| `TC-AUTH-007` | Menú por rol | Usuarios de prueba | Iniciar sesión con cada rol | ADMIN: todo · AUDITOR: sin Usuarios ni Catálogos · OPERADOR: *Documentos*, sin Auditoría · GESTOR: Usuarios y Catálogos (solo Áreas) | 🟡 **PENDIENTE** | — |
+| `TC-AUTH-007` | Menú por rol | Usuarios de prueba | Iniciar sesión con cada rol | ADMIN: todo · AUDITOR: sin Usuarios ni Catálogos · OPERADOR: *Mis Documentos*, sin Auditoría · GESTOR: Usuarios y Catálogos (solo Áreas) | 🟡 **PENDIENTE** | — |
 
 ## Módulo 2: Usuarios y Áreas (USR)
-
 | ID | Caso | Precondiciones | Pasos | Resultado esperado | Estado | Automático |
 |---|---|---|---|---|---|---|
-| `TC-USR-001` | Crear usuario con área | Rol `ADMIN` o `GESTOR_USUARIOS` | `POST /users` con `area_id` de un área activa | `201`, el usuario aparece con su área | 🟡 **PENDIENTE** | `test_auth_api.py` |
-| `TC-USR-002` | Crear usuario sin área | Rol `ADMIN` | `POST /users` sin `area_id` | `422` | 🟡 **PENDIENTE** | `test_auth_api.py` |
-| `TC-USR-003` | GESTOR no puede otorgar ADMIN | Rol `GESTOR_USUARIOS` | Crear o editar un usuario con rol `ADMIN` | `403` | 🟡 **PENDIENTE** | `test_auth_api.py` |
-| `TC-USR-004` | Smart Delete de un usuario con actividad | Usuario que subió documentos | `DELETE /users/{id}` | Se desactiva (`SOFT_DELETE`) en vez de borrarse | 🟡 **PENDIENTE** | `test_auth_api.py` |
+| `TC-USR-001` | Crear usuario con área | Rol `ADMIN` o `GESTOR_USUARIOS` | `POST /users` con `area_id` de un área activa | `201`, el usuario aparece con su área | 🟢 **PASADO** | `test_auth_api.py` |
+| `TC-USR-002` | Crear usuario sin área | Rol `ADMIN` | `POST /users` sin `area_id` | `422` | 🟢 **PASADO** | `test_auth_api.py` |
+| `TC-USR-003` | GESTOR no puede otorgar ADMIN | Rol `GESTOR_USUARIOS` | Crear o editar un usuario con rol `ADMIN` | `403` | 🟢 **PASADO** | `test_auth_api.py` |
+| `TC-USR-004` | Smart Delete de un usuario con actividad | Usuario que subió documentos | `DELETE /users/{id}` | Se desactiva (`SOFT_DELETE`) en vez de borrarse | 🟢 **PASADO** | `test_auth_api.py` |
 | `TC-USR-005` | Área de origen del documento | Operador del área *Admisión* | Subir un documento | El documento muestra área de origen *Admisión y Recepción* | 🟡 **PENDIENTE** | `test_document_detail_api.py` |
 
 ## Módulo 3: Catálogos y Tablas Maestras (CAT)
@@ -43,11 +41,11 @@ Plan: [test-plan.md](test-plan.md) · Datos: [test-data.md](test-data.md)
 | ID | Caso | Precondiciones | Pasos | Resultado esperado | Estado | Automático |
 |---|---|---|---|---|---|---|
 | `TC-CAT-001` | Colas activas | Token válido | `GET /catalogs/queues/active` | `200` con las 6 colas semilla | 🟢 **PASADO** | `test_catalogs_api.py` |
-| `TC-CAT-002` | Tipos de documento activos | Token válido | `GET /catalogs/document-types/active` | `200` con los **13** tipos semilla | 🟡 **PENDIENTE** | `test_catalogs_api.py` |
-| `TC-CAT-003` | Smart Delete de una cola | Rol `ADMIN`, cola sin documentos | 1. `DELETE /catalogs/queues/{id}` · 2. Consultar `/active` | `HARD_DELETE`; con documentos asociados, `SOFT_DELETE`. En ambos casos sale de `/active` | 🟡 **PENDIENTE** | `test_catalogs_api.py` |
-| `TC-CAT-004` | Registro de sistema protegido | Rol `ADMIN` | `DELETE` del tipo `OTRO` o la cola `Ficha_Clinica` | `409` | 🟡 **PENDIENTE** | `test_catalogs_api.py` |
-| `TC-CAT-005` | Código inmutable y único | Rol `ADMIN` | Crear un tipo con un `codigo` existente | `409` | 🟡 **PENDIENTE** | `test_catalogs_api.py` |
-| `TC-CAT-006` | Historial de cambios | Rol `ADMIN` | Editar la descripción de una cola y consultar `/{id}/history` | Entrada con el campo, su valor anterior y el nuevo | 🟡 **PENDIENTE** | `test_catalogs_api.py` |
+| `TC-CAT-002` | Tipos de documento activos | Token válido | `GET /catalogs/document-types/active` | `200` con los **13** tipos semilla | 🟢 **PASADO** | `test_catalogs_api.py` |
+| `TC-CAT-003` | Smart Delete de una cola | Rol `ADMIN`, cola sin documentos | 1. `DELETE /catalogs/queues/{id}` · 2. Consultar `/active` | `HARD_DELETE`; con documentos asociados, `SOFT_DELETE`. En ambos casos sale de `/active` | 🟢 **PASADO** | `test_catalogs_api.py` |
+| `TC-CAT-004` | Registro de sistema protegido | Rol `ADMIN` | `DELETE` del tipo `OTRO` o la cola `Ficha_Clinica` | `409` | 🟢 **PASADO** | `test_catalogs_api.py` |
+| `TC-CAT-005` | Código inmutable y único | Rol `ADMIN` | Crear un tipo con un `codigo` existente | `409` | 🟢 **PASADO** | `test_catalogs_api.py` |
+| `TC-CAT-006` | Historial de cambios | Rol `ADMIN` | Editar la descripción de una cola y consultar `/{id}/history` | Entrada con el campo, su valor anterior y el nuevo | 🟢 **PASADO** | `test_catalogs_api.py` |
 
 ## Módulo 4: Ingesta y Triaje IA (TRI)
 
