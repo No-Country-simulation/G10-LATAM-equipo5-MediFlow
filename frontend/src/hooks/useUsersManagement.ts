@@ -87,6 +87,19 @@ export const useUsersManagement = () => {
     }
   };
 
+  /** Se llama tras `updateExistingUser`, así que no reinicia los avisos: reemplaza su mensaje de éxito. */
+  const resetUserPassword = async (user: UserResponse, newPassword: string): Promise<boolean> => {
+    try {
+      await authService.resetPassword(user.id, { new_password: newPassword });
+      setSuccessMessage(`Usuario ${user.username} actualizado y contraseña restablecida correctamente`);
+      return true;
+    } catch (err) {
+      setSuccessMessage(null);
+      setError(errorMessage(err, 'Error al restablecer la contraseña'));
+      return false;
+    }
+  };
+
   /**
    * Smart Delete del backend: si el usuario tiene actividad registrada solo se desactiva, así que
    * la fila se actualiza en vez de quitarse.
@@ -116,6 +129,7 @@ export const useUsersManagement = () => {
     toggleUserStatus,
     createNewUser,
     updateExistingUser,
+    resetUserPassword,
     deleteUser,
     dismissMessages: startAction,
   };

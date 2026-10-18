@@ -26,6 +26,7 @@ from app.features.auth.schemas import (
     LogoutRequest,
     PaginatedUsersResponse,
     PasswordChangeRequest,
+    PasswordResetRequest,
     ProfileUpdateRequest,
     RefreshRequest,
     TokenResponse,
@@ -44,6 +45,7 @@ from app.features.auth.service import (
     delete_user,
     get_user_by_username,
     get_users_paginated,
+    reset_password,
     revoke_token,
     update_profile,
 )
@@ -261,6 +263,21 @@ async def update_user(
     """
     user = await admin_update_user(user_id, payload, db, current_user)
     return UserResponse.model_validate(user)
+
+
+@users_router.post("/{user_id}/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_user_password(
+    user_id: UUID,
+    payload: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(_USER_MANAGEMENT_ROLES)),
+) -> None:
+    """Restablece la contraseña de otro usuario. Requiere rol ADMIN o GESTOR_USUARIOS.
+
+    `409` si se intenta sobre la propia cuenta (usar `/users/me/change-password`); `403` si un
+    no-ADMIN intenta restablecer la de un ADMIN.
+    """
+    await reset_password(user_id, payload, db, current_user)
 
 
 @users_router.delete("/{user_id}", response_model=DeleteResponse)

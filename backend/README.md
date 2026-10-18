@@ -167,6 +167,7 @@ Todos con prefijo `/api/v1`.
 | GET | `/users` | Lista paginada | `ADMIN`, `GESTOR_USUARIOS` |
 | POST | `/users` | Crea un usuario (`username`, `email`, `password`, `full_name`, `role`, `area_id` **obligatorio** y activo; `cola_ids` opcional: colas que atiende en la Consola de Triaje) | `ADMIN`, `GESTOR_USUARIOS` |
 | PATCH | `/users/{user_id}` | Cambia nombre, email, rol, área, estado o colas (`cola_ids` reemplaza todas; `[]` las quita) | `ADMIN`, `GESTOR_USUARIOS` |
+| POST | `/users/{user_id}/reset-password` | Body `{"new_password"}` (8 a 72 caracteres): restablece la contraseña de otro usuario sin pedir la actual → `204`. `409` si es tu propia cuenta (usa `/users/me/change-password`); `403` si un no-ADMIN restablece la de un ADMIN | `ADMIN`, `GESTOR_USUARIOS` |
 | DELETE | `/users/{user_id}` | Smart Delete: borrado físico si el usuario no tiene actividad; si subió, auditó o tomó documentos, o cambió catálogos, solo se desactiva (el historial de correcciones conserva su username aunque se borre). `409` si es tu propia cuenta; `403` si un no-ADMIN elimina a un ADMIN | `ADMIN`, `GESTOR_USUARIOS` |
 
 Solo un ADMIN puede otorgar el rol ADMIN. Las respuestas de usuario incluyen `area: {id, codigo, nombre}`.

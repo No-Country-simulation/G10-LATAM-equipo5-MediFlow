@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -28,11 +29,13 @@ describe('UserFormModal user management and role assignment', () => {
   const mockOnClose = vi.fn();
   const mockOnCreate = vi.fn();
   const mockOnUpdate = vi.fn();
+  const mockOnResetPassword = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockOnCreate.mockResolvedValue(true);
     mockOnUpdate.mockResolvedValue(true);
+    mockOnResetPassword.mockResolvedValue(true);
   });
 
   const existingUser: UserResponse = {
@@ -47,41 +50,42 @@ describe('UserFormModal user management and role assignment', () => {
     colas: [{ id: 'q-1', codigo: 'Q_URG', nombre: 'Cola Urgencias', es_asistencial: true }],
   };
 
-  it('renders creation mode with mandatory fields and password requirement', () => {
+  const renderModal = (props: Partial<ComponentProps<typeof UserFormModal>> = {}) =>
     render(
       <UserFormModal
         currentUserRole="ADMIN"
         onClose={mockOnClose}
         onCreate={mockOnCreate}
         onUpdate={mockOnUpdate}
+        onResetPassword={mockOnResetPassword}
+        {...props}
       />
     );
+
+  const fillCreationForm = (password: string) => {
+    fireEvent.change(screen.getByLabelText(/nombre completo/i), { target: { value: 'Dra. Ana Lopez' } });
+    fireEvent.change(screen.getByLabelText(/usuario \(username\)/i), { target: { value: 'alopez' } });
+    fireEvent.change(screen.getByLabelText(/correo electrónico/i), { target: { value: 'alopez@hospital.org' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: password } });
+  };
+
+  it('renders creation mode with mandatory fields and password requirement', () => {
+    renderModal();
 
     expect(screen.getByRole('heading', { name: 'Nuevo Usuario' })).toBeInTheDocument();
     expect(screen.getByLabelText(/nombre completo/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/usuario \(username\)/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/contraseña \(min/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/contraseña \(min/i)).toBeRequired();
     expect(screen.getByLabelText(/correo electrónico/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/rol en mediflow/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/área/i)).toBeInTheDocument();
   });
 
   it('validates password minimum length of 8 characters during creation', async () => {
-    render(
-      <UserFormModal
-        currentUserRole="ADMIN"
-        onClose={mockOnClose}
-        onCreate={mockOnCreate}
-        onUpdate={mockOnUpdate}
-      />
-    );
+    renderModal();
 
-    fireEvent.change(screen.getByLabelText(/nombre completo/i), { target: { value: 'Dra. Ana Lopez' } });
-    fireEvent.change(screen.getByLabelText(/usuario \(username\)/i), { target: { value: 'alopez' } });
-    fireEvent.change(screen.getByLabelText(/correo electrónico/i), { target: { value: 'alopez@hospital.org' } });
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'short' } });
+    fillCreationForm('short');
     fireEvent.change(screen.getByLabelText(/área/i), { target: { value: 'area-1' } });
-
     fireEvent.submit(screen.getByRole('button', { name: /crear usuario/i }));
 
     expect(await screen.findByText(/la contraseña debe tener al menos 8 caracteres/i)).toBeInTheDocument();
@@ -89,20 +93,9 @@ describe('UserFormModal user management and role assignment', () => {
   });
 
   it('validates mandatory area selection before submitting', async () => {
-    render(
-      <UserFormModal
-        currentUserRole="ADMIN"
-        onClose={mockOnClose}
-        onCreate={mockOnCreate}
-        onUpdate={mockOnUpdate}
-      />
-    );
+    renderModal();
 
-    fireEvent.change(screen.getByLabelText(/nombre completo/i), { target: { value: 'Dra. Ana Lopez' } });
-    fireEvent.change(screen.getByLabelText(/usuario \(username\)/i), { target: { value: 'alopez' } });
-    fireEvent.change(screen.getByLabelText(/correo electrónico/i), { target: { value: 'alopez@hospital.org' } });
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'Password123!' } });
-
+    fillCreationForm('Password123!');
     fireEvent.submit(screen.getByRole('button', { name: /crear usuario/i }));
 
     expect(await screen.findByText(/selecciona el área a la que pertenece el usuario/i)).toBeInTheDocument();
@@ -110,26 +103,12 @@ describe('UserFormModal user management and role assignment', () => {
   });
 
   it('submits valid creation payload with selected queues for clinical roles', async () => {
-    render(
-      <UserFormModal
-        currentUserRole="ADMIN"
-        onClose={mockOnClose}
-        onCreate={mockOnCreate}
-        onUpdate={mockOnUpdate}
-      />
-    );
+    renderModal();
 
-    fireEvent.change(screen.getByLabelText(/nombre completo/i), { target: { value: 'Dra. Ana Lopez' } });
-    fireEvent.change(screen.getByLabelText(/usuario \(username\)/i), { target: { value: 'alopez' } });
-    fireEvent.change(screen.getByLabelText(/correo electrónico/i), { target: { value: 'alopez@hospital.org' } });
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'Password123!' } });
+    fillCreationForm('Password123!');
     fireEvent.change(screen.getByLabelText(/rol en mediflow/i), { target: { value: 'AUDITOR_CLINICO' } });
     fireEvent.change(screen.getByLabelText(/área/i), { target: { value: 'area-1' } });
-
-    // Select queue
-    const queueCheckbox = screen.getByLabelText('Cola Urgencias');
-    fireEvent.click(queueCheckbox);
-
+    fireEvent.click(screen.getByLabelText('Cola Urgencias'));
     fireEvent.submit(screen.getByRole('button', { name: /crear usuario/i }));
 
     expect(mockOnCreate).toHaveBeenCalledWith(
@@ -143,26 +122,27 @@ describe('UserFormModal user management and role assignment', () => {
         cola_ids: ['q-1'],
       })
     );
+    await waitFor(() => expect(mockOnClose).toHaveBeenCalled());
+    expect(mockOnResetPassword).not.toHaveBeenCalled();
   });
 
-  it('renders edit mode with disabled username, without password field, and triggers onUpdate', () => {
-    render(
-      <UserFormModal
-        user={existingUser}
-        currentUserRole="ADMIN"
-        onClose={mockOnClose}
-        onCreate={mockOnCreate}
-        onUpdate={mockOnUpdate}
-      />
-    );
+  it('renders edit mode with disabled username and an optional password field', () => {
+    renderModal({ user: existingUser });
 
     expect(screen.getByRole('heading', { name: 'Editar Usuario' })).toBeInTheDocument();
     const usernameInput = screen.getByLabelText(/usuario \(username\)/i);
     expect(usernameInput).toBeDisabled();
     expect(usernameInput).toHaveValue('rsoto');
 
-    // Password input is omitted in edit mode
-    expect(screen.queryByLabelText(/contraseña/i)).not.toBeInTheDocument();
+    const passwordInput = screen.getByLabelText(/nueva contraseña \(opcional\)/i);
+    expect(passwordInput).not.toBeRequired();
+    expect(passwordInput).toHaveValue('');
+    // La sección de contraseña personal se movió a Mi Perfil.
+    expect(screen.queryByLabelText(/contraseña actual/i)).not.toBeInTheDocument();
+  });
+
+  it('updates user data without resetting the password when the field is left empty', async () => {
+    renderModal({ user: existingUser });
 
     fireEvent.change(screen.getByLabelText(/nombre completo/i), { target: { value: 'Dr. Roberto Soto P.' } });
     fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
@@ -176,17 +156,62 @@ describe('UserFormModal user management and role assignment', () => {
         area_id: 'area-1',
       })
     );
+    await waitFor(() => expect(mockOnClose).toHaveBeenCalled());
+    expect(mockOnResetPassword).not.toHaveBeenCalled();
+  });
+
+  it('resets the password of another user after saving their data', async () => {
+    const user = userEvent.setup();
+    renderModal({ user: existingUser });
+
+    await user.type(screen.getByLabelText(/nueva contraseña \(opcional\)/i), 'Reestablecida123');
+    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => expect(mockOnResetPassword).toHaveBeenCalledWith(existingUser, 'Reestablecida123'));
+    expect(mockOnUpdate).toHaveBeenCalledTimes(1);
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it('validates the minimum length of the reset password', async () => {
+    const user = userEvent.setup();
+    renderModal({ user: existingUser });
+
+    await user.type(screen.getByLabelText(/nueva contraseña \(opcional\)/i), 'corta');
+    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    expect(await screen.findByText(/la contraseña debe tener al menos 8 caracteres/i)).toBeInTheDocument();
+    expect(mockOnUpdate).not.toHaveBeenCalled();
+    expect(mockOnResetPassword).not.toHaveBeenCalled();
+  });
+
+  it('does not reset the password nor close when the data update fails', async () => {
+    const user = userEvent.setup();
+    mockOnUpdate.mockResolvedValue(false);
+    renderModal({ user: existingUser });
+
+    await user.type(screen.getByLabelText(/nueva contraseña \(opcional\)/i), 'Reestablecida123');
+    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => expect(mockOnUpdate).toHaveBeenCalled());
+    expect(mockOnResetPassword).not.toHaveBeenCalled();
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps the modal open when the password reset fails', async () => {
+    const user = userEvent.setup();
+    mockOnResetPassword.mockResolvedValue(false);
+    renderModal({ user: existingUser });
+
+    await user.type(screen.getByLabelText(/nueva contraseña \(opcional\)/i), 'Reestablecida123');
+    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => expect(mockOnResetPassword).toHaveBeenCalled());
+    expect(mockOnClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /guardar cambios/i })).toBeEnabled();
   });
 
   it('restricts ADMIN role option when creator is GESTOR_USUARIOS', () => {
-    render(
-      <UserFormModal
-        currentUserRole="GESTOR_USUARIOS"
-        onClose={mockOnClose}
-        onCreate={mockOnCreate}
-        onUpdate={mockOnUpdate}
-      />
-    );
+    renderModal({ currentUserRole: 'GESTOR_USUARIOS' });
 
     const roleSelect = screen.getByLabelText(/rol en mediflow/i);
     const options = Array.from(roleSelect.querySelectorAll('option')).map((opt) => opt.value);
@@ -198,14 +223,7 @@ describe('UserFormModal user management and role assignment', () => {
   });
 
   it('allows ADMIN role option when current user is ADMIN', () => {
-    render(
-      <UserFormModal
-        currentUserRole="ADMIN"
-        onClose={mockOnClose}
-        onCreate={mockOnCreate}
-        onUpdate={mockOnUpdate}
-      />
-    );
+    renderModal();
 
     const roleSelect = screen.getByLabelText(/rol en mediflow/i);
     const options = Array.from(roleSelect.querySelectorAll('option')).map((opt) => opt.value);
@@ -218,90 +236,14 @@ describe('UserFormModal user management and role assignment', () => {
 
   it('toggles password visibility when clicking eye button in create mode', async () => {
     const user = userEvent.setup();
-    render(
-      <UserFormModal
-        currentUserRole="ADMIN"
-        onClose={mockOnClose}
-        onCreate={mockOnCreate}
-        onUpdate={mockOnUpdate}
-      />
-    );
+    renderModal();
 
     const passwordInput = screen.getByPlaceholderText('••••••••');
     expect(passwordInput).toHaveAttribute('type', 'password');
 
-    const toggleBtn = screen.getByRole('button', { name: /ver contraseña/i });
-    await user.click(toggleBtn);
+    await user.click(screen.getByRole('button', { name: /ver contraseña/i }));
 
     expect(passwordInput).toHaveAttribute('type', 'text');
     expect(screen.getByRole('button', { name: /ocultar contraseña/i })).toBeInTheDocument();
-  });
-
-  it('renders password change fields when editing own account and handles submission', async () => {
-    const user = userEvent.setup();
-    const mockOnChangePassword = vi.fn().mockResolvedValue(true);
-
-    render(
-      <UserFormModal
-        user={existingUser}
-        currentUserRole="AUDITOR_CLINICO"
-        currentUserId="user-123"
-        onClose={mockOnClose}
-        onCreate={mockOnCreate}
-        onUpdate={mockOnUpdate}
-        onChangePassword={mockOnChangePassword}
-      />
-    );
-
-    expect(screen.getByLabelText(/^contraseña actual$/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/nueva contraseña \(min/i)).toBeInTheDocument();
-
-    await user.type(screen.getByLabelText(/^contraseña actual$/i), 'actualPass123');
-    await user.type(screen.getByLabelText(/nueva contraseña \(min/i), 'nuevaPass456');
-
-    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
-
-    expect(mockOnUpdate).toHaveBeenCalledWith(
-      'user-123',
-      expect.objectContaining({ full_name: 'Dr. Roberto Soto' })
-    );
-
-    await waitFor(() => {
-      expect(mockOnChangePassword).toHaveBeenCalledWith({
-        current_password: 'actualPass123',
-        new_password: 'nuevaPass456',
-      });
-    });
-  });
-
-  it('validates password requirements when changing own password in edit mode', async () => {
-    const user = userEvent.setup();
-    const mockOnChangePassword = vi.fn();
-
-    render(
-      <UserFormModal
-        user={existingUser}
-        currentUserRole="AUDITOR_CLINICO"
-        currentUserId="user-123"
-        onClose={mockOnClose}
-        onCreate={mockOnCreate}
-        onUpdate={mockOnUpdate}
-        onChangePassword={mockOnChangePassword}
-      />
-    );
-
-    // Only new password without current password
-    await user.type(screen.getByLabelText(/nueva contraseña \(min/i), 'corta');
-    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
-
-    expect(await screen.findByText(/debes ingresar tu contraseña actual para cambiarla/i)).toBeInTheDocument();
-    expect(mockOnChangePassword).not.toHaveBeenCalled();
-
-    // With current password but new password too short (< 8 chars)
-    await user.type(screen.getByLabelText(/^contraseña actual$/i), 'actualPass123');
-    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
-
-    expect(await screen.findByText(/la nueva contraseña debe tener al menos 8 caracteres/i)).toBeInTheDocument();
-    expect(mockOnChangePassword).not.toHaveBeenCalled();
   });
 });

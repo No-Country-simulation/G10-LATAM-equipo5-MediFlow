@@ -4,6 +4,7 @@ import type {
   LoginRequest,
   PaginatedUsersResponse,
   PasswordChangeRequest,
+  PasswordResetRequest,
   TokenResponse,
   UserAdminUpdateRequest,
   UserCreateRequest,
@@ -35,6 +36,10 @@ export const authService = {
 
   changePassword: (payload: PasswordChangeRequest): Promise<void> => {
     return api.post<void>(FASTAPI_ENDPOINTS.users.changePassword, payload);
+  },
+
+  resetPassword: (userId: string, payload: PasswordResetRequest): Promise<void> => {
+    return api.post<void>(FASTAPI_ENDPOINTS.users.resetPassword(userId), payload);
   },
 
   getUsers: (page = 1, pageSize = 50): Promise<PaginatedUsersResponse> => {

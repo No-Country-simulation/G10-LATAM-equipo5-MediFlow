@@ -10,6 +10,7 @@ import AuditPage from './pages/AuditPage';
 import UsersPage from './pages/UsersPage';
 import CatalogsPage from './pages/CatalogsPage';
 import TriagePage from './pages/TriagePage';
+import ProfilePage from './pages/ProfilePage';
 import { RoleRoute } from './components/auth/RoleRoute';
 import { RouteLogger } from './components/common/RouteLogger';
 import { useAuth } from './hooks/useAuth';
@@ -104,6 +105,8 @@ const App = () => {
                 </RoleRoute>
               }
             />
+            {/* Panel personal: disponible para cualquier usuario autenticado. */}
+            <Route path="/perfil" element={<ProfilePage />} />
           </Route>
 
           <Route path="/" element={<HomeRedirect />} />

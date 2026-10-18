@@ -1,84 +1,76 @@
 import React, { useState } from 'react';
-import { Building2, Eye, EyeOff, Loader2, Lock, Mail, Route, Save, Shield, User, UserCog, UserPlus } from 'lucide-react';
-import type { PasswordChangeRequest, UserAdminUpdateRequest, UserCreateRequest, UserResponse, UserRole } from '../../types/auth';
-import { authService } from '../../services/authService';
+import { Building2, Loader2, Mail, Route, Save, Shield, User, UserCog, UserPlus } from 'lucide-react';
+import type { UserAdminUpdateRequest, UserCreateRequest, UserResponse, UserRole } from '../../types/auth';
 import { useActiveAreas } from '../../hooks/useActiveAreas';
 import { useQueuesSummary } from '../../hooks/useQueuesSummary';
 import { ModalShell } from '../common/ModalShell';
+import { PasswordInput } from '../common/PasswordInput';
 import { StatusBanner } from '../common/StatusBanner';
 import { BUTTON_GHOST, BUTTON_PRIMARY, HINT, INPUT_BASE, LABEL } from '../common/formStyles';
 import { grantableRoles } from './userRoles';
-import { errorMessage } from '../../utils/errors';
+import { PASSWORD_MIN_LENGTH } from '../../utils/passwordPolicy';
 
 interface UserFormModalProps {
-  user?: UserResponse; currentUserRole?: UserRole; currentUserId?: string; onClose: () => void;
+  user?: UserResponse; currentUserRole?: UserRole; onClose: () => void;
   onCreate: (p: UserCreateRequest) => Promise<boolean>; onUpdate: (id: string, p: UserAdminUpdateRequest) => Promise<boolean>;
-  onChangePassword?: (p: PasswordChangeRequest) => Promise<void | boolean>;
+  /** Restablece la contraseña de `user` tras guardar sus datos; solo se llama si se ingresó una nueva. */
+  onResetPassword: (u: UserResponse, newPassword: string) => Promise<boolean>;
 }
 
-const MIN_PASS = 8, ROLES_CON_COLAS: UserRole[] = ['OPERADOR', 'AUDITOR_CLINICO'];
+const ROLES_CON_COLAS: UserRole[] = ['OPERADOR', 'AUDITOR_CLINICO'];
 const initForm = (u?: UserResponse): UserCreateRequest => ({
   full_name: u?.full_name ?? '', username: u?.username ?? '', email: u?.email ?? '', password: '',
   role: u?.role ?? 'AUDITOR_CLINICO', area_id: u?.area?.id ?? '', cola_ids: u?.colas?.map((c) => c.id) ?? [],
 });
 
-const PassInput = ({ id, label, val, onChange, req, min, auto, lbl }: {
-  id: string; label: string; val: string; onChange: (v: string) => void; req?: boolean; min?: number; auto?: string; lbl: string;
-}) => {
-  const [show, setShow] = useState(false);
-  return (
-    <div>
-      <label htmlFor={id} className={LABEL}>{label}</label>
-      <div className="relative"><Lock className="absolute left-3 top-2.5 w-4 h-4 text-slate-500 pointer-events-none" />
-        <input id={id} type={show ? 'text' : 'password'} required={req} minLength={min} maxLength={72} autoComplete={auto} value={val} onChange={(e) => onChange(e.target.value)} placeholder="••••••••" className={`w-full pl-9 pr-10 ${INPUT_BASE}`} />
-        <button type="button" onClick={() => setShow(!show)} aria-label={show ? `Ocultar ${lbl}` : `Ver ${lbl}`} className="absolute right-3 top-2.5 cursor-pointer">{show ? <EyeOff className="w-4 h-4 text-slate-400 hover:text-slate-200" /> : <Eye className="w-4 h-4 text-slate-400 hover:text-slate-200" />}</button>
-      </div>
-    </div>
-  );
+/** En edición la contraseña es opcional: vacía significa "no restablecer". */
+const validate = (f: UserCreateRequest, isEdit: boolean): string | null => {
+  if ((!isEdit || f.password) && f.password.length < PASSWORD_MIN_LENGTH) return `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`;
+  if (!f.area_id) return 'Selecciona el área a la que pertenece el usuario';
+  return null;
 };
 
-export const UserFormModal: React.FC<UserFormModalProps> = ({ user, currentUserRole, currentUserId, onClose, onCreate, onUpdate, onChangePassword }) => {
-  const isEdit = user !== undefined, isSelf = Boolean(currentUserId && user && user.id === currentUserId);
+export const UserFormModal: React.FC<UserFormModalProps> = ({ user, currentUserRole, onClose, onCreate, onUpdate, onResetPassword }) => {
+  const isEdit = user !== undefined;
   const [formData, setFormData] = useState(() => initForm(user));
-  const [passData, setPassData] = useState<PasswordChangeRequest>({ current_password: '', new_password: '' });
   const [isSubmitting, setIsSubmitting] = useState(false), [localError, setLocalError] = useState<string | null>(null);
   const { areas, error: areasError } = useActiveAreas(true), { queues, error: queuesError } = useQueuesSummary(true);
   const colas = queues.filter((q) => q.es_asistencial), usaColas = ROLES_CON_COLAS.includes(formData.role);
   const setField = <K extends keyof UserCreateRequest>(k: K, v: UserCreateRequest[K]) => setFormData((p) => ({ ...p, [k]: v }));
   const toggleCola = (id: string) => setFormData((p) => ({ ...p, cola_ids: p.cola_ids.includes(id) ? p.cola_ids.filter((c) => c !== id) : [...p.cola_ids, id] }));
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setLocalError(null);
-    if (!isEdit && formData.password.length < MIN_PASS) return setLocalError(`La contraseña debe tener al menos ${MIN_PASS} caracteres`);
-    if (isSelf && (passData.current_password || passData.new_password)) {
-      if (!passData.current_password) return setLocalError('Debes ingresar tu contraseña actual para cambiarla');
-      if (passData.new_password.length < MIN_PASS) return setLocalError(`La nueva contraseña debe tener al menos ${MIN_PASS} caracteres`);
-    }
-    if (!formData.area_id) return setLocalError('Selecciona el área a la que pertenece el usuario');
-    setIsSubmitting(true);
+  const save = async (): Promise<boolean> => {
     const cola_ids = usaColas ? formData.cola_ids : [];
-    const ok = isEdit ? await onUpdate(user.id, { full_name: formData.full_name, email: formData.email, role: formData.role, area_id: formData.area_id, cola_ids }) : await onCreate({ ...formData, cola_ids });
-    if (!ok) return setIsSubmitting(false);
-    if (isSelf && (passData.current_password || passData.new_password)) {
-      try {
-        const passOk = onChangePassword ? await onChangePassword(passData) : (await authService.changePassword(passData), true);
-        if (passOk === false) return setIsSubmitting(false);
-      } catch (err) { setIsSubmitting(false); return setLocalError(errorMessage(err, 'Error al cambiar la contraseña')); }
-    }
-    setIsSubmitting(false); onClose();
+    if (!isEdit) return onCreate({ ...formData, cola_ids });
+    const ok = await onUpdate(user.id, { full_name: formData.full_name, email: formData.email, role: formData.role, area_id: formData.area_id, cola_ids });
+    if (!ok || !formData.password) return ok;
+    return onResetPassword(user, formData.password);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const validationError = validate(formData, isEdit);
+    setLocalError(validationError);
+    if (validationError) return;
+    setIsSubmitting(true);
+    const ok = await save();
+    setIsSubmitting(false);
+    if (ok) onClose();
   };
 
   const roleOptions = grantableRoles(currentUserRole), showsCurrentRole = roleOptions.some((o) => o.role === formData.role);
+  const SubmitIcon = isEdit ? Save : UserPlus;
 
   return (
     <ModalShell titleId="user-form-modal-title" title={isEdit ? 'Editar Usuario' : 'Nuevo Usuario'} subtitle={isEdit ? `Actualizar datos, rol y área de ${user.username}` : 'Crear credenciales y asignar rol operativo'} icon={isEdit ? UserCog : UserPlus} onClose={onClose} closeDisabled={isSubmitting}>
       <div className="mt-4 space-y-2 empty:hidden"><StatusBanner tone="error" message={localError} /><StatusBanner tone="error" message={areasError} /><StatusBanner tone="error" message={queuesError} /></div>
       <form onSubmit={(e) => void handleSubmit(e)} autoComplete="off" className="mt-4 space-y-3.5">
         <div><label htmlFor="user-full-name" className={LABEL}>Nombre Completo</label><div className="relative"><User className="absolute left-3 top-2.5 w-4 h-4 text-slate-500 pointer-events-none" /><input id="user-full-name" type="text" required maxLength={150} autoComplete="off" value={formData.full_name} onChange={(e) => setField('full_name', e.target.value)} placeholder="Dr. Roberto Soto" className={`w-full pl-9 pr-3 ${INPUT_BASE}`} /></div></div>
-        <div className={isEdit ? '' : 'grid grid-cols-2 gap-3'}>
+        <div className="grid grid-cols-2 gap-3">
           <div><label htmlFor="user-username" className={LABEL}>Usuario (Username)</label><input id="user-username" type="text" required disabled={isEdit} minLength={3} maxLength={50} pattern="[A-Za-z0-9_.\-]+" title="Letras, números, punto, guion y guion bajo" autoComplete="off" value={formData.username} onChange={(e) => setField('username', e.target.value)} placeholder="rsoto" className={`w-full px-3 ${INPUT_BASE}`} /></div>
-          {!isEdit && <PassInput id="user-password" label={`Contraseña (min ${MIN_PASS})`} val={formData.password} onChange={(v) => setField('password', v)} req min={MIN_PASS} auto="new-password" lbl="contraseña" />}
+          <PasswordInput id="user-password" label={isEdit ? 'Nueva Contraseña (opcional)' : `Contraseña (min ${PASSWORD_MIN_LENGTH})`} value={formData.password} onChange={(v) => setField('password', v)} required={!isEdit} minLength={PASSWORD_MIN_LENGTH} fieldName="contraseña" />
         </div>
+        {isEdit && <p className={`${HINT} -mt-2`}>Déjala vacía para mantener la actual; si la ingresas, se restablece la contraseña de {user.username}.</p>}
         <div><label htmlFor="user-email" className={LABEL}>Correo Electrónico</label><div className="relative"><Mail className="absolute left-3 top-2.5 w-4 h-4 text-slate-500 pointer-events-none" /><input id="user-email" type="email" required maxLength={100} autoComplete="off" value={formData.email} onChange={(e) => setField('email', e.target.value)} placeholder="rsoto@hospital.org" className={`w-full pl-9 pr-3 ${INPUT_BASE}`} /></div></div>
         <div className="grid grid-cols-2 gap-3">
           <div><label htmlFor="user-role" className={LABEL}>Rol en MediFlow</label><div className="relative"><Shield className="absolute left-3 top-2.5 w-4 h-4 text-slate-500 pointer-events-none" /><select id="user-role" value={formData.role} onChange={(e) => setField('role', e.target.value as UserRole)} className={`w-full pl-9 pr-3 cursor-pointer ${INPUT_BASE}`}>{!showsCurrentRole && <option value={formData.role} className="bg-slate-900 text-white">{formData.role}</option>}{roleOptions.map((r) => <option key={r.role} value={r.role} className="bg-slate-900 text-white">{r.label}</option>)}</select></div></div>
@@ -93,19 +85,10 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({ user, currentUserR
             <p className={HINT}>Solo verá en la Consola de Triaje los casos de estas colas.</p>
           </fieldset>
         )}
-        {isSelf && (
-          <div className="pt-3 border-t border-slate-800 space-y-3">
-            <div className="flex items-center gap-2"><Lock className="w-3.5 h-3.5 text-rose-400" /><span className="text-xs font-semibold text-slate-200">Cambiar Contraseña Personal</span><span className="text-[10px] text-slate-400 font-mono">(opcional)</span></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <PassInput id="user-current-password" label="Contraseña Actual" val={passData.current_password} onChange={(v) => setPassData((p) => ({ ...p, current_password: v }))} auto="current-password" lbl="contraseña actual" />
-              <PassInput id="user-new-password" label={`Nueva Contraseña (min ${MIN_PASS})`} val={passData.new_password} onChange={(v) => setPassData((p) => ({ ...p, new_password: v }))} min={MIN_PASS} auto="new-password" lbl="nueva contraseña" />
-            </div>
-          </div>
-        )}
         <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800/80">
           <button type="button" onClick={onClose} disabled={isSubmitting} className={BUTTON_GHOST}>Cancelar</button>
           <button type="submit" disabled={isSubmitting} className={BUTTON_PRIMARY}>
-            {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (isEdit ? <Save className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />)}
+            {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SubmitIcon className="w-3.5 h-3.5" />}
             <span>{isEdit ? 'Guardar Cambios' : 'Crear Usuario'}</span>
           </button>
         </div>
