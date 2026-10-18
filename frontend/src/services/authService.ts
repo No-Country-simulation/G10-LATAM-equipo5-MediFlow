@@ -3,6 +3,7 @@ import { FASTAPI_ENDPOINTS } from '@/config/api';
 import type {
   LoginRequest,
   PaginatedUsersResponse,
+  PasswordChangeRequest,
   TokenResponse,
   UserAdminUpdateRequest,
   UserCreateRequest,
@@ -30,6 +31,10 @@ export const authService = {
 
   getProfile: (): Promise<UserOut> => {
     return api.get<UserOut>(FASTAPI_ENDPOINTS.auth.me);
+  },
+
+  changePassword: (payload: PasswordChangeRequest): Promise<void> => {
+    return api.post<void>(FASTAPI_ENDPOINTS.users.changePassword, payload);
   },
 
   getUsers: (page = 1, pageSize = 50): Promise<PaginatedUsersResponse> => {

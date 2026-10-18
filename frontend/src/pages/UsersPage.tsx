@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import { PageHeader } from '../components/common/PageHeader';
 import { StatusBanner } from '../components/common/StatusBanner';
 import { BUTTON_CREATE, BUTTON_SECONDARY } from '../components/common/formStyles';
+import { authService } from '../services/authService';
 import type { UserResponse } from '../types/auth';
 
 /** `null`: cerrado; `'new'`: alta; un usuario: edición. */
@@ -77,9 +78,11 @@ const UsersPage = () => {
           key={formTarget === 'new' ? 'new' : formTarget.id}
           user={formTarget === 'new' ? undefined : formTarget}
           currentUserRole={currentUser?.role}
+          currentUserId={currentUser?.id}
           onClose={() => setFormTarget(null)}
           onCreate={createNewUser}
           onUpdate={updateExistingUser}
+          onChangePassword={authService.changePassword}
         />
       )}
 

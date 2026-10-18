@@ -87,11 +87,71 @@ export const etiquetaDeCodigo = (codigo: string | number | null | undefined): st
 export const etiquetaSiEsCodigo = (valor: string): string =>
   conocida(valor) ?? (/^[A-Z]+(_[A-Z]+)+$/.test(valor) ? etiquetaDeCodigo(valor) : valor);
 
-/** Texto para mostrar de un valor del detalle o del historial (listas unidas, Sí/No, códigos). */
+const ETIQUETAS_CAMPOS: Record<string, string> = {
+  presion_arterial: 'Presión arterial',
+  pa: 'Presión arterial',
+  frecuencia_cardiaca: 'Frecuencia cardíaca',
+  fc: 'Frecuencia cardíaca',
+  frecuencia_respiratoria: 'Frecuencia respiratoria',
+  fr: 'Frecuencia respiratoria',
+  temperatura: 'Temperatura',
+  temp: 'Temperatura',
+  saturacion_oxigeno: 'Saturación O2',
+  saturacion_o2: 'Saturación O2',
+  sat_o2: 'Saturación O2',
+  spo2: 'SpO2',
+  glasgow: 'Glasgow',
+  glucemia: 'Glucemia',
+  hgt: 'HGT',
+};
+
+/** Etiqueta legible para un nombre de campo o subcampo clínico (`presion_arterial` -> `Presión arterial`). */
+export const etiquetaDeCampo = (campo: string): string => {
+  if (!campo) return '';
+  const normalizada = campo.trim().toLowerCase();
+  if (ETIQUETAS_CAMPOS[normalizada]) {
+    return ETIQUETAS_CAMPOS[normalizada];
+  }
+  const conEspacios = campo.replace(/_/g, ' ').trim();
+  if (!conEspacios) return campo;
+  return conEspacios.charAt(0).toUpperCase() + conEspacios.slice(1);
+};
+
+/** Extrae un objeto de claves si el valor es un objeto o un string serializado como JSON. */
+export const extraerObjetoClaves = (valor: unknown): Record<string, unknown> | null => {
+  if (valor && typeof valor === 'object' && !Array.isArray(valor)) {
+    return valor as Record<string, unknown>;
+  }
+  if (typeof valor === 'string') {
+    const trimmed = valor.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+};
+
+/** Texto para mostrar de un valor del detalle o del historial (listas unidas, Sí/No, códigos, objetos desglosados). */
 export const textoDeValor = (valor: unknown): string => {
   if (valor === null || valor === undefined || valor === '') return '—';
   if (typeof valor === 'boolean') return valor ? 'Sí' : 'No';
   if (Array.isArray(valor)) return valor.length ? valor.map(textoDeValor).join(', ') : '—';
-  if (typeof valor === 'object') return JSON.stringify(valor);
+
+  const obj = extraerObjetoClaves(valor);
+  if (obj) {
+    const entradas = Object.entries(obj).filter(
+      ([, v]) => v !== null && v !== undefined && v !== ''
+    );
+    if (!entradas.length) return 'Sin datos registrados';
+    return entradas.map(([k, v]) => `${etiquetaDeCampo(k)}: ${textoDeValor(v)}`).join(' · ');
+  }
+
   return typeof valor === 'string' ? etiquetaSiEsCodigo(valor) : String(valor);
 };

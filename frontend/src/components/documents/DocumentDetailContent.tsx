@@ -2,7 +2,7 @@ import { Cloud, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { DocumentDetailResponse } from '../../types/medical';
 import { formatIdentificacion } from '../../utils/identificacion';
-import { etiquetaDeCodigo, textoDeValor } from '../../utils/etiquetas';
+import { etiquetaDeCodigo, etiquetaDeCampo, extraerObjetoClaves, textoDeValor } from '../../utils/etiquetas';
 import DocumentCorrectionHistory from './DocumentCorrectionHistory';
 import PossibleDuplicatesNotice from './PossibleDuplicatesNotice';
 
@@ -17,12 +17,38 @@ const Seccion = ({ titulo, children }: { titulo: string; children: ReactNode }) 
   </section>
 );
 
-const Dato = ({ etiqueta, valor }: { etiqueta: string; valor: unknown }) => (
-  <div className="min-w-0">
-    <dt className={ETIQUETA}>{etiqueta}</dt>
-    <dd className="text-xs text-slate-200 break-words whitespace-pre-line">{textoDeValor(valor)}</dd>
-  </div>
-);
+const Dato = ({ etiqueta, valor }: { etiqueta: string; valor: unknown }) => {
+  const obj = extraerObjetoClaves(valor);
+
+  return (
+    <div className="min-w-0">
+      <dt className={ETIQUETA}>{etiqueta}</dt>
+      {obj ? (
+        <dd className="text-xs text-slate-200 break-words">
+          {Object.entries(obj).filter(([, v]) => v !== null && v !== undefined && v !== '').length === 0 ? (
+            <span className="text-slate-400">Sin datos registrados</span>
+          ) : (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {Object.entries(obj)
+                .filter(([, v]) => v !== null && v !== undefined && v !== '')
+                .map(([clave, subvalor]) => (
+                  <span
+                    key={clave}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900/80 border border-slate-800 text-xs"
+                  >
+                    <span className="text-slate-400">{etiquetaDeCampo(clave)}:</span>
+                    <span className="font-medium text-slate-200">{textoDeValor(subvalor)}</span>
+                  </span>
+                ))}
+            </div>
+          )}
+        </dd>
+      ) : (
+        <dd className="text-xs text-slate-200 break-words whitespace-pre-line">{textoDeValor(valor)}</dd>
+      )}
+    </div>
+  );
+};
 
 const Datos = ({ children }: { children: ReactNode }) => (
   <dl className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3">{children}</dl>
@@ -45,7 +71,16 @@ const marcaParametro = (critico: boolean | null, alterado: boolean | null): stri
 };
 
 const DetalleClinico = ({ detail }: { detail: DocumentDetailResponse }) => {
-  const { tablas, campos_relevantes: campos } = detail.detalle;
+  const { tablas } = detail.detalle;
+  const campos = detail.detalle?.campos_relevantes?.length
+    ? detail.detalle.campos_relevantes
+    : Object.entries((detail.detalle_clinico?.campos_adicionales as Record<string, unknown>) ?? {})
+        .filter(([, v]) => v !== null && v !== undefined && v !== '')
+        .map(([campo, valor]) => ({
+          campo,
+          etiqueta: etiquetaDeCampo(campo),
+          valor,
+        }));
 
   return (
     <>
@@ -178,7 +213,7 @@ const DocumentDetailContent = ({ detail }: { detail: DocumentDetailResponse }) =
           {unir(
             detail.eliminado_por_username,
             detail.eliminado_at &&
-              new Date(detail.eliminado_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })
+            new Date(detail.eliminado_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })
           )}
         </p>
         {detail.motivo_eliminacion && (

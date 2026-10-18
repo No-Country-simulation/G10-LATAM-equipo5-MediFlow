@@ -52,6 +52,7 @@ export const FASTAPI_ENDPOINTS = {
   users: {
     base: "/users",
     detail: (id: string) => `/users/${id}`,
+    changePassword: "/users/me/change-password",
   },
 } as const;
 

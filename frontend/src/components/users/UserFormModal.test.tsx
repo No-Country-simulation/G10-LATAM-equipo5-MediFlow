@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UserFormModal } from './UserFormModal';
 import type { UserResponse } from '../../types/auth';
@@ -235,5 +235,73 @@ describe('UserFormModal user management and role assignment', () => {
 
     expect(passwordInput).toHaveAttribute('type', 'text');
     expect(screen.getByRole('button', { name: /ocultar contraseña/i })).toBeInTheDocument();
+  });
+
+  it('renders password change fields when editing own account and handles submission', async () => {
+    const user = userEvent.setup();
+    const mockOnChangePassword = vi.fn().mockResolvedValue(true);
+
+    render(
+      <UserFormModal
+        user={existingUser}
+        currentUserRole="AUDITOR_CLINICO"
+        currentUserId="user-123"
+        onClose={mockOnClose}
+        onCreate={mockOnCreate}
+        onUpdate={mockOnUpdate}
+        onChangePassword={mockOnChangePassword}
+      />
+    );
+
+    expect(screen.getByLabelText(/^contraseña actual$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/nueva contraseña \(min/i)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/^contraseña actual$/i), 'actualPass123');
+    await user.type(screen.getByLabelText(/nueva contraseña \(min/i), 'nuevaPass456');
+
+    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    expect(mockOnUpdate).toHaveBeenCalledWith(
+      'user-123',
+      expect.objectContaining({ full_name: 'Dr. Roberto Soto' })
+    );
+
+    await waitFor(() => {
+      expect(mockOnChangePassword).toHaveBeenCalledWith({
+        current_password: 'actualPass123',
+        new_password: 'nuevaPass456',
+      });
+    });
+  });
+
+  it('validates password requirements when changing own password in edit mode', async () => {
+    const user = userEvent.setup();
+    const mockOnChangePassword = vi.fn();
+
+    render(
+      <UserFormModal
+        user={existingUser}
+        currentUserRole="AUDITOR_CLINICO"
+        currentUserId="user-123"
+        onClose={mockOnClose}
+        onCreate={mockOnCreate}
+        onUpdate={mockOnUpdate}
+        onChangePassword={mockOnChangePassword}
+      />
+    );
+
+    // Only new password without current password
+    await user.type(screen.getByLabelText(/nueva contraseña \(min/i), 'corta');
+    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    expect(await screen.findByText(/debes ingresar tu contraseña actual para cambiarla/i)).toBeInTheDocument();
+    expect(mockOnChangePassword).not.toHaveBeenCalled();
+
+    // With current password but new password too short (< 8 chars)
+    await user.type(screen.getByLabelText(/^contraseña actual$/i), 'actualPass123');
+    fireEvent.submit(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    expect(await screen.findByText(/la nueva contraseña debe tener al menos 8 caracteres/i)).toBeInTheDocument();
+    expect(mockOnChangePassword).not.toHaveBeenCalled();
   });
 });
