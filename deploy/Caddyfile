@@ -2,12 +2,21 @@
 # - Sirve el front compilado.
 # - /api/*     -> backend FastAPI
 # - /webhook/* -> n8n (solo los webhooks; el editor de n8n NO se publica)
-# Con DOMAIN=midominio.cl, Caddy obtiene y renueva el certificado HTTPS (Let's Encrypt) solo.
+# SITE_ADDRESS (por defecto = DOMAIN, ver docker-compose.prod.yml):
+# - midominio.cl: Caddy obtiene y renueva el certificado HTTPS (Let's Encrypt) solo (VM con IP pública, OCI).
+# - :80: solo HTTP, detrás de un proxy que termina TLS (Cloudflare Tunnel en Proxmox).
 {
 	email {$ACME_EMAIL}
+	servers {
+		# Solo detrás de estos proxies se cree la IP del cliente que informan (Cf-Connecting-Ip la fija
+		# Cloudflare y el cliente no la puede falsificar). Con el valor por defecto (127.0.0.1/32) se usa la
+		# IP de la conexión. El backend la usa para el bloqueo de login (usuario + IP).
+		trusted_proxies static {$TRUSTED_PROXIES}
+		client_ip_headers Cf-Connecting-Ip X-Forwarded-For
+	}
 }
 
-{$DOMAIN} {
+{$SITE_ADDRESS} {
 	encode zstd gzip
 
 	header {
@@ -25,7 +34,11 @@
 		request_body {
 			max_size 20MB
 		}
-		reverse_proxy backend:8000
+		reverse_proxy backend:8000 {
+			# Uvicorn toma la primera IP de X-Forwarded-For: se reemplaza por la ya validada arriba, para
+			# que un X-Forwarded-For inventado por el cliente no esquive el bloqueo de login.
+			header_up X-Forwarded-For {client_ip}
+		}
 	}
 
 	handle /webhook/* {
