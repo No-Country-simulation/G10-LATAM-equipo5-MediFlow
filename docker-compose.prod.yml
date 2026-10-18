@@ -1,4 +1,4 @@
-# Despliegue completo en una VM de OCI (ver docs/DESPLIEGUE_OCI.md):
+# Despliegue completo en una VM (OCI: docs/DESPLIEGUE_OCI.md; Proxmox + CI/CD: docs/DESPLIEGUE_PROXMOX.md):
 #   cp .env.prod.example .env   # y completar
 #   docker compose -f docker-compose.prod.yml up -d --build
 # Solo `web` (Caddy) publica puertos (80/443). Postgres, backend y n8n quedan en la red interna.
@@ -114,6 +114,10 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?falta DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL:?falta ACME_EMAIL}
+      # `:80` detrás de un proxy con TLS (Cloudflare Tunnel); por defecto el dominio, con HTTPS propio.
+      SITE_ADDRESS: ${SITE_ADDRESS:-${DOMAIN}}
+      # Rangos de los proxies cuya IP de cliente informada se acepta (ej. la red de los nodos de k8s).
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32}
     volumes:
       - caddy_data:/data
       - caddy_config:/config

@@ -1,0 +1,189 @@
+# CI en cada PR y push a main; despliegue a la VM de Proxmox (runner self-hosted) solo tras un push a main
+# con todos los tests en verde. Guía completa: docs/DESPLIEGUE_PROXMOX.md
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      recargar_catalogos:
+        description: "Re-ejecutar init_catalogo.sql (revierte tipos y colas semilla editados desde la UI)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
+  frontend:
+    name: Frontend (lint, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  workflow-n8n:
+    name: Workflow n8n (nodos)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node --test workflow/tests/nodos.test.mjs
+
+  caddy:
+    name: Caddyfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validar en modo túnel (:80) y en modo HTTPS propio (dominio)
+        run: |
+          for site in ":80" "mediflow.example.cl"; do
+            docker run --rm -e SITE_ADDRESS="$site" -e TRUSTED_PROXIES=10.0.0.0/8 -e ACME_EMAIL=ci@example.cl \
+              -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+              caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          done
+
+  deploy:
+    name: Despliegue (Proxmox)
+    needs: [backend, frontend, workflow-n8n, caddy]
+    # Nunca en pull_request: el runner self-hosted solo ejecuta código ya integrado en main.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: [self-hosted, linux, mediflow-prod]
+    environment:
+      name: production
+      url: https://${{ vars.DOMAIN }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      # Directorio fijo fuera del workspace del runner: el siguiente checkout limpia el workspace y borraría
+      # el .env y la llave que usan los contenedores en ejecución.
+      DEPLOY_DIR: /opt/mediflow
+      COMPOSE: docker compose -p mediflow -f docker-compose.prod.yml
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Copiar el código a /opt/mediflow
+        run: |
+          rsync -a --delete \
+            --exclude .git/ --exclude .github/ --exclude .env --exclude backend/secrets/ \
+            --exclude node_modules/ --exclude dist/ \
+            ./ "$DEPLOY_DIR/"
+
+      - name: Escribir .env y llave de OCI desde los secrets del Environment
+        env:
+          DOMAIN: ${{ vars.DOMAIN }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          TRUSTED_PROXIES: ${{ vars.TRUSTED_PROXIES }}
+          POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+          POSTGRES_DB: ${{ vars.POSTGRES_DB }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+          N8N_ENCRYPTION_KEY: ${{ secrets.N8N_ENCRYPTION_KEY }}
+          N8N_VERSION: ${{ vars.N8N_VERSION }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_BUCKET_NAME: ${{ vars.OCI_BUCKET_NAME }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_API_KEY_PEM: ${{ secrets.OCI_API_KEY_PEM }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+          GEMINI_MODELO_RAPIDO: ${{ vars.GEMINI_MODELO_RAPIDO }}
+          GEMINI_MODELO_PRECISO: ${{ vars.GEMINI_MODELO_PRECISO }}
+        run: |
+          umask 077
+          cd "$DEPLOY_DIR"
+          # Vacías = el valor por defecto del compose (`${VAR:-...}`); las obligatorias fallan en `config`.
+          {
+            printf 'SITE_ADDRESS=:80\nOCI_AUTH_MODE=api_key\n'
+            for v in DOMAIN ACME_EMAIL TRUSTED_PROXIES POSTGRES_USER POSTGRES_DB POSTGRES_PASSWORD \
+                     JWT_SECRET_KEY N8N_ENCRYPTION_KEY N8N_VERSION OCI_REGION OCI_BUCKET_NAME \
+                     OCI_COMPARTMENT_OCID OCI_USER_OCID OCI_TENANCY_OCID OCI_FINGERPRINT LOG_LEVEL \
+                     GEMINI_MODELO_RAPIDO GEMINI_MODELO_PRECISO; do
+              printf '%s=%s\n' "$v" "${!v}"
+            done
+          } > .env
+
+          # El backend corre como UID 10001: lectura solo para ese usuario (ACL), sin root en la VM.
+          mkdir -p backend/secrets
+          chmod 700 backend/secrets
+          printf '%s\n' "$OCI_API_KEY_PEM" > backend/secrets/oci_api_key.pem
+          chmod 600 backend/secrets/oci_api_key.pem
+          setfacl -m u:10001:rx backend/secrets
+          setfacl -m u:10001:r backend/secrets/oci_api_key.pem
+
+          $COMPOSE config --quiet
+
+      - name: Levantar Postgres y aplicar el esquema (init.sql es re-ejecutable)
+        working-directory: ${{ env.DEPLOY_DIR }}
+        env:
+          POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+          POSTGRES_DB: ${{ vars.POSTGRES_DB }}
+        run: |
+          $COMPOSE up -d --wait postgres
+          $COMPOSE exec -T postgres psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+            < docker/postgres/init.sql
+          if [ "${{ inputs.recargar_catalogos }}" = "true" ]; then
+            $COMPOSE exec -T postgres psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+              < docker/postgres/init_catalogo.sql
+          fi
+
+      - name: Construir y levantar
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: $COMPOSE up -d --build --remove-orphans --wait --wait-timeout 300
+
+      - name: Verificar salud (base de datos y OCI)
+        run: |
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1/api/v1/health
+          echo
+          curl -fsS -o /dev/null http://127.0.0.1/
+
+      - name: Logs si falló
+        if: failure()
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          $COMPOSE ps
+          $COMPOSE logs --tail 150 backend web n8n
+
+      - name: Limpiar imágenes y caché de build antiguas
+        if: success()
+        run: |
+          docker image prune -f
+          docker builder prune -f --filter until=168h

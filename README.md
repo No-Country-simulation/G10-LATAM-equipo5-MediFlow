@@ -275,6 +275,7 @@ Prefijo `/api/v1`. Salvo `health`, `login` y `refresh`, todo requiere `Authoriza
 | [`frontend/README.md`](frontend/README.md) | Pantallas, estructura, variables y qué endpoint usa cada pantalla |
 | [`workflow/README.md`](workflow/README.md) | Flujo de n8n, configuración, edición y uso de tokens |
 | [`docs/DESPLIEGUE_OCI.md`](docs/DESPLIEGUE_OCI.md) | Despliegue en Oracle Cloud y checklist de seguridad |
+| [`docs/DESPLIEGUE_PROXMOX.md`](docs/DESPLIEGUE_PROXMOX.md) | Despliegue en Proxmox con Cloudflare Tunnel y CI/CD (GitHub Actions + runner self-hosted) |
 | [`docs/LOGS.md`](docs/LOGS.md) | Dónde están los logs y cómo seguir una operación con el ID de seguimiento |
 | [`docs/qa/`](docs/qa) | Plan de pruebas, casos de prueba y datos de prueba |
 | `docs/Documento Sistema Mediflow.docx` | Documento funcional y técnico completo, con diagramas |
