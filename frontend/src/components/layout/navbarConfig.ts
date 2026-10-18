@@ -27,7 +27,7 @@ export const getNavLinks = (role?: UserRole): NavItem[] => {
     { to: '/dashboard', label: 'Inicio', icon: LayoutDashboard },
     {
       to: '/documentos',
-      label: role === 'OPERADOR' ? 'Mis Documentos' : 'Expedientes',
+      label: role === 'OPERADOR' ? 'Documentos' : 'Expedientes',
       icon: FolderOpen,
     },
   ];

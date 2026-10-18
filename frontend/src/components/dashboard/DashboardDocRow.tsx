@@ -1,12 +1,10 @@
 import type { DocumentListItemResponse } from '../../types/medical';
-import { CATEGORY_LABELS } from '../../types/documents';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 import PriorityBadge from '../common/PriorityBadge';
 import DocumentStatusBadge from '../common/DocumentStatusBadge';
 import { useDocumentDetailModal } from '../../context/documentDetailContext';
 import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clickableCard';
 import { timeAgo } from '../../utils/timeAgo';
-
-const categoryLookup: Record<string, string> = CATEGORY_LABELS;
 
 interface DashboardDocRowProps {
   doc: DocumentListItemResponse;
@@ -18,6 +16,7 @@ interface DashboardDocRowProps {
 /** Fila compacta de documento para los paneles del inicio; abre el detalle al hacer clic. */
 const DashboardDocRow = ({ doc, timeLabel, showStatus = false }: DashboardDocRowProps) => {
   const { abrirDocumento } = useDocumentDetailModal();
+  const { documentTypeName } = useCatalogLabels();
 
   return (
     <li>
@@ -29,7 +28,7 @@ const DashboardDocRow = ({ doc, timeLabel, showStatus = false }: DashboardDocRow
           <div className="flex items-center gap-2 text-xs">
             <span className="font-mono font-bold text-slate-200 truncate">{doc.documento_id}</span>
             <span className="text-slate-600">•</span>
-            <span className="text-slate-400 truncate">{categoryLookup[doc.tipo_documento] ?? doc.tipo_documento}</span>
+            <span className="text-slate-400 truncate">{documentTypeName(doc.tipo_documento)}</span>
           </div>
           <div className="text-[11px] text-slate-400 truncate mt-0.5">
             {doc.nombre_paciente ?? 'Paciente sin nombre'}

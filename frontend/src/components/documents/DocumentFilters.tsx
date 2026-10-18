@@ -3,7 +3,6 @@ import { Search, CalendarDays, RotateCcw } from 'lucide-react';
 import { useCatalogs } from '../../hooks/useCatalogs';
 import { useActiveAreas } from '../../hooks/useActiveAreas';
 import type { DocumentDestinationFilter, DocumentFiltersValue, DocumentStatusFilter } from '../../types/documents';
-import { CANONICAL_QUEUES, DESTINATION_LABELS } from '../../types/documents';
 import type { NivelPrioridad } from '../../types/medical';
 import { DATE_PRESET_OPTIONS, toInputDate } from '../../utils/dateRange';
 import { FilterButtonGroup } from './FilterButtonGroup';
@@ -44,17 +43,15 @@ const DocumentFilters = ({ filters, onChange, onReset, isDirty, showAreaFilter, 
   const { areas } = useActiveAreas(showAreaFilter);
   const today = toInputDate(new Date());
 
-  const destinationOptions = useMemo(() => {
-    const queueList = queues.length > 0
-      ? queues.map((q) => ({ id: q.codigo as DocumentDestinationFilter, label: q.nombre }))
-      : CANONICAL_QUEUES.map((code) => ({ id: code as DocumentDestinationFilter, label: DESTINATION_LABELS[code] ?? code }));
-
-    return [
-      { id: 'ALL' as DocumentDestinationFilter, label: 'Todos' },
-      ...queueList,
-      { id: 'OTROS' as DocumentDestinationFilter, label: 'Otras Derivaciones' },
-    ];
-  }, [queues]);
+  // Las colas activas del catálogo (API); mientras cargan solo están "Todos" y "Otras".
+  const destinationOptions = useMemo<{ id: DocumentDestinationFilter; label: string }[]>(
+    () => [
+      { id: 'ALL', label: 'Todos' },
+      ...queues.map((q) => ({ id: q.codigo, label: q.nombre })),
+      { id: 'OTROS', label: 'Otras Derivaciones' },
+    ],
+    [queues]
+  );
 
   return (
     <div className="space-y-4 p-4 rounded-xl bg-slate-900/60 border border-slate-800">

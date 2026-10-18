@@ -5,6 +5,7 @@ import PriorityBadge from '../common/PriorityBadge';
 import type { N8nIngestResponse, N8nProfesional } from '../../types/ingestion';
 import { formatIdentificacion } from '../../utils/identificacion';
 import { useDocumentDetailModal } from '../../context/documentDetailContext';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 
 interface TriageProcessSummaryProps {
   response: N8nIngestResponse;
@@ -40,6 +41,7 @@ const TriageProcessSummary = ({ response, onReset }: TriageProcessSummaryProps) 
   const principal = diagnosticos.find((d) => d.tipo === 'PRINCIPAL') ?? diagnosticos[0];
   const clasificacion = response.clasificacion;
   const routing = response.decision_enrutamiento;
+  const { queueName, documentTypeName } = useCatalogLabels();
   // El score final lo calcula el backend; el que reporta la IA queda solo como respaldo.
   const score = response.score_confianza ?? clasificacion?.score_confianza_clasificacion ?? undefined;
   const ficha = paciente?.numero_ficha ? ` · Ficha ${paciente.numero_ficha}` : '';
@@ -71,7 +73,7 @@ const TriageProcessSummary = ({ response, onReset }: TriageProcessSummaryProps) 
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Field label="Tipo de documento">{clasificacion?.tipo_documento || '-'}</Field>
+        <Field label="Tipo de documento">{documentTypeName(clasificacion?.tipo_documento) ?? '-'}</Field>
         <Field label="Prioridad">
           {clasificacion?.nivel_prioridad ? <PriorityBadge prioridad={clasificacion.nivel_prioridad} /> : '-'}
         </Field>
@@ -90,7 +92,7 @@ const TriageProcessSummary = ({ response, onReset }: TriageProcessSummaryProps) 
           {principal?.descripcion || '-'}
           {principal?.cie10 && <span className="block text-slate-400 font-normal font-mono">CIE-10 {principal.cie10}</span>}
         </Field>
-        <Field label="Cola de destino">{routing?.destino_principal || '-'}</Field>
+        <Field label="Cola de destino">{queueName(routing?.destino_principal) ?? '-'}</Field>
         <div className="sm:col-span-2">
           <Field label="Justificación del enrutamiento">{routing?.justificacion_enrutamiento || '-'}</Field>
         </div>

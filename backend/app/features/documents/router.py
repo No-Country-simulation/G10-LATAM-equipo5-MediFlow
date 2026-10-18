@@ -40,6 +40,7 @@ from app.features.documents.service import (
     ingest_document,
 )
 from app.features.documents.stats import get_dashboard_stats
+from app.features.documents.visibility import visible_documents_condition
 from app.features.documents.triage import derive_document, get_triage_cases, mark_attended, unmark_attended
 
 router = APIRouter(tags=["Documents"])
@@ -52,7 +53,10 @@ _DOCUMENTO_ID = Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 def _own_documents_only(user: User) -> UUID | None:
-    """Un OPERADOR solo accede a los documentos que subió; los demás roles, a todos."""
+    """Para los duplicados: a un OPERADOR solo se le detallan los que subió; los demás roles ven todos.
+
+    Qué documentos ve cada rol lo define `visibility.visible_documents_condition`.
+    """
     return user.id if user.role == UserRole.OPERADOR else None
 
 
@@ -125,8 +129,8 @@ async def list_documents(
 ) -> PaginatedDocumentResponse:
     """Lista la bandeja documental con filtros dinámicos y paginación.
 
-    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo ve los documentos que subió.
-    Los eliminados no aparecen salvo con `estado=ELIMINADO`, que solo puede pedir un ADMIN (`403`).
+    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo ve los documentos que subió
+    y los derivados a sus colas asistenciales asignadas. Los eliminados no aparecen salvo con `estado=ELIMINADO`, que solo puede pedir un ADMIN (`403`).
     """
     if estado and ESTADO_ELIMINADO in estado.split(",") and current_user.role != UserRole.ADMIN:
         raise HTTPException(
@@ -135,7 +139,7 @@ async def list_documents(
         )
     result = await get_paginated_documents(
         db,
-        uploaded_by_id=_own_documents_only(current_user),
+        alcance=visible_documents_condition(current_user),
         page=page,
         page_size=page_size,
         estado=estado,
@@ -178,7 +182,8 @@ async def dashboard_stats(
     """Resumen del inicio: conteos del período por prioridad, estado, día y cola, más las listas
     de trabajo del rol (pendientes de auditoría y casos tomados, o las últimas cargas del OPERADOR).
 
-    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo cuenta los documentos que subió.
+    Requiere rol ADMIN, AUDITOR_CLINICO u OPERADOR; un OPERADOR solo cuenta los documentos que subió
+    y los derivados a sus colas asistenciales asignadas.
     """
     hasta = _con_zona(fecha_hasta) or datetime.now(timezone.utc)
     desde = _con_zona(fecha_desde) or hasta - timedelta(days=_DIAS_DASHBOARD_POR_DEFECTO - 1)
@@ -254,14 +259,11 @@ async def get_document(
     subió o los derivados a sus colas asistenciales; para cualquier otro recibe `404`. Un documento
     eliminado solo lo ve un ADMIN.
     """
-    uploaded_by_id = _own_documents_only(current_user)
-    # El OPERADOR también abre los casos de sus colas, que ve en la Consola de Triaje.
-    colas = [q.codigo for q in current_user.colas if q.es_asistencial] if uploaded_by_id else None
     return await get_document_detail(
         documento_id,
         db,
-        uploaded_by_id=uploaded_by_id,
-        colas=colas,
+        alcance=visible_documents_condition(current_user),
+        uploaded_by_id=_own_documents_only(current_user),
         incluir_eliminados=current_user.role == UserRole.ADMIN,
     )
 

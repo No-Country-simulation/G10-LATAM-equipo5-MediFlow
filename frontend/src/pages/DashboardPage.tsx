@@ -20,7 +20,7 @@ export const DashboardPage = () => {
         <div>
           <h1 className="text-base font-bold text-white tracking-tight">Resumen</h1>
           <p className="text-xs text-slate-400">
-            {esOperador ? 'Tus documentos' : 'Actividad del hospital'} · últimos {DASHBOARD_DIAS} días
+            {esOperador ? 'Tus documentos y colas' : 'Actividad del hospital'} · últimos {DASHBOARD_DIAS} días
           </p>
         </div>
         <button

@@ -4,6 +4,7 @@ import type { AreaSummary, QueueSummary } from '../types/auth';
 import type { DocumentForms } from '../types/forms';
 import type {
   AreaRecord,
+  CatalogLabelsResponse,
   CatalogPayload,
   CatalogRecord,
   DeleteResponse,
@@ -33,4 +34,6 @@ export const catalogService = {
   getActiveAreas: () => api.get<AreaSummary[]>(FASTAPI_ENDPOINTS.catalogs.areasActive),
   getQueuesSummary: () => api.get<QueueSummary[]>(FASTAPI_ENDPOINTS.catalogs.queuesSummary),
   getDocumentForms: () => api.get<DocumentForms>(FASTAPI_ENDPOINTS.catalogs.documentTypeForms),
+  /** Nombres de todas las colas y tipos (también inactivos), para mostrarlos en vez del código. */
+  getLabels: () => api.get<CatalogLabelsResponse>(FASTAPI_ENDPOINTS.catalogs.labels),
 };

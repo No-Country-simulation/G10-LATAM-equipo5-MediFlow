@@ -26,7 +26,7 @@ Plan: [test-plan.md](test-plan.md) · Datos: [test-data.md](test-data.md)
 | `TC-AUTH-004` | Logout y revocación | Token válido | 1. `POST /auth/logout` · 2. Reintentar con el mismo token | `204` en el logout y `401` al reintentar | 🟡 **PENDIENTE** | `test_auth_api.py` |
 | `TC-AUTH-005` | Renovación con refresh token | Login hecho | 1. `POST /auth/refresh` con el refresh token · 2. Repetir con el **mismo** refresh token | 1: `200` con un par nuevo · 2: `401` (es de un solo uso) | 🟡 **PENDIENTE** | `test_auth_api.py` |
 | `TC-AUTH-006` | Bloqueo por intentos fallidos | Backend activo | 5 logins fallidos seguidos del mismo usuario y luego uno correcto | `429` durante 15 minutos, incluso con la contraseña correcta | 🟡 **PENDIENTE** | `test_hardening.py` |
-| `TC-AUTH-007` | Menú por rol | Usuarios de prueba | Iniciar sesión con cada rol | ADMIN: todo · AUDITOR: sin Usuarios ni Catálogos · OPERADOR: *Mis Documentos*, sin Auditoría · GESTOR: Usuarios y Catálogos (solo Áreas) | 🟡 **PENDIENTE** | — |
+| `TC-AUTH-007` | Menú por rol | Usuarios de prueba | Iniciar sesión con cada rol | ADMIN: todo · AUDITOR: sin Usuarios ni Catálogos · OPERADOR: *Documentos*, sin Auditoría · GESTOR: Usuarios y Catálogos (solo Áreas) | 🟡 **PENDIENTE** | — |
 
 ## Módulo 2: Usuarios y Áreas (USR)
 
@@ -76,7 +76,7 @@ Plan: [test-plan.md](test-plan.md) · Datos: [test-data.md](test-data.md)
 | ID | Caso | Precondiciones | Pasos | Resultado esperado | Estado | Automático |
 |---|---|---|---|---|---|---|
 | `TC-DOC-001` | Filtros de la bandeja | Varios documentos | `GET /documents` con `estado`, `prioridad`, `destino` e `identificacion` | Solo los que cumplen todos los filtros | 🟡 **PENDIENTE** | `test_documents_api.py` |
-| `TC-DOC-002` | OPERADOR ve solo lo suyo | Documentos de dos usuarios | Como OPERADOR: listar y abrir un documento ajeno por su ID | El listado no lo trae; el detalle responde `404` | 🟡 **PENDIENTE** | `test_document_detail_api.py` |
+| `TC-DOC-002` | OPERADOR ve lo suyo y sus colas | Documentos de otro usuario: uno derivado a una cola del OPERADOR y otro a una cola ajena | Como OPERADOR: listar y abrir ambos por su ID | Lista y abre el de su cola; el de la cola ajena no aparece y su detalle responde `404` | 🟡 **PENDIENTE** | `test_visibility.py` |
 | `TC-DOC-003` | Detalle desde cualquier listado | Documentos procesados | Clic en una tarjeta de Inicio, Triaje y Expedientes (kanban y lista) | Se abre a pantalla completa con el original y los datos; Escape lo cierra | 🟡 **PENDIENTE** | — |
 | `TC-DOC-004` | Detalle si OCI falla | OCI caído | Abrir el detalle | Los datos se muestran igual, con un aviso de que el archivo no está disponible | 🟡 **PENDIENTE** | `test_document_detail_api.py` |
 

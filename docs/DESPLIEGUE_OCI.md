@@ -103,7 +103,7 @@ curl https://$DOMAIN/api/v1/health         # 200 si la base y OCI responden; 503
 | ✅ | n8n toma la URL del backend de su configuración (no del navegador) y valida token/archivo antes de llamar a la IA |
 | ✅ | n8n no guarda ejecuciones exitosas (contienen archivo, token y datos del paciente) |
 | ✅ | Contenedor del backend sin root |
-| ✅ | Un OPERADOR solo ve sus documentos: los ajenos responden `404`, y el aviso de duplicado no le muestra su ID ni datos del paciente |
+| ✅ | Un OPERADOR solo ve los documentos que subió y los de sus colas asignadas: los demás responden `404`, y el aviso de duplicado no le muestra su ID ni datos del paciente |
 | ✅ | Historial de correcciones: cada cambio humano a un documento guarda quién, cuándo, por qué y qué valor cambió |
 | ✅ | Detección de archivos repetidos antes de llamar a la IA (huella SHA-256) y de posibles duplicados al ingerir |
 | ⬜ | El token JWT vive en `sessionStorage`: ante un XSS sería legible. A futuro: cookie `HttpOnly` + `SameSite=Strict` |

@@ -380,7 +380,7 @@ async def test_create_user_rechaza_cola_inexistente_o_inactiva(client, login_as,
     r = await client.post("/api/v1/users", json=body, headers=login_as(UserRole.ADMIN))
 
     assert r.status_code == 422
-    assert r.json()["detail"] == "Alguna de las colas indicadas no existe o está inactiva"
+    assert r.json()["detail"] == "Alguna de las colas indicadas no existe, está inactiva o no es de la Consola de Triaje"
     assert db.added == []
 
 

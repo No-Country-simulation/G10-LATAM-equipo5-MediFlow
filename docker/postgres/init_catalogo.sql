@@ -151,4 +151,7 @@ ON CONFLICT (codigo) DO UPDATE SET
 
 -- Registros de sistema: OTRO es el comodín de la IA y Ficha_Clinica el destino por defecto.
 UPDATE document_types SET es_sistema = TRUE WHERE codigo = 'OTRO';
-UPDATE routing_queues SET es_sistema = TRUE WHERE codigo = 'Ficha_Clinica';
+-- Ficha_Clinica la ven todos los usuarios: no es asistencial (no va a Triaje) ni se asigna a nadie.
+UPDATE routing_queues SET es_sistema = TRUE, es_asistencial = FALSE WHERE codigo = 'Ficha_Clinica';
+DELETE FROM user_queues
+WHERE queue_id IN (SELECT id FROM routing_queues WHERE codigo = 'Ficha_Clinica');

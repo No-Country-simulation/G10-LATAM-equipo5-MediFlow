@@ -3,6 +3,14 @@ import type { CatalogApi } from '../services/catalogService';
 import type { CatalogPayload, CatalogRecord } from '../types/catalog';
 import { errorMessage } from '../utils/errors';
 import { useActionFeedback } from './useActionFeedback';
+import { invalidateActiveCatalogs } from './useCatalogs';
+import { invalidateCatalogLabels } from './useCatalogLabels';
+
+/** Tras cada cambio se descartan las cargas compartidas, para que las demás pantallas vean lo nuevo. */
+const invalidateCatalogs = () => {
+  invalidateActiveCatalogs();
+  invalidateCatalogLabels();
+};
 
 /** Estado y acciones CRUD de un catálogo; `singular` se usa en los mensajes ("área", "cola"). */
 export const useCatalogManagement = (api: CatalogApi<CatalogRecord>, singular: string) => {
@@ -49,6 +57,7 @@ export const useCatalogManagement = (api: CatalogApi<CatalogRecord>, singular: s
     reset();
     try {
       const created = await api.create(payload);
+      invalidateCatalogs();
       setRecords((prev) => [...prev, created].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
       setSuccessMessage(`Registro ${created.codigo} creado correctamente`);
       return true;
@@ -62,6 +71,7 @@ export const useCatalogManagement = (api: CatalogApi<CatalogRecord>, singular: s
     reset();
     try {
       const updated = await api.update(id, payload);
+      invalidateCatalogs();
       replaceRecord(updated);
       setSuccessMessage(`Registro ${updated.codigo} actualizado correctamente`);
       return true;
@@ -84,6 +94,7 @@ export const useCatalogManagement = (api: CatalogApi<CatalogRecord>, singular: s
     reset();
     try {
       const result = await api.remove(record.id);
+      invalidateCatalogs();
       if (result.deletion_type === 'HARD_DELETE') {
         setRecords((prev) => prev.filter((r) => r.id !== record.id));
       } else {

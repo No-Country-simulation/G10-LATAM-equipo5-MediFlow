@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import type { ConteoDestino } from '../../types/dashboard';
-import { DESTINATION_LABELS } from '../../types/documents';
-import { useCatalogs } from '../../hooks/useCatalogs';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 import { expedientesUrl } from '../../utils/dashboardLinks';
 import DashboardPanel from './DashboardPanel';
 import { SINGLE_SERIES_COLOR } from './chartColors';
@@ -13,7 +12,6 @@ interface QueueDistributionChartProps {
 }
 
 const MAX_FILAS = 6;
-const destinationLookup: Record<string, string> = DESTINATION_LABELS;
 
 interface Fila {
   key: string;
@@ -25,19 +23,18 @@ interface Fila {
 
 /** Barras horizontales: a qué colas se derivaron los documentos del período. */
 const QueueDistributionChart = ({ porDestino, dias }: QueueDistributionChartProps) => {
-  const { queues } = useCatalogs();
+  const { queueName } = useCatalogLabels();
 
   const filas = useMemo<Fila[]>(() => {
-    const nombres = new Map(queues.map((q) => [q.codigo, q.nombre]));
     const todas: Fila[] = porDestino.map(({ destino, total }) =>
       destino
-        ? { key: destino, label: nombres.get(destino) ?? destinationLookup[destino] ?? destino, total, destino }
+        ? { key: destino, label: queueName(destino) ?? destino, total, destino }
         : { key: '__sin_cola__', label: 'Sin cola asignada', total }
     );
     if (todas.length <= MAX_FILAS) return todas;
     const resto = todas.slice(MAX_FILAS - 1).reduce((acc, f) => acc + f.total, 0);
     return [...todas.slice(0, MAX_FILAS - 1), { key: '__otras__', label: 'Otras colas', total: resto }];
-  }, [porDestino, queues]);
+  }, [porDestino, queueName]);
 
   const max = Math.max(1, ...filas.map((f) => f.total));
 

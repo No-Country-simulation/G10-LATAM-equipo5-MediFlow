@@ -4,9 +4,9 @@ import { AlertCircle, CheckCircle2, Loader2, PencilLine, RotateCcw, Trash2, X } 
 import { useAuth } from '../../hooks/useAuth';
 import { useDocumentDetail } from '../../hooks/useDocumentDetail';
 import { useDocumentDetailModal } from '../../context/documentDetailContext';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 import type { DocumentDetailResponse } from '../../types/medical';
 import { DOCUMENT_CORRECTION_ROLES, ESTADOS_CORREGIBLES, canAccessRoute } from '../../utils/permissions';
-import { etiquetaDeCodigo } from '../../utils/etiquetas';
 import PriorityBadge from '../common/PriorityBadge';
 import DocumentStatusBadge from '../common/DocumentStatusBadge';
 import DocumentFilesViewer from '../common/DocumentFilesViewer';
@@ -31,6 +31,7 @@ const DocumentDetailModal = ({ documentoId, onClose }: DocumentDetailModalProps)
   const { user } = useAuth();
   const { notificarCambio } = useDocumentDetailModal();
   const { detail, loading, error, recargar } = useDocumentDetail(documentoId);
+  const { documentTypeName } = useCatalogLabels();
   const [editando, setEditando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [accion, setAccion] = useState<'eliminar' | 'restaurar' | null>(null);
@@ -101,7 +102,7 @@ const DocumentDetailModal = ({ documentoId, onClose }: DocumentDetailModalProps)
           </h2>
           {detail && (
             <>
-              <span className="text-xs text-slate-400">{etiquetaDeCodigo(detail.tipo_documento)}</span>
+              <span className="text-xs text-slate-400">{documentTypeName(detail.tipo_documento)}</span>
               <PriorityBadge prioridad={detail.nivel_prioridad} />
               <DocumentStatusBadge estado={detail.estado} requiereAuditoria={detail.requiere_auditoria} />
             </>

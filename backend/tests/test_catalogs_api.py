@@ -326,6 +326,29 @@ async def test_system_record_cannot_be_deleted_or_deactivated(client, login_as, 
     assert queue.is_active is True and db.deleted == []
 
 
+async def test_system_queue_cannot_be_shown_in_triage(client, login_as, db):
+    queue = make_queue(codigo="Ficha_Clinica", es_sistema=True, es_asistencial=False)
+    db.get_result = queue
+    headers = login_as(UserRole.ADMIN)
+
+    r = await client.put(
+        f"/api/v1/catalogs/queues/{queue.id}", json={"es_asistencial": True}, headers=headers
+    )
+    assert r.status_code == 409
+    assert "Consola de Triaje" in r.json()["detail"]
+    assert queue.es_asistencial is False
+
+
+async def test_system_queue_accepts_es_asistencial_false(client, login_as, db):
+    # El formulario de edición envía todos sus campos: dejarla fuera de Triaje no debe fallar.
+    queue = make_queue(codigo="Ficha_Clinica", es_sistema=True, es_asistencial=False)
+    db.get_result = queue
+    r = await client.put(
+        f"/api/v1/catalogs/queues/{queue.id}", json={"es_asistencial": False}, headers=login_as(UserRole.ADMIN)
+    )
+    assert r.status_code == 200
+
+
 async def test_system_record_description_can_be_edited(client, login_as, db):
     doc_type = make_doc_type(codigo="OTRO", es_sistema=True)
     db.get_result = doc_type
@@ -441,3 +464,27 @@ async def test_queues_active_para_n8n_no_cambia_de_formato(client, login_as, db)
     db.queue([make_queue()])
     r = await client.get("/api/v1/catalogs/queues/active", headers=login_as(UserRole.ADMIN))
     assert set(r.json()[0]) == {"codigo", "nombre", "descripcion_semantica", "notificar_inmediato"}
+
+
+async def test_catalog_labels_requires_token(client):
+    assert (await client.get("/api/v1/catalogs/labels")).status_code == 401
+
+
+async def test_catalog_labels_include_inactive_records_for_any_role(client, login_as, db):
+    # Una consulta por catálogo: (codigo, nombre, is_active), sin descripciones ni esquemas.
+    db.queue(
+        [("Ficha_Clinica", "Ficha Clínica", True), ("Cola_Antigua", "Cola Antigua", False)],
+        [("ATENCION_URGENCIA", "Dato de Atención de Urgencia", True)],
+    )
+    r = await client.get("/api/v1/catalogs/labels", headers=login_as(UserRole.OPERADOR))
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "colas": [
+            {"codigo": "Ficha_Clinica", "nombre": "Ficha Clínica", "is_active": True},
+            {"codigo": "Cola_Antigua", "nombre": "Cola Antigua", "is_active": False},
+        ],
+        "tipos_documento": [
+            {"codigo": "ATENCION_URGENCIA", "nombre": "Dato de Atención de Urgencia", "is_active": True},
+        ],
+    }

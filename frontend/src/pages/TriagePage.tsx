@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { AlertCircle, CheckCircle2, Clock, Inbox, Shuffle, Undo2, X } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useTriageConsole } from '../hooks/useTriageConsole';
+import { useCatalogLabels } from '../hooks/useCatalogLabels';
 import { useDocumentDetailModal } from '../context/documentDetailContext';
 import CriticalAlertBanner from '../components/dashboard/CriticalAlertBanner';
 import TriageCaseCard from '../components/triage/TriageCaseCard';
@@ -45,9 +46,11 @@ const TriagePage = () => {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const queueNames = useMemo(() => new Map(colas.map((q) => [q.codigo, q.nombre])), [colas]);
+  const { queueName: catalogQueueName } = useCatalogLabels();
+  // Las colas de la consola son solo las del usuario: las demás (p. ej. al derivar) salen del catálogo.
   const queueName = useCallback(
-    (codigo: string | null) => (codigo ? queueNames.get(codigo) ?? codigo : 'Sin cola'),
-    [queueNames]
+    (codigo: string | null) => (codigo ? queueNames.get(codigo) ?? catalogQueueName(codigo) ?? codigo : 'Sin cola'),
+    [queueNames, catalogQueueName]
   );
 
   const hide = (id: string) => setHiddenIds((prev) => new Set(prev).add(id));
@@ -119,11 +122,11 @@ const TriagePage = () => {
     }
     // Si la nueva cola no es una de las visibles, el caso sale de la consola.
     if (!queueNames.has(destino)) hide(derivingDoc.documento_id);
-    setFeedback({ kind: 'derived', doc: derivingDoc, queueName: queueNames.get(destino) ?? destino });
+    setFeedback({ kind: 'derived', doc: derivingDoc, queueName: queueName(destino) });
     setDerivingDoc(null);
     notificarCambio();
     return null;
-  }, [derivingDoc, queueNames, notificarCambio]);
+  }, [derivingDoc, queueNames, queueName, notificarCambio]);
 
   const triagedCases = useMemo(() => {
     return cases

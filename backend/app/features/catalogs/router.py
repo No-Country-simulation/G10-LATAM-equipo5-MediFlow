@@ -16,6 +16,7 @@ from app.features.catalogs.schemas import (
     AreaSummary,
     AreaUpdate,
     CatalogHistoryResponse,
+    CatalogLabelsResponse,
     DeleteResponse,
     DocumentFormsResponse,
     DocumentTypeActiveForLLM,
@@ -37,6 +38,16 @@ _IS_ACTIVE_FILTER = Query(None, description="Filtrar por estado activo/inactivo;
 
 
 # Las rutas `/active` se declaran antes que `/{id}` para que "active" no se interprete como UUID.
+
+
+@router.get("/labels", response_model=CatalogLabelsResponse)
+async def get_catalog_labels(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CatalogLabelsResponse:
+    """Código, nombre y estado de todas las colas y tipos de documento (incluidos los inactivos),
+    para que el front muestre nombres en lugar de códigos. Requiere autenticación."""
+    return await service.get_catalog_labels(db)
 
 # --- Colas de enrutamiento ---------------------------------------------------
 

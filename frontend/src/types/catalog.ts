@@ -48,3 +48,15 @@ export interface DeleteResponse {
   message: string;
   deletion_type: DeletionType;
 }
+
+/** Código y nombre para mostrar de una cola o tipo de documento (incluye los inactivos). */
+export interface CatalogLabel {
+  codigo: string;
+  nombre: string;
+  is_active: boolean;
+}
+
+export interface CatalogLabelsResponse {
+  colas: CatalogLabel[];
+  tipos_documento: CatalogLabel[];
+}

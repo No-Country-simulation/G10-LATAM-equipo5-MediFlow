@@ -1,6 +1,6 @@
 import { FileText, User, Stethoscope, ArrowRight, ShieldCheck } from 'lucide-react';
 import type { DocumentListItemResponse } from '../../types/medical';
-import { DESTINATION_LABELS, CATEGORY_LABELS } from '../../types/documents';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 import PriorityBadge from '../common/PriorityBadge';
 import DocumentStatusBadge from '../common/DocumentStatusBadge';
 import OciPath from './OciPath';
@@ -11,9 +11,6 @@ import { tarjetaClickeable, TARJETA_CLICKEABLE_CLASES } from '../../utils/clicka
 interface DocumentRepositoryCardProps {
   doc: DocumentListItemResponse;
 }
-
-const destinationLookup: Record<string, string> = DESTINATION_LABELS;
-const categoryLookup: Record<string, string> = CATEGORY_LABELS;
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—';
@@ -29,11 +26,10 @@ function formatConfidence(score: number | null | undefined): string {
 
 const DocumentRepositoryCard = ({ doc }: DocumentRepositoryCardProps) => {
   const { abrirDocumento } = useDocumentDetailModal();
-  const destinationLabel = doc.destino_enrutamiento
-    ? (destinationLookup[doc.destino_enrutamiento] ?? doc.destino_enrutamiento)
-    : 'Otras Derivaciones';
+  const { queueName, documentTypeName } = useCatalogLabels();
+  const destinationLabel = queueName(doc.destino_enrutamiento) ?? 'Otras Derivaciones';
 
-  const categoryLabel = categoryLookup[doc.tipo_documento] ?? doc.tipo_documento;
+  const categoryLabel = documentTypeName(doc.tipo_documento);
   const formattedDate = formatDate(doc.created_at);
   const confidencePercent = formatConfidence(doc.score_confianza);
   const clinicalDiagnosis =

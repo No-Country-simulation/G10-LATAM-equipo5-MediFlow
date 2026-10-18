@@ -20,6 +20,7 @@ from app.features.documents.schemas import (
     DocumentListItemResponse,
     IngresosDia,
 )
+from app.features.documents.visibility import own_uploads_condition, visible_documents_condition
 
 ESTADO_PENDIENTE = "PENDIENTE_AUDITORIA"
 ESTADOS_RESUELTOS = ("PROCESADO", "AUDITADO")
@@ -63,12 +64,14 @@ async def get_dashboard_stats(
 ) -> DashboardStatsResponse:
     """KPIs y series del período, más las listas de trabajo que corresponden al rol del usuario.
 
-    Un OPERADOR solo cuenta y ve los documentos que subió.
+    Un OPERADOR cuenta los documentos que ve (los que subió y los de sus colas asignadas), y su
+    lista `recientes` son sus propias cargas.
     """
     # Los eliminados no cuentan en ningún número ni lista del inicio.
     alcance = [ClinicalDocument.estado != ESTADO_ELIMINADO]
-    if user.role == UserRole.OPERADOR:
-        alcance.append(ClinicalDocument.uploaded_by_id == user.id)
+    visibles = visible_documents_condition(user)
+    if visibles is not None:
+        alcance.append(visibles)
     periodo = [
         *alcance,
         ClinicalDocument.created_at >= fecha_desde,
@@ -128,7 +131,12 @@ async def get_dashboard_stats(
     )
 
     if user.role == UserRole.OPERADOR:
-        response.recientes = await _listar(db, *alcance, order_by=ClinicalDocument.created_at.desc())
+        response.recientes = await _listar(
+            db,
+            ClinicalDocument.estado != ESTADO_ELIMINADO,
+            own_uploads_condition(user),
+            order_by=ClinicalDocument.created_at.desc(),
+        )
         return response
 
     response.mis_casos = await _listar(

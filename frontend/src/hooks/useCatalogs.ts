@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { documentService } from '../services/documentService';
 import type { QueueActiveForLLM, DocumentTypeActiveForLLM } from '../types/catalog';
+import { createSharedLoader } from '../utils/sharedLoader';
 
 export interface UseCatalogsReturn {
   queues: QueueActiveForLLM[];
@@ -8,6 +9,18 @@ export interface UseCatalogsReturn {
   loading: boolean;
   error: string | null;
 }
+
+/** Colas y tipos activos (filtros, columnas del kanban, selects): una sola carga compartida. */
+const activeCatalogs = createSharedLoader(async () => {
+  const [queues, documentTypes] = await Promise.all([
+    documentService.getActiveQueues(),
+    documentService.getActiveDocumentTypes(),
+  ]);
+  return { queues: queues ?? [], documentTypes: documentTypes ?? [] };
+});
+
+/** Descarta la carga compartida: se llama tras crear, editar o eliminar un registro de catálogo. */
+export const invalidateActiveCatalogs = activeCatalogs.invalidate;
 
 export const useCatalogs = (): UseCatalogsReturn => {
   const [queues, setQueues] = useState<QueueActiveForLLM[]>([]);
@@ -18,14 +31,12 @@ export const useCatalogs = (): UseCatalogsReturn => {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
-      documentService.getActiveQueues(),
-      documentService.getActiveDocumentTypes(),
-    ])
-      .then(([activeQueues, activeDocTypes]) => {
+    activeCatalogs
+      .load()
+      .then((catalogs) => {
         if (cancelled) return;
-        setQueues(activeQueues ?? []);
-        setDocumentTypes(activeDocTypes ?? []);
+        setQueues(catalogs.queues);
+        setDocumentTypes(catalogs.documentTypes);
         setLoading(false);
       })
       .catch((err: unknown) => {

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { DocumentDetailResponse } from '../../types/medical';
 import { formatIdentificacion } from '../../utils/identificacion';
 import { etiquetaDeCodigo, etiquetaDeCampo, extraerObjetoClaves, textoDeValor } from '../../utils/etiquetas';
+import { useCatalogLabels } from '../../hooks/useCatalogLabels';
 import DocumentCorrectionHistory from './DocumentCorrectionHistory';
 import PossibleDuplicatesNotice from './PossibleDuplicatesNotice';
 
@@ -201,102 +202,106 @@ const DetalleClinico = ({ detail }: { detail: DocumentDetailResponse }) => {
 };
 
 /** Datos del documento para leer: paciente, documento, detalle clínico e historial de correcciones. */
-const DocumentDetailContent = ({ detail }: { detail: DocumentDetailResponse }) => (
-  <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4">
-    {detail.estado === 'ELIMINADO' && (
-      <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs space-y-1">
-        <span className="font-bold text-rose-400 flex items-center gap-1.5">
-          <Trash2 className="w-3.5 h-3.5" />
-          Documento eliminado
-        </span>
-        <p className="text-rose-300/80">
-          {unir(
-            detail.eliminado_por_username,
-            detail.eliminado_at &&
-            new Date(detail.eliminado_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })
-          )}
-        </p>
-        {detail.motivo_eliminacion && (
-          <p className="text-rose-200/90 whitespace-pre-line break-words">{detail.motivo_eliminacion}</p>
-        )}
-      </div>
-    )}
+const DocumentDetailContent = ({ detail }: { detail: DocumentDetailResponse }) => {
+  const { queueName } = useCatalogLabels();
 
-    <PossibleDuplicatesNotice duplicados={detail.duplicados ?? []} />
-
-    {detail.motivos_auditoria.length > 0 && (
-      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
-        <span className="font-bold text-amber-400 mb-1 block">Motivos de auditoría:</span>
-        <ul className="list-disc pl-4 text-amber-300/80 space-y-0.5">
-          {detail.motivos_auditoria.map((m) => <li key={m} className="break-words">{m}</li>)}
-        </ul>
-      </div>
-    )}
-
-    <Seccion titulo="Paciente">
-      <Datos>
-        <Dato etiqueta="Nombre" valor={detail.nombre_paciente} />
-        <Dato etiqueta="Identificación" valor={formatIdentificacion(detail.identificacion_paciente, detail.tipo_identificacion, '')} />
-        <Dato etiqueta="Edad" valor={detail.edad_paciente == null ? null : `${detail.edad_paciente} años`} />
-        <Dato etiqueta="Sexo" valor={detail.sexo} />
-        <Dato etiqueta="Fecha de nacimiento" valor={detail.fecha_nacimiento} />
-        <Dato etiqueta="N° de ficha" valor={detail.numero_ficha} />
-      </Datos>
-    </Seccion>
-
-    <Seccion titulo="Documento">
-      <Datos>
-        <Dato etiqueta="Institución" valor={detail.institucion_emisora} />
-        <Dato etiqueta="Fecha" valor={detail.fecha_documento} />
-        <Dato etiqueta="Especialidad" valor={detail.especialidad} />
-        <Dato etiqueta="Médico" valor={detail.medico_nombre} />
-        <Dato etiqueta="Área de origen" valor={detail.area_origen?.nombre} />
-        <Dato etiqueta="Destino" valor={detail.destino_enrutamiento} />
-        <Dato etiqueta="Confianza IA" valor={`${Math.round(detail.score_confianza * 100)}%`} />
-        <Dato etiqueta="Estado" valor={etiquetaDeCodigo(detail.estado)} />
-        {detail.atendido_at && (
-          <Dato
-            etiqueta="Atendido en triaje"
-            valor={unir(
-              new Date(detail.atendido_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' }),
-              detail.atendido_por_username
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4">
+      {detail.estado === 'ELIMINADO' && (
+        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs space-y-1">
+          <span className="font-bold text-rose-400 flex items-center gap-1.5">
+            <Trash2 className="w-3.5 h-3.5" />
+            Documento eliminado
+          </span>
+          <p className="text-rose-300/80">
+            {unir(
+              detail.eliminado_por_username,
+              detail.eliminado_at &&
+              new Date(detail.eliminado_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })
             )}
-          />
-        )}
-      </Datos>
-      {detail.justificacion_enrutamiento && (
-        <dl className="pt-1">
-          <Dato etiqueta="Justificación del enrutamiento" valor={detail.justificacion_enrutamiento} />
-        </dl>
+          </p>
+          {detail.motivo_eliminacion && (
+            <p className="text-rose-200/90 whitespace-pre-line break-words">{detail.motivo_eliminacion}</p>
+          )}
+        </div>
       )}
-      {detail.oci_json_path && (
-        <dl className="pt-1">
-          <div className="min-w-0">
-            <dt className={ETIQUETA}>Ruta en OCI (datos extraídos)</dt>
-            <dd className="flex items-start gap-1.5 text-xs text-slate-200 font-mono break-all">
-              <Cloud className="w-3.5 h-3.5 shrink-0 mt-px text-sky-400" />
-              {detail.oci_json_path}
-            </dd>
-          </div>
-        </dl>
+
+      <PossibleDuplicatesNotice duplicados={detail.duplicados ?? []} />
+
+      {detail.motivos_auditoria.length > 0 && (
+        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+          <span className="font-bold text-amber-400 mb-1 block">Motivos de auditoría:</span>
+          <ul className="list-disc pl-4 text-amber-300/80 space-y-0.5">
+            {detail.motivos_auditoria.map((m) => <li key={m} className="break-words">{m}</li>)}
+          </ul>
+        </div>
       )}
-    </Seccion>
 
-    <DetalleClinico detail={detail} />
-
-    {detail.historial_correcciones.length > 0 ? (
-      <Seccion titulo="Historial de cambios">
-        <DocumentCorrectionHistory historial={detail.historial_correcciones} />
+      <Seccion titulo="Paciente">
+        <Datos>
+          <Dato etiqueta="Nombre" valor={detail.nombre_paciente} />
+          <Dato etiqueta="Identificación" valor={formatIdentificacion(detail.identificacion_paciente, detail.tipo_identificacion, '')} />
+          <Dato etiqueta="Edad" valor={detail.edad_paciente == null ? null : `${detail.edad_paciente} años`} />
+          <Dato etiqueta="Sexo" valor={detail.sexo} />
+          <Dato etiqueta="Fecha de nacimiento" valor={detail.fecha_nacimiento} />
+          <Dato etiqueta="N° de ficha" valor={detail.numero_ficha} />
+        </Datos>
       </Seccion>
-    ) : (
-      detail.audit_notes && (
-        // Documentos auditados antes del historial: solo se conoce la última nota.
-        <Seccion titulo="Notas de auditoría">
-          <p className="text-xs text-slate-300 whitespace-pre-line break-words">{detail.audit_notes}</p>
+
+      <Seccion titulo="Documento">
+        <Datos>
+          <Dato etiqueta="Institución" valor={detail.institucion_emisora} />
+          <Dato etiqueta="Fecha" valor={detail.fecha_documento} />
+          <Dato etiqueta="Especialidad" valor={detail.especialidad} />
+          <Dato etiqueta="Médico" valor={detail.medico_nombre} />
+          <Dato etiqueta="Área de origen" valor={detail.area_origen?.nombre} />
+          <Dato etiqueta="Destino" valor={queueName(detail.destino_enrutamiento)} />
+          <Dato etiqueta="Confianza IA" valor={`${Math.round(detail.score_confianza * 100)}%`} />
+          <Dato etiqueta="Estado" valor={etiquetaDeCodigo(detail.estado)} />
+          {detail.atendido_at && (
+            <Dato
+              etiqueta="Atendido en triaje"
+              valor={unir(
+                new Date(detail.atendido_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' }),
+                detail.atendido_por_username
+              )}
+            />
+          )}
+        </Datos>
+        {detail.justificacion_enrutamiento && (
+          <dl className="pt-1">
+            <Dato etiqueta="Justificación del enrutamiento" valor={detail.justificacion_enrutamiento} />
+          </dl>
+        )}
+        {detail.oci_json_path && (
+          <dl className="pt-1">
+            <div className="min-w-0">
+              <dt className={ETIQUETA}>Ruta en OCI (datos extraídos)</dt>
+              <dd className="flex items-start gap-1.5 text-xs text-slate-200 font-mono break-all">
+                <Cloud className="w-3.5 h-3.5 shrink-0 mt-px text-sky-400" />
+                {detail.oci_json_path}
+              </dd>
+            </div>
+          </dl>
+        )}
+      </Seccion>
+
+      <DetalleClinico detail={detail} />
+
+      {detail.historial_correcciones.length > 0 ? (
+        <Seccion titulo="Historial de cambios">
+          <DocumentCorrectionHistory historial={detail.historial_correcciones} />
         </Seccion>
-      )
-    )}
-  </div>
-);
+      ) : (
+        detail.audit_notes && (
+          // Documentos auditados antes del historial: solo se conoce la última nota.
+          <Seccion titulo="Notas de auditoría">
+            <p className="text-xs text-slate-300 whitespace-pre-line break-words">{detail.audit_notes}</p>
+          </Seccion>
+        )
+      )}
+    </div>
+  );
+};
 
 export default DocumentDetailContent;

@@ -96,6 +96,22 @@ class QueueSummary(BaseModel):
     es_asistencial: bool = False
 
 
+class CatalogLabel(BaseModel):
+    """Código y nombre para mostrar de un registro de catálogo (activo o no)."""
+
+    codigo: str
+    nombre: str
+    is_active: bool
+
+
+class CatalogLabelsResponse(BaseModel):
+    """Nombres de todas las colas y tipos de documento, incluidos los inactivos: los documentos
+    antiguos pueden seguir referenciando un registro ya desactivado."""
+
+    colas: list[CatalogLabel]
+    tipos_documento: list[CatalogLabel]
+
+
 class QueueActiveForLLM(BaseModel):
     """DTO compacto de una cola activa, pensado para inyectarse en el prompt de n8n.
 
