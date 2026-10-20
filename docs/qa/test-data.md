@@ -7,14 +7,7 @@ Datos para ejecutar los [casos de prueba](test-cases.md). **Todos son sintético
 
 ## Usuarios
 
-Los crea `docker/postgres/seed_dev_users.sql` (solo desarrollo):
-
-| Usuario | Contraseña | Rol | Área |
-|---|---|---|---|
-| `admin_user` | `admin123` | `ADMIN` | Administración y TI |
-| `gestor_user` | `gestor123` | `GESTOR_USUARIOS` | Administración y TI |
-| `auditor_user` | `auditor123` | `AUDITOR_CLINICO` | Auditoría Médica |
-| `operador_user` | `operador123` | `OPERADOR` | Admisión y Recepción |
+Un usuario por rol, creado por `docker/postgres/seed_dev_users.sql`: ver la tabla en el [README principal](../../README.md#usuarios-de-prueba).
 
 Para los casos de privacidad (`TC-DUP-003`, `TC-DOC-002`) hace falta un **segundo operador** de otra área: créalo desde *Usuarios* con el rol `OPERADOR`.
 

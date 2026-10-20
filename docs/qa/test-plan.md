@@ -33,9 +33,11 @@ Antes de ejecutar los casos manuales conviene saber qué ya está cubierto por p
 
 | Suite | Cantidad | Cómo ejecutarla |
 |---|---|---|
-| Backend (pytest, sin Postgres ni OCI) | 302 pruebas | `cd backend && pytest` |
+| Backend (pytest, sin Postgres ni OCI) | ~300 pruebas | `cd backend && pytest` |
 | Nodos del workflow de n8n (`node:test`) | 13 pruebas | `node --test workflow/tests/nodos.test.mjs` |
-| Frontend | Sin pruebas automáticas; chequeo de tipos y lint | `cd frontend && npm run build && npm run lint` |
+| Frontend (Vitest + Testing Library) | Servicios, hooks y páginas principales; además chequeo de tipos y lint | `cd frontend && npm test && npm run build && npm run lint` |
+
+Las tres suites corren en cada push y PR a `main` (`.github/workflows/ci-cd.yml`).
 
 Las pruebas automáticas usan base de datos y OCI simulados: los casos E2E de este plan siguen siendo necesarios para validar SQL real, OCI y Gemini.
 

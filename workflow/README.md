@@ -4,7 +4,7 @@ Workflow: [`MediFlow_unificado.json`](MediFlow_unificado.json) (webhook `POST /w
 
 Recibe el archivo desde el front, lo hace leer por **Gemini** con el catálogo vigente y envía el resultado al backend
 (`POST /documents/ingest`). n8n **no decide** el estado final: el backend normaliza, calcula el score, busca
-duplicados y aplica el triaje.
+duplicados y aplica el triaje. Cómo encaja con el resto del sistema: [README principal](../README.md#-cómo-funciona).
 
 **Índice:** [Cómo importar](#cómo-importar) · [Flujo](#flujo) · [Qué pasa si algo falla](#qué-pasa-si-algo-falla) ·
 [Configuración](#configuración) · [Editar el workflow](#editar-el-workflow) · [Logs](#logs-y-seguimiento) ·

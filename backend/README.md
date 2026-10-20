@@ -40,7 +40,7 @@ backend/
 
 ## Instalación local
 
-Requisitos: **Python 3.11+** y **PostgreSQL** en ejecución (lo más simple: `docker compose up -d` desde la raíz, ver el [README principal](../README.md#paso-1--base-de-datos-y-n8n-docker)). Las credenciales de OCI son *opcionales para empezar*.
+Requisitos: **Python 3.11+** y **PostgreSQL** en ejecución (lo más simple: `docker compose up -d` desde la raíz, ver el [README principal](../README.md#-puesta-en-marcha)). Las credenciales de OCI son *opcionales para empezar*.
 
 Todos los comandos se ejecutan **dentro de `backend/`**.
 
@@ -127,14 +127,7 @@ La API usa **JWT** con *refresh token* rotativo:
 3. Al vencer el access token, `POST /auth/refresh` con el refresh token entrega un par nuevo. Cada refresh token es de **un solo uso**.
 4. El rol y el estado activo se leen de la base en cada petición: un cambio de rol o una desactivación aplica de inmediato.
 
-| Rol | Acceso |
-|---|---|
-| `ADMIN` | Todo |
-| `AUDITOR_CLINICO` | Documentos (todos), auditoría y corrección |
-| `OPERADOR` | Ingesta, documentos **que subió**, los derivados a **sus colas asignadas** y los de **Ficha Clínica**; sin auditoría ni corrección |
-| `GESTOR_USUARIOS` | Usuarios y áreas; sin documentos |
-
-Cualquier usuario autenticado puede **consultar** los catálogos. Sin token válido → `401`; sin el rol requerido → `403`. Usuarios de desarrollo: ver el [README principal](../README.md#usuarios-de-prueba).
+Qué puede hacer cada rol: [README principal](../README.md#-roles-de-usuario). Aquí, la columna **Acceso** de cada endpoint dice qué roles lo pueden llamar. Sin token válido → `401`; sin el rol requerido → `403`. Usuarios de desarrollo: [README principal](../README.md#usuarios-de-prueba).
 
 ---
 
@@ -319,7 +312,7 @@ Dos niveles (`duplicates.py`), que se complementan:
 | Parámetro | Descripción |
 |---|---|
 | `page`, `page_size` | Paginación (por defecto 1 y 20; máximo 100) |
-| `estado` | `PENDIENTE_AUDITORIA`, `PROCESADO`, `AUDITADO` o `DESCARTADO` |
+| `estado` | `PENDIENTE_AUDITORIA`, `PROCESADO`, `AUDITADO`, `DESCARTADO` o `ELIMINADO` (este último, solo ADMIN) |
 | `destino`, `prioridad` | Código de cola; `Rutina`, `Prioritario` o `Urgente` |
 | `identificacion` | Identificación del paciente, con o sin formato (`12.345.678-5` o `12345678-5`) |
 | `numero_ficha` | N° de ficha clínica |
@@ -436,7 +429,27 @@ docker compose exec postgres psql -U mediflow_admin -d mediflow_db -f /docker-en
 
 > ⚠️ Hazlo **después de cada actualización del código**. Si no, fallan los endpoints que usan las columnas o tablas nuevas (por ejemplo, con áreas el login falla; sin `clinical_document_corrections`, el detalle y la auditoría fallan).
 
-En Git Bash antepón `MSYS_NO_PATHCONV=1 `. No hay Alembic: si cambias una tabla, actualiza **a la vez** `models.py` e `init.sql`, usando siempre `IF NOT EXISTS` / `ON CONFLICT` para que el script siga siendo re-ejecutable.
+- En **Git Bash** antepón `MSYS_NO_PATHCONV=1 `. Los mensajes `NOTICE: ... already exists, skipping` son normales.
+- Para empezar de cero: `docker compose down -v && docker compose up -d` (⚠️ **borra todos los datos**).
+- En producción, los comandos equivalentes están en [`docs/DESPLIEGUE_OCI.md`](../docs/DESPLIEGUE_OCI.md#6-operación).
+
+<details>
+<summary>Comandos útiles de Docker (desde la raíz)</summary>
+
+```bash
+docker compose ps                  # estado
+docker compose logs -f postgres    # logs de la base (o n8n)
+docker compose stop                # detener (conserva los datos)
+docker compose down -v             # detener y BORRAR los datos
+docker compose exec postgres psql -U mediflow_admin -d mediflow_db   # consola SQL
+```
+
+Para un cliente gráfico (DBeaver, pgAdmin): `localhost:5432` con el usuario, contraseña y base del `.env` de la raíz.
+</details>
+
+### Cambiar el esquema
+
+No hay Alembic: si cambias una tabla, actualiza **a la vez** `models.py` e `init.sql`, usando siempre `IF NOT EXISTS` / `ON CONFLICT` para que el script siga siendo re-ejecutable.
 
 ---
 
@@ -457,7 +470,7 @@ Se configura con `LOG_LEVEL` y `LOG_FORMAT`. Qué se registra, cómo seguir una 
 Desde `backend/`, con el entorno activado:
 
 ```bash
-pytest          # 302 pruebas
+pytest          # pruebas
 ruff check .    # linter
 ```
 
@@ -466,6 +479,8 @@ Las pruebas **no necesitan PostgreSQL ni OCI**: usan una sesión y un cliente OC
 | Archivo | Qué verifica |
 |---|---|
 | `test_ingest_service.py` · `test_documents_api.py` | Regla de triaje, formatos, `documento_id` repetido, compensación ante fallos, contrato v2, respuesta para el front, listado y filtros |
+| `test_visibility.py` · `test_dashboard_stats_api.py` | Qué documentos ve un OPERADOR (los suyos, sus colas y Ficha Clínica); resumen del inicio por rol |
+| `test_triage_api.py` · `test_document_deletion_api.py` | Consola de Triaje (colas por rol, atender, derivar con motivo); eliminación lógica y restauración |
 | `test_normalization.py` · `test_scoring.py` · `test_extraction_fields.py` | Identificación por país con dígito verificador, CIE-10, país; cálculo del score; campos tolerantes |
 | `test_document_detail_api.py` | Detalle: acceso del OPERADOR, URL por archivo, tablas y campos por tipo, detalle sin URLs si OCI falla, área de origen |
 | `test_duplicates.py` | Huella SHA-256, consulta previa y privacidad del OPERADOR, archivo idéntico y contenido similar al ingerir, duplicados en el detalle |
