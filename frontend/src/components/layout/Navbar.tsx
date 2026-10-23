@@ -19,10 +19,10 @@ const Navbar = () => {
   const navLinks = isGestor
     ? baseNavLinks
     : baseNavLinks.flatMap((item) =>
-        item.to === '/dashboard'
-          ? [item, { to: '/triaje', label: 'Triaje', icon: Activity }]
-          : [item]
-      );
+      item.to === '/dashboard'
+        ? [item, { to: '/triaje', label: 'Triaje', icon: Activity }]
+        : [item]
+    );
 
   const canIngest = !isGestor && canAccessRoute(user?.role, INGEST_ACCESS_ROLES);
 
@@ -30,9 +30,11 @@ const Navbar = () => {
     <header className="h-16 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-2 sm:px-6 gap-1.5 sm:gap-2 flex items-center justify-between sticky top-0 z-20">
       <div className="flex items-center gap-3">
         <Link to={isGestor ? '/usuarios' : '/dashboard'} className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20">
-            <Activity className="w-5 h-5" />
-          </div>
+          <img
+            src="/logo/logo.png"
+            alt="MediFlow Logo"
+            className="h-14 w-14 rounded-xl object-contain shrink-0"
+          />
           <div className="hidden sm:block">
             <span className="font-bold text-base text-white tracking-tight">MediFlow</span>
             <span className="hidden sm:inline-block ml-2 text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
@@ -52,10 +54,9 @@ const Navbar = () => {
               title={item.label}
               aria-label={item.label}
               className={({ isActive }) =>
-                `flex items-center gap-2 px-1.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  isActive
-                    ? 'bg-slate-800 text-white border border-slate-700/80 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                `flex items-center gap-2 px-1.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isActive
+                  ? 'bg-slate-800 text-white border border-slate-700/80 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
                 }`
               }
             >
@@ -84,8 +85,7 @@ const Navbar = () => {
           title="Mi perfil"
           aria-label="Mi perfil"
           className={({ isActive }) =>
-            `flex items-center gap-2 text-right rounded-xl px-1.5 py-1 border transition-all ${
-              isActive ? 'bg-slate-800 border-slate-700/80' : 'border-transparent hover:bg-slate-800/60'
+            `flex items-center gap-2 text-right rounded-xl px-1.5 py-1 border transition-all ${isActive ? 'bg-slate-800 border-slate-700/80' : 'border-transparent hover:bg-slate-800/60'
             }`
           }
         >
