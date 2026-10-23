@@ -21,7 +21,7 @@ Hospitales y aseguradoras reciben cada día cientos de documentos clínicos (lab
 
 **MediFlow** automatiza ese trabajo con Inteligencia Artificial:
 
-1. **Recibe** el documento (PDF o imagen).
+1. **Recibe** el documento (PDF, imagen PNG/JPG, o texto TXT/JSON exportado de otro sistema).
 2. **Lo clasifica y extrae** los datos clave: paciente (identificación de cualquier país y N° de ficha), profesionales, diagnósticos con CIE-10, prioridad y el detalle propio del tipo (parámetros de laboratorio, medicamentos, hallazgos...).
 3. **Calcula su confianza** y **decide a qué cola enviarlo** (Urgencias, Farmacia, Oncología, Ficha Clínica...).
 4. Si la confianza es baja o algo no calza, lo deja en una **bandeja de auditoría** para que una persona lo revise y corrija (*Human-in-the-Loop*).

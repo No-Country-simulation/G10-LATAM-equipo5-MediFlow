@@ -3,6 +3,7 @@ import {
   validateFile,
   ingestDocument,
   MAX_FILE_SIZE_BYTES,
+  MAX_TEXT_FILE_SIZE_BYTES,
 } from './ingestionService';
 import { IngestionError } from '../types/ingestion';
 
@@ -27,6 +28,20 @@ describe('ingestionService validation and n8n transport', () => {
       expect(validateFile(validPdf)).toBeNull();
       expect(validateFile(validJpg)).toBeNull();
       expect(validateFile(validPng)).toBeNull();
+    });
+
+    it('accepts TXT and JSON files up to 1 MB', () => {
+      const txt = new File(['Epicrisis: paciente estable'], 'epicrisis.txt', { type: 'text/plain' });
+      const json = new File(['{"paciente":"Ana"}'], 'export_his.JSON', { type: '' });
+
+      expect(validateFile(txt)).toBeNull();
+      expect(validateFile(json)).toBeNull();
+    });
+
+    it('rejects TXT and JSON files over 1 MB', () => {
+      const largeText = new File([new Uint8Array(MAX_TEXT_FILE_SIZE_BYTES + 1)], 'nota.txt', { type: 'text/plain' });
+
+      expect(validateFile(largeText)).toBe('Los archivos TXT y JSON no pueden superar 1 MB.');
     });
 
     it('rejects forbidden file extensions like .exe, .sh, .docx', () => {

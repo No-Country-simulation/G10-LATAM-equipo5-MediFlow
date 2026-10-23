@@ -46,7 +46,7 @@ En producción (`docker-compose.prod.yml`) no se usa este archivo: el front se c
 | `/dashboard` | **Inicio** | ADMIN, AUDITOR, OPERADOR | KPIs del período por prioridad, estado y cola, carga rápida de un documento y listas de trabajo del rol |
 | `/triaje` | **Consola de Triaje** | ADMIN, AUDITOR, OPERADOR | Casos activos de las colas asistenciales, por severidad. ADMIN y AUDITOR los marcan como **atendidos** o los **derivan** a otra cola con motivo |
 | `/documentos` | **Expedientes** (OPERADOR: *Documentos*) | ADMIN, AUDITOR, OPERADOR | Repositorio en vista kanban o lista, con filtros por destino, prioridad e identificación |
-| `/ingesta` | **Procesar Documento IA** | ADMIN, AUDITOR, OPERADOR | Subir un PDF/PNG/JPG y ver el resultado del triaje |
+| `/ingesta` | **Procesar Documento IA** | ADMIN, AUDITOR, OPERADOR | Subir un PDF/PNG/JPG/TXT/JSON y ver el resultado del triaje |
 | `/auditoria` | **Auditoría** | ADMIN, AUDITOR | Bandeja de casos pendientes; tomar, corregir, resolver o descartar |
 | `/usuarios` | **Usuarios** | ADMIN, GESTOR | CRUD de usuarios con su área y sus colas; restablecer contraseñas |
 | `/catalogos` | **Catálogos** | ADMIN (GESTOR: solo Áreas) | Mantenedores de tipos de documento, áreas y colas, con historial |

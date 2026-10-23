@@ -1,6 +1,11 @@
 // Entrada del webhook: valida token y archivo ANTES de gastar tokens del LLM.
 const MAX_BYTES = 10 * 1024 * 1024;
-const MIME_PERMITIDOS = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+// Los TXT/JSON van como texto dentro del prompt: 1 MB ya son ~250 mil tokens.
+const MAX_BYTES_TEXTO = 1 * 1024 * 1024;
+const MIME_PERMITIDOS = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'text/plain', 'application/json'];
+const MIME_TEXTO = ['text/plain', 'application/json'];
+// Algunos navegadores envían un .json o .txt sin MIME o como octet-stream: manda la extensión.
+const MIME_POR_EXTENSION = { '.txt': 'text/plain', '.json': 'application/json' };
 // URL del backend: solo desde la configuración del servidor, nunca desde el request
 // (si viniera del navegador, cualquiera podría desviar el token del usuario a otro host).
 // Modelos de Gemini: el rápido procesa todo; el preciso solo repite los documentos dudosos.
@@ -39,16 +44,42 @@ const binaryKey = Object.keys(binary)[0];
 if (!binaryKey) {
   throw new Error('No se recibió ningún archivo en el webhook');
 }
-const mime = (binary[binaryKey].mimeType || '').toLowerCase();
+const nombreArchivo = String(binary[binaryKey].fileName || '').toLowerCase();
+const extension = Object.keys(MIME_POR_EXTENSION).find((ext) => nombreArchivo.endsWith(ext));
+const mime = extension
+  ? MIME_POR_EXTENSION[extension]
+  : (binary[binaryKey].mimeType || '').toLowerCase().split(';')[0].trim();
 if (!MIME_PERMITIDOS.includes(mime)) {
-  throw new Error('Formato no admitido (' + mime + '): use PDF, PNG o JPG');
+  throw new Error('Formato no admitido (' + mime + '): use PDF, PNG, JPG, TXT o JSON');
 }
 
 // Convierte a base64 aquí: es el único nodo cuya entrada trae el binario del webhook.
 // En n8n 2.x binary.data.data es solo una referencia al disco, no el contenido.
-const buffer = await this.helpers.getBinaryDataBuffer(0, binaryKey);
+let buffer = await this.helpers.getBinaryDataBuffer(0, binaryKey);
 if (buffer.length > MAX_BYTES) {
   throw new Error('El archivo supera el límite de 10 MB');
+}
+
+// Texto: se valida antes de gastar tokens (UTF-8 y, si es JSON, que se pueda parsear).
+if (MIME_TEXTO.includes(mime)) {
+  if (buffer.length > MAX_BYTES_TEXTO) {
+    throw new Error('El archivo de texto supera el límite de 1 MB');
+  }
+  // Un byte que no es UTF-8 se decodifica como U+FFFD y el texto ya no vuelve a los mismos bytes.
+  const decodificado = buffer.toString('utf8');
+  if (!Buffer.from(decodificado, 'utf8').equals(buffer)) {
+    throw new Error('El archivo de texto no está codificado en UTF-8');
+  }
+  // Sin BOM (lo agrega el Bloc de notas): JSON.parse lo rechazaría.
+  const texto = decodificado.replace(/^\uFEFF/, '');
+  if (mime === 'application/json') {
+    try {
+      JSON.parse(texto);
+    } catch (e) {
+      throw new Error('El archivo JSON no es válido: ' + e.message);
+    }
+  }
+  buffer = Buffer.from(texto, 'utf8');
 }
 
 return [{

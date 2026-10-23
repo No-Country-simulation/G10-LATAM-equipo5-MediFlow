@@ -108,6 +108,7 @@ curl http://localhost:8000/api/v1/health
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Vida del refresh token; pasado ese plazo sin renovarse, hay que volver a iniciar sesión |
 | `LOGIN_MAX_ATTEMPTS`, `LOGIN_LOCKOUT_MINUTES` | `5`, `15` | Tras N fallos seguidos (mismo usuario e IP) el login responde `429` durante esos minutos |
 | `INGEST_MAX_FILE_MB`, `INGEST_MAX_FILES` | `10`, `10` | Tamaño máximo por archivo y cantidad de archivos por documento |
+| `INGEST_MAX_TEXT_FILE_MB` | `1` | Tamaño máximo de un archivo TXT/JSON (va como texto al prompt del LLM) |
 | `DOCUMENT_PREVIEW_URL_EXPIRE_MINUTES` | `15` | Vigencia de las URLs pre-firmadas de los archivos originales |
 | `OCI_AUTH_MODE` | `api_key` | `api_key` (desarrollo, con `.pem`) o `instance_principal` (VM de OCI, sin llaves) |
 | `OCI_USER_OCID`, `OCI_TENANCY_OCID`, `OCI_FINGERPRINT`, `OCI_REGION`, `OCI_KEY_FILE_PATH` | — | Datos de la API Key de OCI |
@@ -214,7 +215,7 @@ n8n reenvía el token del usuario que subió el documento, que queda en `uploade
 
 | Bloque | Contenido |
 |---|---|
-| `documento_id`, `archivos[]` | ID generado por n8n (`DOC-<uuid>`, solo `A-Z a-z 0-9 _ -`) y archivos en base64 (`PDF`, `PNG`, `JPG`, `TIFF`, `DCM`; el **primero** es el principal y debe ser PDF, PNG o JPG) |
+| `documento_id`, `archivos[]` | ID generado por n8n (`DOC-<uuid>`, solo `A-Z a-z 0-9 _ -`) y archivos en base64 (`PDF`, `PNG`, `JPG`, `TXT`, `JSON`; el **primero** es el principal. Un TXT/JSON debe ser UTF-8, un JSON válido y de hasta `INGEST_MAX_TEXT_FILE_MB`) |
 | `clasificacion` | `tipo_documento` (código de un tipo activo), `especialidad`, `nivel_prioridad` (`Rutina` / `Prioritario` / `Urgente`) |
 | `evaluacion` | Autoevaluación de la IA: `legibilidad` y `certeza_tipo` (`alta`/`media`/`baja`), `evidencia_tipo`, `campos_dudosos`, `documentos_multiples`, `es_documento_clinico`, `modelo`, `escalado` |
 | `datos_generales` | `paciente` (nombre, `identificacion {tipo, numero, pais}`, edad, fecha de nacimiento, sexo, `numero_ficha`), `profesionales[]` (con rol), `institucion_emisora`, `fecha_documento`, `diagnosticos[]` (con CIE-10, tipo, certeza y origen) |
@@ -266,7 +267,7 @@ El esquema exacto (etiquetas, opciones, largos) lo publica `GET /catalogs/docume
 ```
 </details>
 
-**Respuesta (`201`):** los datos **normalizados**, `status` (`PROCESADO` o `PENDIENTE_AUDITORIA`), `score_confianza` (el calculado), `motivos_auditoria` y `almacenamiento_oci`. Errores: `400` base64 inválido · `409` `documento_id` repetido · `422` estructura inválida · `500` falla de OCI o de la base (con compensación: se borra lo ya subido).
+**Respuesta (`201`):** los datos **normalizados**, `status` (`PROCESADO` o `PENDIENTE_AUDITORIA`), `score_confianza` (el calculado), `motivos_auditoria` y `almacenamiento_oci`. Errores: `400` base64 inválido o TXT/JSON inválido (no UTF-8, JSON mal formado o muy grande) · `409` `documento_id` repetido · `422` estructura inválida · `500` falla de OCI o de la base (con compensación: se borra lo ya subido).
 
 ### Normalización y score
 

@@ -49,6 +49,8 @@ class Settings(BaseSettings):
 
     # Tamaño máximo de cada archivo de la ingesta (ya decodificado). El front limita a 10 MB.
     INGEST_MAX_FILE_MB: int = 10
+    # Los TXT/JSON van como texto al prompt del LLM: 1 MB ya son ~250 mil tokens.
+    INGEST_MAX_TEXT_FILE_MB: int = 1
     INGEST_MAX_FILES: int = 10
 
     # Vigencia de las URLs pre-firmadas (PAR) de solo lectura para ver los archivos originales.

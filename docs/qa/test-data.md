@@ -34,8 +34,10 @@ Para los casos de privacidad (`TC-DUP-003`, `TC-DOC-002`) hace falta un **segund
 
 | Caso | Archivo | Resultado esperado |
 |---|---|---|
-| Formatos admitidos | PDF, PNG o JPG de hasta 10 MB | Se envía a n8n |
-| Formato no admitido | `.exe`, `.docx`, `.gif` | El front lo rechaza antes de enviar |
+| Formatos admitidos | PDF, PNG o JPG de hasta 10 MB; TXT o JSON (UTF-8) de hasta 1 MB | Se envía a n8n |
+| Texto demasiado grande | Un `.txt` o `.json` de más de 1 MB | El front lo rechaza ("no pueden superar 1 MB") |
+| JSON inválido | Un `.json` cortado (`{"paciente":`) | n8n lo rechaza antes de llamar a la IA; por API, `400` |
+| Formato no admitido | `.exe`, `.docx`, `.gif`, `.tiff`, `.dcm` | El front lo rechaza antes de enviar |
 | Tamaño máximo | Un PDF de más de 10 MB | El front lo rechaza ("supera el límite de 10 MB") |
 | Duplicado exacto | Subir **dos veces el mismo archivo** (misma copia, sin modificarlo) | Aviso de archivo ya subido (`TC-DUP-001`) |
 | Re-escaneo | Dos archivos **distintos** (por ejemplo, dos fotos o dos exportaciones) del mismo documento sintético | Posible duplicado por contenido (`TC-DUP-005`). Requiere la misma identificación, tipo y fecha, y la misma institución o diagnóstico |

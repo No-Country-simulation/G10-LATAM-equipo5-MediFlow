@@ -8,7 +8,10 @@ import {
 } from '../types/ingestion';
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-export const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
+// Un TXT/JSON va como texto al prompt del LLM: 1 MB ya son ~250 mil tokens.
+export const MAX_TEXT_FILE_SIZE_BYTES = 1 * 1024 * 1024;
+export const TEXT_EXTENSIONS = ['.txt', '.json'];
+export const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', ...TEXT_EXTENSIONS];
 
 // Gemini tarda 10-45 s por documento y n8n puede repetir la extracción con el modelo preciso
 // cuando el rápido tiene dudas: 180 s cubren ambas llamadas. La petición sigue aunque el usuario
@@ -28,6 +31,9 @@ export function validateFile(file: File): string | null {
   }
   if (file.size > MAX_FILE_SIZE_BYTES) {
     return 'El archivo supera el límite de 10 MB.';
+  }
+  if (TEXT_EXTENSIONS.some((extension) => lowerName.endsWith(extension)) && file.size > MAX_TEXT_FILE_SIZE_BYTES) {
+    return 'Los archivos TXT y JSON no pueden superar 1 MB.';
   }
   return null;
 }

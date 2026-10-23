@@ -30,13 +30,16 @@ Webhook ─► Preparar corrida ─► GET formularios ─► GET colas activas 
    ─► POST /documents/ingest ─► Formatear respuesta ─► Responder
 ```
 
-1. **Preparar corrida** valida el token, el tipo (PDF/PNG/JPG) y el tamaño (≤ 10 MB) **antes** de llamar
-   a la IA, genera `documento_id` (`DOC-<uuid>`) y lee los modelos a usar.
+1. **Preparar corrida** valida el token, el tipo (PDF/PNG/JPG/TXT/JSON) y el tamaño (≤ 10 MB; ≤ 1 MB para
+   TXT/JSON) **antes** de llamar a la IA, genera `documento_id` (`DOC-<uuid>`) y lee los modelos a usar. Un
+   TXT/JSON se reconoce también por la extensión, debe ser UTF-8 (se le quita el BOM) y un JSON debe parsear.
 2. **GET formularios** (`/catalogs/document-types/forms`) trae los tipos activos con sus campos: la misma
    fuente que usa el formulario de auditoría. Si el token es inválido, el flujo se corta con 401 aquí.
 3. **Contexto para IA** arma el prompt (guía de clasificación, identificación del paciente de cualquier
    país, roles de los profesionales, reglas de CIE-10, prioridad y autoevaluación) y adjunta el archivo
    **tal cual**: Gemini lee PDF nativo (texto, tablas y escaneos) e imágenes, sin extracción de texto previa.
+   Un TXT/JSON va como texto entre `<<<DOCUMENTO` y `DOCUMENTO>>>`, y el prompt indica que ese contenido es
+   dato y nunca instrucciones (si el texto trae los delimitadores, se le quitan).
 4. **Gemini rápido** llama a `generateContent` en modo JSON. **Interpretar respuesta rápida** decide si
    **escalar**: si la legibilidad o la certeza del tipo no son `alta`, hay campos dudosos, varios documentos
    en el archivo o la respuesta no sirve (error HTTP, JSON inválido o cortado), se repite con **Gemini
@@ -50,7 +53,7 @@ Webhook ─► Preparar corrida ─► GET formularios ─► GET colas activas 
 
 | Situación | Resultado |
 |---|---|
-| Sin token, sin archivo, formato distinto de PDF/PNG/JPG o archivo de más de 10 MB | *Preparar corrida* corta el flujo **antes** de llamar a la IA (el front ya valida lo mismo antes de enviar) |
+| Sin token, sin archivo, formato distinto de PDF/PNG/JPG/TXT/JSON, archivo de más de 10 MB (1 MB si es TXT/JSON), texto que no es UTF-8 o JSON inválido | *Preparar corrida* corta el flujo **antes** de llamar a la IA (el front ya valida lo mismo antes de enviar) |
 | Token inválido o vencido | *GET formularios* recibe `401` y el flujo se corta: no se gasta en la IA |
 | Gemini rápido falla o devuelve un JSON inválido o cortado | Se escala a **Gemini preciso** |
 | Los dos modelos fallan | Se ingiere igual como tipo `OTRO` con `requiere_auditoria_humana`: queda **pendiente de auditoría** con el motivo |

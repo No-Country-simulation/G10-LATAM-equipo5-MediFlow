@@ -100,6 +100,7 @@ class FakeOCI:
 
     def __init__(self):
         self.uploaded: dict[str, bytes] = {}
+        self.content_types: dict[str, str] = {}
         self.deleted: list[str] = []
         self.fail_on: str | None = None
 
@@ -107,6 +108,7 @@ class FakeOCI:
         if self.fail_on and self.fail_on in name:
             raise RuntimeError("OCI caído")
         self.uploaded[name] = content
+        self.content_types[name] = content_type
 
     async def delete_object(self, name):
         self.deleted.append(name)

@@ -36,6 +36,7 @@ from app.features.documents.service import (
     DocumentAlreadyExistsError,
     DocumentIngestionError,
     InvalidBase64Error,
+    InvalidTextFileError,
     get_paginated_documents,
     ingest_document,
 )
@@ -78,7 +79,7 @@ async def ingest(
     """
     try:
         document = await ingest_document(payload, db, uploaded_by=current_user)
-    except InvalidBase64Error as exc:
+    except (InvalidBase64Error, InvalidTextFileError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except DocumentAlreadyExistsError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

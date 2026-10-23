@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -61,7 +62,7 @@ async def test_ingest_multiples_archivos_se_suben_todos(client, login_as, db, oc
         archivos=[
             {"tipo_archivo": "PDF", "archivo_base64": "Y29udGVuaWRv", "rol": "documento_principal"},
             {"tipo_archivo": "JPG", "archivo_base64": "Y29udGVuaWRv", "rol": "imagen_estudio"},
-            {"tipo_archivo": "DCM", "archivo_base64": "Y29udGVuaWRv", "rol": "imagen_estudio"},
+            {"tipo_archivo": "TXT", "archivo_base64": "Y29udGVuaWRv", "rol": "transcripcion"},
         ]
     )
     r = await client.post("/api/v1/documents/ingest", json=body, headers=headers)
@@ -69,7 +70,7 @@ async def test_ingest_multiples_archivos_se_suben_todos(client, login_as, db, oc
     assert r.json()["almacenamiento_oci"]["rutas_binarios"] == [
         "recibidos/DOC-TEST-1/0.pdf",
         "recibidos/DOC-TEST-1/1.jpg",
-        "recibidos/DOC-TEST-1/2.dcm",
+        "recibidos/DOC-TEST-1/2.txt",
     ]
 
 
@@ -78,6 +79,15 @@ async def test_ingest_invalid_base64_returns_400(client, login_as, oci):
     body = ingest_body(archivo_base64="###")
     r = await client.post("/api/v1/documents/ingest", json=body, headers=headers)
     assert r.status_code == 400
+
+
+async def test_ingest_json_invalido_returns_400(client, login_as, oci):
+    headers = login_as(UserRole.ADMIN)
+    body = ingest_body(tipo_archivo="JSON", archivo_base64=base64.b64encode(b"{no es json").decode())
+    r = await client.post("/api/v1/documents/ingest", json=body, headers=headers)
+    assert r.status_code == 400
+    assert "JSON válido" in r.json()["detail"]
+    assert oci.uploaded == {}
 
 
 async def test_ingest_oci_failure_returns_500(client, login_as, db, oci):

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type DragEvent, type ChangeEvent } from 'react';
 import { UploadCloud, AlertCircle, Loader2 } from 'lucide-react';
 import { useDocumentIngestion } from '../../hooks/useDocumentIngestion';
+import { ALLOWED_EXTENSIONS } from '../../services/ingestionService';
 import ProcessingScanner from '../ingestion/ProcessingScanner';
 import TriageProcessSummary from '../ingestion/TriageProcessSummary';
 import DuplicateFileWarning from '../ingestion/DuplicateFileWarning';
@@ -102,7 +103,7 @@ export const QuickIngestionDropzone = ({ onSuccess }: QuickIngestionDropzoneProp
           </div>
         )}
   
-        <input ref={fileInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={handleChange} />
+        <input ref={fileInputRef} type="file" accept={ALLOWED_EXTENSIONS.join(',')} className="hidden" onChange={handleChange} />
   
         <div
           role="button"
@@ -124,7 +125,7 @@ export const QuickIngestionDropzone = ({ onSuccess }: QuickIngestionDropzoneProp
               <p className="text-sm sm:text-base font-semibold text-slate-200 group-hover:text-emerald-300 transition-colors">
                 Arrastra y suelta tu expediente clínico aquí o haz clic para explorar
               </p>
-              <p className="text-xs text-slate-500 mt-1">PDF, PNG, JPG (Máx. 10 MB)</p>
+              <p className="text-xs text-slate-500 mt-1">PDF, PNG, JPG (Máx. 10 MB) · TXT, JSON (Máx. 1 MB)</p>
             </div>
           </div>
         </div>
@@ -146,7 +147,7 @@ export const QuickIngestionDropzone = ({ onSuccess }: QuickIngestionDropzoneProp
     <div className="bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800/80 rounded-2xl p-6 sm:p-8 shadow-xl backdrop-blur-sm relative overflow-hidden">
       <div className="border-b border-slate-800/80 pb-4 mb-5">
         <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">Procesamiento y Triaje Autónomo con IA</h2>
-        <p className="text-xs text-slate-400 mt-1">Arrastra un documento clínico en PDF, PNG o JPG para clasificación y extracción estructurada de entidades médicas.</p>
+        <p className="text-xs text-slate-400 mt-1">Arrastra un documento clínico en PDF, PNG, JPG, TXT o JSON para clasificación y extracción estructurada de entidades médicas.</p>
       </div>
 
       {contenido()}

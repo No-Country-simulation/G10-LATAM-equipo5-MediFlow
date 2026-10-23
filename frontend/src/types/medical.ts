@@ -4,7 +4,7 @@ export const SCORE_CONFIANZA_THRESHOLD = 0.85;
 
 export type EstadoDocumento = 'PROCESADO' | 'PENDIENTE_AUDITORIA' | 'AUDITADO' | 'DESCARTADO' | 'ELIMINADO';
 export type NivelPrioridad = 'Urgente' | 'Prioritario' | 'Rutina';
-export type TipoArchivo = 'PDF' | 'IMAGEN';
+export type TipoArchivo = 'PDF' | 'PNG' | 'JPG' | 'TXT' | 'JSON';
 
 export type DestinoEnrutamiento =
   | 'Cola_Emergencia_Medica'

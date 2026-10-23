@@ -60,7 +60,7 @@ const DocumentDropzone = ({ onSelectFile, disabled = false }: DocumentDropzonePr
           <p className="text-sm font-semibold text-white">
             Arrastre y suelte el documento clínico aquí o haga clic para examinar
           </p>
-          <p className="text-xs text-slate-400 mt-1">Formatos admitidos: PDF, PNG, JPG, JPEG (máx. 10 MB)</p>
+          <p className="text-xs text-slate-400 mt-1">Formatos admitidos: PDF, PNG, JPG, JPEG (máx. 10 MB), TXT y JSON (máx. 1 MB)</p>
         </div>
       </div>
     </div>

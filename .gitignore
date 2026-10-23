@@ -197,3 +197,6 @@ documentacion_temp.html
 # Ambientes locales y credenciales
 .env.local
 secrets/
+
+# Ignorar carpeta de recursos
+recursos/

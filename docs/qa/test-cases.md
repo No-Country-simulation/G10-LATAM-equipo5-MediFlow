@@ -58,6 +58,8 @@ Plan: [test-plan.md](test-plan.md) · Datos: [test-data.md](test-data.md)
 | `TC-TRI-005` | Archivo no soportado | Front activo | Elegir un `.exe` o un archivo de más de 10 MB | El front lo rechaza antes de enviarlo; por API, `422` o `400` | 🟡 **PENDIENTE** | `test_documents_api.py` |
 | `TC-TRI-006` | Identificación con dígito verificador inválido | API lista | Ingerir con RUT `12.345.678-9` | Queda en auditoría con el motivo `Identificación RUT con formato o dígito verificador inválido` | 🟢 **PASADO** | `test_ingest_service.py` |
 | `TC-TRI-007` | Identificación de otro país | API lista | Ingerir con DNI, CPF o CURP válidos | Se normaliza sin descontar score | 🟢 **PASADO** | `test_normalization.py` |
+| `TC-TRI-008` | Ingesta de TXT/JSON | n8n y API listos | Subir una epicrisis en `.txt` y un export del HIS en `.json` (UTF-8, ≤ 1 MB) | Se clasifica como cualquier documento; se guarda en `recibidos/<id>/0.txt` o `0.json` con `charset=utf-8` y se ve en la vista previa de auditoría | 🟡 **PENDIENTE** | `test_ingest_service.py`, `nodos.test.mjs` |
+| `TC-TRI-009` | TXT/JSON inválido | API lista | Ingerir un `.json` mal formado, un `.txt` en Latin-1 o uno de más de 1 MB | n8n lo corta antes de la IA; por API, `400` sin subir nada a OCI | 🟡 **PENDIENTE** | `test_ingest_service.py`, `test_documents_api.py` |
 
 ## Módulo 5: Duplicados (DUP)
 

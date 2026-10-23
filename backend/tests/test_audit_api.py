@@ -118,7 +118,7 @@ async def test_get_case_returns_url_per_file_and_reasons(client, login_as, db, o
         attachments=[
             ClinicalDocumentAttachment(tipo_archivo="PDF", oci_path="recibidos/DOC-A/0.pdf", orden=0),
             ClinicalDocumentAttachment(
-                tipo_archivo="DCM", oci_path="recibidos/DOC-A/1.dcm", rol="imagen_estudio", orden=1
+                tipo_archivo="JSON", oci_path="recibidos/DOC-A/1.json", rol="exportacion_his", orden=1
             ),
         ]
     )
@@ -131,7 +131,7 @@ async def test_get_case_returns_url_per_file_and_reasons(client, login_as, db, o
     assert data["oci_preview_url"] == "https://oci.example/preview"
     assert [(a["tipo_archivo"], a["visualizable"]) for a in data["archivos"]] == [
         ("PDF", True),
-        ("DCM", False),
+        ("JSON", True),
     ]
     assert data["motivos_auditoria"] == ["Score de confianza 0.6 menor al umbral 0.85"]
     assert data["preview_expira_en_minutos"] == 15

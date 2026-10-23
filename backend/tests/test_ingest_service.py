@@ -1,13 +1,17 @@
+import base64
+
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.config import settings
 from app.features.auth.enums import UserRole
 from app.features.documents.schemas import IngestPayload
 from app.features.documents.service import (
     DocumentAlreadyExistsError,
     DocumentIngestionError,
     InvalidBase64Error,
+    InvalidTextFileError,
     _audit_reasons,
     _resolve_routing,
     ingest_document,
@@ -98,7 +102,7 @@ def test_nivel_prioridad_fuera_de_valores_es_rechazado():
 
 
 @pytest.mark.parametrize("tipo", ["DCM", "TIFF", "IMAGEN"])
-def test_archivo_principal_debe_ser_visualizable(tipo):
+def test_tipo_archivo_no_admitido_es_rechazado(tipo):
     with pytest.raises(ValidationError):
         _payload(tipo_archivo=tipo)
 
@@ -130,6 +134,47 @@ async def test_ingest_registra_quien_subio_el_documento(db, oci):
 async def test_invalid_base64_raises(db, oci):
     payload = _payload(archivo_base64="###no-es-base64###")
     with pytest.raises(InvalidBase64Error):
+        await ingest_document(payload, db)
+    assert oci.uploaded == {}
+
+
+@pytest.mark.parametrize(
+    ("tipo", "contenido", "ruta", "content_type"),
+    [
+        ("TXT", "Epicrisis: paciente con disnea, saturación 88%", "0.txt", "text/plain; charset=utf-8"),
+        ("JSON", '{"paciente": "José Peña", "diagnostico": "I26.9"}', "0.json", "application/json; charset=utf-8"),
+    ],
+)
+async def test_ingest_archivo_de_texto(db, oci, tipo, contenido, ruta, content_type):
+    queue_ingest(db)
+    archivo = base64.b64encode(contenido.encode("utf-8")).decode()
+    doc = await ingest_document(_payload(tipo_archivo=tipo, archivo_base64=archivo), db)
+
+    path = f"recibidos/DOC-TEST-1/{ruta}"
+    assert oci.uploaded[path] == contenido.encode("utf-8")
+    assert oci.content_types[path] == content_type
+    assert [(a.tipo_archivo, a.oci_path) for a in doc.attachments] == [(tipo, path)]
+
+
+@pytest.mark.parametrize(
+    ("tipo", "contenido"),
+    [
+        ("TXT", "Epicrisis de Peña".encode("latin-1")),  # no es UTF-8
+        ("JSON", b'{"paciente": '),  # JSON cortado
+        ("JSON", "texto suelto".encode("utf-8")),
+    ],
+)
+async def test_ingest_archivo_de_texto_invalido_es_rechazado(db, oci, tipo, contenido):
+    payload = _payload(tipo_archivo=tipo, archivo_base64=base64.b64encode(contenido).decode())
+    with pytest.raises(InvalidTextFileError):
+        await ingest_document(payload, db)
+    assert oci.uploaded == {}
+
+
+async def test_ingest_archivo_de_texto_muy_grande_es_rechazado(db, oci, monkeypatch):
+    monkeypatch.setattr(settings, "INGEST_MAX_TEXT_FILE_MB", 0)
+    payload = _payload(tipo_archivo="TXT", archivo_base64=base64.b64encode(b"x").decode())
+    with pytest.raises(InvalidTextFileError, match="supera el límite"):
         await ingest_document(payload, db)
     assert oci.uploaded == {}
 

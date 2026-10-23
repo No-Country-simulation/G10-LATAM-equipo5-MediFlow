@@ -16,7 +16,7 @@ en lugar de rechazar el documento completo.
 """
 
 from datetime import date, datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 from uuid import UUID
 
 from pydantic import (
@@ -46,11 +46,11 @@ from app.features.documents.normalization import TIPOS_IDENTIFICACION
 
 NivelPrioridad = Literal["Rutina", "Prioritario", "Urgente"]
 
-# Formatos admitidos: PDF y escaneos/fotos (PNG, JPG, TIFF) más DICOM (DCM) para imágenes
-# nativas de un estudio. El navegador y el LLM solo leen PDF/PNG/JPG, por eso el archivo
-# principal (vista previa en auditoría) debe ser uno de esos.
-TipoArchivo = Literal["PDF", "PNG", "JPG", "TIFF", "DCM"]
-TIPOS_ARCHIVO_PRINCIPAL: tuple[str, ...] = ("PDF", "PNG", "JPG")
+# Formatos admitidos: PDF, escaneos/fotos (PNG, JPG) y texto exportado de otro sistema (TXT,
+# JSON). Todos los lee el LLM y los muestra el navegador en la vista previa de auditoría.
+TipoArchivo = Literal["PDF", "PNG", "JPG", "TXT", "JSON"]
+TIPOS_ARCHIVO: tuple[str, ...] = get_args(TipoArchivo)
+TIPOS_ARCHIVO_TEXTO: tuple[str, ...] = ("TXT", "JSON")
 
 ROLES_PROFESIONAL = ("SOLICITANTE", "INFORMANTE", "TRATANTE", "DESTINATARIO", "OTRO")
 NIVELES_EVALUACION = ("alta", "media", "baja")
@@ -413,7 +413,7 @@ LISTAS_COMUNES: tuple[str, ...] = ("medicamentos", "examenes_solicitados")
 
 
 class ArchivoAdjunto(BaseModel):
-    """Un archivo binario adjunto al documento.
+    """Un archivo adjunto al documento (en base64, también los TXT/JSON).
 
     Un mismo documento clínico puede traer más de un archivo (ej. una orden de radiografía
     con varias placas AP/Lateral/Oblicua, o una ecotomografía con múltiples capturas más su
@@ -438,17 +438,6 @@ class IngestPayload(BaseModel):
     datos_generales: DatosGeneralesExtract
     detalle_clinico: DetalleClinicoExtract
     decision_enrutamiento: DecisionEnrutamientoExtract
-
-    @field_validator("archivos")
-    @classmethod
-    def _principal_visualizable(cls, archivos: list[ArchivoAdjunto]) -> list[ArchivoAdjunto]:
-        """El primer archivo es la vista previa de auditoría: debe poder abrirse en el navegador."""
-        if archivos[0].tipo_archivo not in TIPOS_ARCHIVO_PRINCIPAL:
-            raise ValueError(
-                "El primer archivo (documento principal) debe ser "
-                f"{', '.join(TIPOS_ARCHIVO_PRINCIPAL)}; TIFF y DCM solo como imágenes de respaldo"
-            )
-        return archivos
 
 
 class AlmacenamientoOci(BaseModel):
@@ -519,8 +508,8 @@ class DocumentListItemResponse(BaseModel):
 class ArchivoDocumento(BaseModel):
     """Un archivo original del documento con su URL pre-firmada de solo lectura.
 
-    `visualizable` indica si el navegador puede mostrarlo (PDF/PNG/JPG); TIFF y DICOM se
-    ofrecen como descarga. `url` es `None` si OCI no pudo generarla (ver `aviso_archivos`).
+    `visualizable` indica si el navegador puede mostrarlo (todos los formatos admitidos; los
+    adjuntos antiguos en otro formato se ofrecen como descarga). `url` es `None` si OCI no pudo generarla (ver `aviso_archivos`).
     """
 
     orden: int

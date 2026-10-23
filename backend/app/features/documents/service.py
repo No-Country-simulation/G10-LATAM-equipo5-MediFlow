@@ -43,6 +43,7 @@ from app.features.documents.normalization import (
 )
 from app.features.documents.schemas import (
     LISTAS_COMUNES,
+    TIPOS_ARCHIVO_TEXTO,
     ArchivoAdjunto,
     DatosGeneralesExtract,
     DetalleClinicoExtract,
@@ -67,13 +68,18 @@ _FORMATO_POR_TIPO_ARCHIVO = {
     "PDF": ("pdf", "application/pdf"),
     "PNG": ("png", "image/png"),
     "JPG": ("jpg", "image/jpeg"),
-    "TIFF": ("tiff", "image/tiff"),
-    "DCM": ("dcm", "application/dicom"),
+    # Con charset: sin él, la URL pre-firmada muestra mal los acentos en el navegador.
+    "TXT": ("txt", "text/plain; charset=utf-8"),
+    "JSON": ("json", "application/json; charset=utf-8"),
 }
 
 
 class InvalidBase64Error(ValueError):
     """El contenido base64 del archivo enviado en el payload es inválido."""
+
+
+class InvalidTextFileError(ValueError):
+    """Un archivo TXT/JSON no es UTF-8 válido, no es un JSON válido o supera el tamaño máximo."""
 
 
 class DocumentIngestionError(RuntimeError):
@@ -445,6 +451,23 @@ def apply_clinical_detail(document: ClinicalDocument, detalle: DetalleClinicoExt
     )
 
 
+def _validar_archivo_texto(archivo: ArchivoAdjunto, contenido: bytes) -> None:
+    """Rechaza un TXT/JSON que el LLM no pudo haber leído: no UTF-8, JSON inválido o muy grande."""
+    if archivo.tipo_archivo not in TIPOS_ARCHIVO_TEXTO:
+        return
+    if len(contenido) > settings.INGEST_MAX_TEXT_FILE_MB * 1024 * 1024:
+        raise InvalidTextFileError(
+            f"El archivo {archivo.tipo_archivo} supera el límite de {settings.INGEST_MAX_TEXT_FILE_MB} MB"
+        )
+    try:
+        texto = contenido.decode("utf-8")
+        if archivo.tipo_archivo == "JSON":
+            json.loads(texto)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        detalle = "JSON válido" if isinstance(exc, json.JSONDecodeError) else "texto UTF-8"
+        raise InvalidTextFileError(f"El archivo {archivo.tipo_archivo} no es {detalle}") from exc
+
+
 async def ingest_document(
     payload: IngestPayload, db: AsyncSession, uploaded_by: User | None = None
 ) -> ClinicalDocument:
@@ -463,6 +486,8 @@ async def ingest_document(
     except (binascii.Error, ValueError) as exc:
         logger.error("archivo_base64 inválido para el documento %s", payload.documento_id)
         raise InvalidBase64Error("El campo archivo_base64 no contiene un base64 válido") from exc
+    for archivo, contenido in decoded_archivos:
+        _validar_archivo_texto(archivo, contenido)
     huellas = [huella(contenido) for _, contenido in decoded_archivos]
 
     try:

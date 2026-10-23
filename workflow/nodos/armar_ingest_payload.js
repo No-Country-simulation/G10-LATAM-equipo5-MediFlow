@@ -16,8 +16,11 @@ function codigoDeCatalogo(valor, catalogo) {
 }
 
 function tipoArchivo(mime) {
-  if (String(mime).includes('pdf')) return 'PDF';
-  return String(mime).includes('png') ? 'PNG' : 'JPG';
+  const m = String(mime);
+  if (m.includes('pdf')) return 'PDF';
+  if (m.includes('png')) return 'PNG';
+  if (m.includes('json')) return 'JSON';
+  return m.startsWith('text/') ? 'TXT' : 'JPG';
 }
 
 function armarPayload({ resultado, prep, tipos, colas }) {

@@ -27,7 +27,7 @@ from app.core.config import settings
 from app.features.catalogs.models import DocumentType
 from app.features.documents.models import ESTADO_ELIMINADO, ClinicalDocument, ClinicalDocumentAttachment
 from app.features.documents.schemas import (
-    TIPOS_ARCHIVO_PRINCIPAL,
+    TIPOS_ARCHIVO,
     ArchivoDocumento,
     CampoRelevante,
     CorreccionResponse,
@@ -67,7 +67,7 @@ def attachment_fields(attachment: ClinicalDocumentAttachment) -> dict[str, Any]:
         "orden": attachment.orden,
         "tipo_archivo": attachment.tipo_archivo,
         "rol": attachment.rol,
-        "visualizable": attachment.tipo_archivo in TIPOS_ARCHIVO_PRINCIPAL,
+        "visualizable": attachment.tipo_archivo in TIPOS_ARCHIVO,
     }
 
 

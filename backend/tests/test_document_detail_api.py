@@ -42,7 +42,7 @@ def _document(detalle_clinico: dict[str, Any] | None = None, **kwargs) -> Clinic
         created_at=datetime.now(timezone.utc),
         attachments=[
             ClinicalDocumentAttachment(tipo_archivo="PDF", oci_path="recibidos/DOC-1/0.pdf", orden=0),
-            ClinicalDocumentAttachment(tipo_archivo="DCM", oci_path="recibidos/DOC-1/1.dcm", orden=1),
+            ClinicalDocumentAttachment(tipo_archivo="TXT", oci_path="recibidos/DOC-1/1.txt", orden=1),
         ],
     )
     fields.update(kwargs)
@@ -97,7 +97,7 @@ async def test_detail_returns_case_data_files_and_area(client, login_as, db, oci
     assert data["aviso_archivos"] is None
     assert [(a["tipo_archivo"], a["visualizable"], a["url"]) for a in data["archivos"]] == [
         ("PDF", True, "https://oci.example/preview"),
-        ("DCM", False, "https://oci.example/preview"),
+        ("TXT", True, "https://oci.example/preview"),
     ]
 
 
