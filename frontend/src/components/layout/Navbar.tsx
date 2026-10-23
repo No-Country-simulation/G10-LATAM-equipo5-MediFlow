@@ -36,7 +36,9 @@ const Navbar = () => {
             className="h-14 w-14 rounded-xl object-contain shrink-0"
           />
           <div className="hidden sm:block">
-            <span className="font-bold text-base text-white tracking-tight">MediFlow</span>
+            <span className="font-bold text-base text-white tracking-tight">
+              Medi<span className="text-rose-500">Flow</span>
+            </span>
             <span className="hidden sm:inline-block ml-2 text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
               Sesión Activa
             </span>
