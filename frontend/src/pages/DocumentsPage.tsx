@@ -75,15 +75,28 @@ const DocumentsPage = () => {
     if (filters.prioridad !== 'ALL') params.prioridad = filters.prioridad;
     // "Todos" = los documentos resueltos; los descartados y los que esperan auditoría se ven con su propio filtro.
     params.estado = filters.estado === 'TODOS' ? 'PROCESADO,AUDITADO' : filters.estado;
-    if (filters.identificacion.trim()) params.identificacion = filters.identificacion.trim();
+    // `identificacion` se filtra en cliente para buscar en RUT/DNI y nombre a la vez.
     if (filters.areaOrigenId) params.area_origen_id = filters.areaOrigenId;
     const { from, to } = resolveDateRange(filters.datePreset, filters.fechaDesde, filters.fechaHasta);
     if (from) params.fecha_desde = from.toISOString();
     if (to) params.fecha_hasta = to.toISOString();
     return params;
-  }, [filters]);
+  }, [filters.destino, filters.prioridad, filters.estado, filters.areaOrigenId, filters.datePreset, filters.fechaDesde, filters.fechaHasta]);
 
-  const { documents: visibleDocuments, state, error, reload } = useDocumentList(queryParams);
+  const { documents: allDocuments, state, error, reload } = useDocumentList(queryParams);
+
+  /** Normaliza para búsqueda: sin puntos, guiones, espacios extras y en minúsculas. */
+  const normalize = (v: string) => v.replace(/[.-]/g, '').toLowerCase().trim();
+
+  const visibleDocuments = useMemo(() => {
+    const term = normalize(filters.identificacion);
+    if (!term) return allDocuments;
+    return allDocuments.filter((doc) => {
+      const id = normalize(doc.identificacion_paciente ?? '');
+      const name = normalize(doc.nombre_paciente ?? '');
+      return id.includes(term) || name.includes(term);
+    });
+  }, [allDocuments, filters.identificacion]);
 
   return (
     <div
