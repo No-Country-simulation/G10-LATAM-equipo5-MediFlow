@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import DocumentsPage from './DocumentsPage';
@@ -50,6 +50,12 @@ vi.mock('../components/documents/DocumentsKanbanBoard', () => ({
   default: ({ documents, selectedDestination }: { documents: DocumentListItemResponse[]; selectedDestination: string }) => (
     <div data-testid="documents-kanban-board" data-destination={selectedDestination}>
       Tablero Kanban ({documents.length} casos)
+      {documents.map((doc) => (
+        <article key={doc.documento_id} data-testid={`document-card-${doc.documento_id}`}>
+          <span>{doc.nombre_paciente}</span>
+          <span>{doc.identificacion_paciente}</span>
+        </article>
+      ))}
     </div>
   ),
 }));
@@ -76,6 +82,21 @@ describe('DocumentsPage URL sync, view toggling and search filters', () => {
     estado: 'PROCESADO',
     oci_json_path: 'mock/path.json',
     created_at: '2026-10-14T09:00:00Z',
+  };
+
+  const secondDoc: DocumentListItemResponse = {
+    documento_id: 'DOC-REPO-102',
+    nombre_paciente: 'Pablo Neruda',
+    identificacion_paciente: '1122334-5',
+    tipo_identificacion: 'RUT',
+    tipo_documento: 'INTERCONSULTA',
+    diagnostico_principal: 'Hipertensión Arterial',
+    nivel_prioridad: 'Rutina',
+    destino_enrutamiento: 'Cola_Medicina_Interna',
+    score_confianza: 0.91,
+    estado: 'PROCESADO',
+    oci_json_path: 'mock/path-2.json',
+    created_at: '2026-10-14T10:00:00Z',
   };
 
   beforeEach(() => {
@@ -135,16 +156,30 @@ describe('DocumentsPage URL sync, view toggling and search filters', () => {
     expect(screen.getByTestId('documents-kanban-board')).toBeInTheDocument();
   });
 
-  it('updates filters and triggers queryParams when searching by patient identification', async () => {
+  it('updates filters and filters documents in client memory when searching by patient identification', async () => {
+    mockDocuments = [sampleDoc, secondDoc];
     const user = userEvent.setup();
     renderWithRouter();
+
+    // Initial state: both documents rendered
+    expect(screen.getByTestId('document-card-DOC-REPO-101')).toBeInTheDocument();
+    expect(screen.getByText('Gabriela Mistral')).toBeInTheDocument();
+    expect(screen.getByTestId('document-card-DOC-REPO-102')).toBeInTheDocument();
+    expect(screen.getByText('Pablo Neruda')).toBeInTheDocument();
 
     const searchInput = screen.getByPlaceholderText(/RUT, DNI, cédula/i);
     await user.type(searchInput, '7788990-1');
 
-    await waitFor(() => {
-      expect(lastQueriedParams.identificacion).toBe('7788990-1');
-    });
+    // 1. Verify backend queryParams does NOT receive identificacion
+    expect(lastQueriedParams.identificacion).toBeUndefined();
+
+    // 2. Validate client-side filtering displays matching document and hides non-matching
+    expect(screen.getByTestId('document-card-DOC-REPO-101')).toBeInTheDocument();
+    expect(screen.getByText('Gabriela Mistral')).toBeInTheDocument();
+    expect(screen.getByText('7788990-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('document-card-DOC-REPO-102')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pablo Neruda')).not.toBeInTheDocument();
+    expect(screen.queryByText('1122334-5')).not.toBeInTheDocument();
   });
 
   it('renders empty state when there are no documents matching filters', () => {
